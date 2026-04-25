@@ -25,30 +25,38 @@ class PuntoAcceso(models.Model):
 
 
 class QrSesion(models.Model):
+    """
+    QR de delegación: el dueño autoriza a otra persona a ingresar su vehículo
+    por un período limitado. El acceso diario normal usa el codigo_qr permanente
+    del modelo Vehiculo — este registro es solo para casos de delegación temporal.
+    """
     vehiculo = models.ForeignKey(
-        "vehiculos.Vehiculo", on_delete=models.CASCADE, related_name="qr_sesiones"
+        "vehiculos.Vehiculo", on_delete=models.CASCADE, related_name="qr_delegaciones"
     )
-    imagen_qr = models.ImageField(upload_to="acceso/qr/", blank=True, null=True)
     codigo_hash = models.CharField(max_length=64, unique=True)
+    motivo = models.CharField(
+        max_length=150, blank=True,
+        help_text="Razón de la delegación (préstamo a familiar, autorización especial, etc.)",
+    )
     fecha_generacion = models.DateTimeField(auto_now_add=True)
     fecha_expiracion = models.DateTimeField()
     usado = models.BooleanField(default=False)
-    sesion_parqueo = models.ForeignKey(
-        "parqueos.SesionParqueo",
+    generado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="qr_sesiones",
+        related_name="qr_delegaciones_generados",
     )
 
     class Meta:
-        db_table = "qr_sesiones"
-        verbose_name = "QR de sesión"
-        verbose_name_plural = "QR de sesiones"
+        db_table = "qr_delegaciones"
+        verbose_name = "QR de delegación"
+        verbose_name_plural = "QR de delegaciones"
         indexes = [models.Index(fields=["codigo_hash"])]
 
     def __str__(self):
-        return f"QR {self.vehiculo.placa} - exp: {self.fecha_expiracion}"
+        return f"QR delegación {self.vehiculo.placa} - exp: {self.fecha_expiracion}"
 
     @property
     def vigente(self):
@@ -106,6 +114,12 @@ class RegistroAcceso(models.Model):
         ("entrada", "Entrada"),
         ("salida", "Salida"),
     ]
+    METODOS = [
+        ("qr_permanente", "QR permanente del vehículo"),
+        ("qr_delegacion", "QR de delegación"),
+        ("pase_temporal", "Pase temporal"),
+        ("manual", "Ingreso manual por guardia"),
+    ]
 
     punto_acceso = models.ForeignKey(
         PuntoAcceso, on_delete=models.PROTECT, related_name="registros"
@@ -117,7 +131,7 @@ class RegistroAcceso(models.Model):
         blank=True,
         related_name="registros_acceso",
     )
-    qr_sesion = models.ForeignKey(
+    qr_delegacion = models.ForeignKey(
         QrSesion,
         on_delete=models.SET_NULL,
         null=True,
@@ -132,6 +146,7 @@ class RegistroAcceso(models.Model):
         related_name="registros",
     )
     tipo = models.CharField(max_length=8, choices=TIPOS)
+    metodo_acceso = models.CharField(max_length=15, choices=METODOS, default="qr_permanente")
     timestamp = models.DateTimeField(auto_now_add=True)
     observacion = models.TextField(blank=True)
     registrado_por = models.ForeignKey(

@@ -2,12 +2,11 @@ import strawberry
 from strawberry.types import Info
 from typing import List, Optional
 from datetime import datetime
-from decimal import Decimal
 from django.utils import timezone
 
 from .models import (
     CategoriaEspacio, ZonaParqueo, EspacioParqueo,
-    Tarifa, SesionParqueo, PagoSesion, Reserva,
+    SesionParqueo, Reserva,
 )
 
 
@@ -51,23 +50,10 @@ class EspacioParqueoType:
 
 
 @strawberry.type
-class TarifaType:
-    id: int
-    precio_hora: float
-    precio_dia: float
-    activo: bool
-
-    @strawberry.field
-    def categoria(self) -> CategoriaEspacioType:
-        return self.categoria
-
-
-@strawberry.type
 class SesionParqueoType:
     id: int
     hora_entrada: datetime
     hora_salida: Optional[datetime]
-    total_cobrado: Optional[float]
     estado: str
 
     @strawberry.field
@@ -128,12 +114,6 @@ class IniciarSesionInput:
 
 
 @strawberry.input
-class CerrarSesionInput:
-    sesion_id: int
-    metodo_pago: str
-
-
-@strawberry.input
 class CrearReservaInput:
     espacio_id: int
     vehiculo_id: int
@@ -188,10 +168,6 @@ class ParqueosQuery:
         )
 
     @strawberry.field
-    def tarifas(self, info: Info) -> List[TarifaType]:
-        return list(Tarifa.objects.filter(activo=True).select_related("categoria"))
-
-    @strawberry.field
     def categorias_espacio(self, info: Info) -> List[CategoriaEspacioType]:
         return list(CategoriaEspacio.objects.all())
 
@@ -241,36 +217,23 @@ class ParqueosMutation:
             raise Exception(f"El espacio #{espacio.numero} no está disponible")
         if SesionParqueo.objects.filter(vehiculo=vehiculo, estado="activa").exists():
             raise Exception("El vehículo ya tiene una sesión activa")
-        tarifa = Tarifa.objects.filter(categoria=espacio.categoria, activo=True).first()
-        sesion = SesionParqueo.objects.create(espacio=espacio, vehiculo=vehiculo, tarifa=tarifa)
+        sesion = SesionParqueo.objects.create(espacio=espacio, vehiculo=vehiculo)
         espacio.estado = "ocupado"
         espacio.save()
         return sesion
 
     @strawberry.mutation
-    def cerrar_sesion_parqueo(self, info: Info, input: CerrarSesionInput) -> SesionParqueoType:
-        sesion = SesionParqueo.objects.select_related("espacio", "tarifa").filter(
-            pk=input.sesion_id, estado="activa"
+    def cerrar_sesion_parqueo(self, info: Info, sesion_id: int) -> SesionParqueoType:
+        sesion = SesionParqueo.objects.select_related("espacio").filter(
+            pk=sesion_id, estado="activa"
         ).first()
         if not sesion:
             raise Exception("Sesión activa no encontrada")
         sesion.hora_salida = timezone.now()
         sesion.estado = "cerrada"
-        if sesion.tarifa:
-            delta = sesion.hora_salida - sesion.hora_entrada
-            horas = Decimal(str(delta.total_seconds() / 3600))
-            sesion.total_cobrado = (horas * sesion.tarifa.precio_hora).quantize(Decimal("0.01"))
         sesion.save()
         sesion.espacio.estado = "disponible"
         sesion.espacio.save()
-        if input.metodo_pago not in ["efectivo", "transferencia", "qr_pago"]:
-            raise Exception("Método de pago inválido")
-        PagoSesion.objects.create(
-            sesion=sesion,
-            monto=sesion.total_cobrado or Decimal("0"),
-            metodo_pago=input.metodo_pago,
-            registrado_por=info.context.request.user if info.context.request.user.is_authenticated else None,
-        )
         return sesion
 
     @strawberry.mutation

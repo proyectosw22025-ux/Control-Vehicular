@@ -31,6 +31,7 @@ class VehiculoType:
     anio: int
     color: str
     estado: str
+    codigo_qr: str
     created_at: datetime
 
     @strawberry.field

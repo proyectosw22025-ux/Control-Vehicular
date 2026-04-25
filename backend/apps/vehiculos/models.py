@@ -1,3 +1,5 @@
+import hashlib
+import uuid
 from django.db import models
 from django.conf import settings
 
@@ -35,12 +37,24 @@ class Vehiculo(models.Model):
     color = models.CharField(max_length=40)
     estado = models.CharField(max_length=15, choices=ESTADOS, default="activo")
     foto = models.ImageField(upload_to="vehiculos/fotos/", blank=True, null=True)
+    codigo_qr = models.CharField(
+        max_length=64, unique=True, blank=True,
+        help_text="Hash SHA-256 generado al registrar el vehículo. Funciona mientras estado=activo.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = "vehiculos"
         verbose_name = "Vehículo"
         verbose_name_plural = "Vehículos"
+        indexes = [models.Index(fields=["codigo_qr"])]
+
+    def save(self, *args, **kwargs):
+        if not self.codigo_qr:
+            self.codigo_qr = hashlib.sha256(
+                f"{self.placa}-{uuid.uuid4()}".encode()
+            ).hexdigest()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.placa} - {self.marca} {self.modelo} ({self.anio})"

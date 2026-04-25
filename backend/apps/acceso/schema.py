@@ -20,9 +20,10 @@ class PuntoAccesoType:
 
 
 @strawberry.type
-class QrSesionType:
+class QrDelegacionType:
     id: int
     codigo_hash: str
+    motivo: str
     fecha_generacion: datetime
     fecha_expiracion: datetime
     usado: bool
@@ -64,6 +65,7 @@ class PaseTemporalType:
 class RegistroAccesoType:
     id: int
     tipo: str
+    metodo_acceso: str
     timestamp: datetime
     observacion: str
 
@@ -81,9 +83,10 @@ class RegistroAccesoType:
 # ──────────────────────────────────────────────
 
 @strawberry.input
-class GenerarQrInput:
+class GenerarQrDelegacionInput:
     vehiculo_id: int
-    horas_validez: Optional[int] = 8
+    motivo: str
+    horas_validez: Optional[int] = 24
 
 
 @strawberry.input
@@ -94,12 +97,20 @@ class ValidarAccesoInput:
 
 
 @strawberry.input
+class AccesoManualInput:
+    punto_acceso_id: int
+    placa: str
+    tipo: str
+    observacion: Optional[str] = ""
+
+
+@strawberry.input
 class CrearPaseTemporalInput:
     vehiculo_id: Optional[int] = None
     visitante_id: Optional[int] = None
     valido_desde: str
     valido_hasta: str
-    usos_max: Optional[int] = 1
+    usos_max: Optional[int] = 2
 
 
 # ──────────────────────────────────────────────
@@ -113,10 +124,10 @@ class AccesoQuery:
         return list(PuntoAcceso.objects.filter(activo=True))
 
     @strawberry.field
-    def qr_activos_vehiculo(self, info: Info, vehiculo_id: int) -> List[QrSesionType]:
+    def qr_delegaciones_vehiculo(self, info: Info, vehiculo_id: int) -> List[QrDelegacionType]:
         return list(QrSesion.objects.filter(
             vehiculo_id=vehiculo_id, usado=False, fecha_expiracion__gt=timezone.now()
-        ))
+        ).select_related("vehiculo"))
 
     @strawberry.field
     def registros_acceso(
@@ -150,53 +161,108 @@ class AccesoQuery:
 @strawberry.type
 class AccesoMutation:
     @strawberry.mutation
-    def generar_qr(self, info: Info, input: GenerarQrInput) -> QrSesionType:
+    def generar_qr_delegacion(self, info: Info, input: GenerarQrDelegacionInput) -> QrDelegacionType:
         from apps.vehiculos.models import Vehiculo
         vehiculo = Vehiculo.objects.filter(pk=input.vehiculo_id).first()
         if not vehiculo:
             raise Exception("Vehículo no encontrado")
         if vehiculo.estado == "sancionado":
-            raise Exception("Vehículo sancionado, no puede generar QR")
+            raise Exception("Vehículo sancionado, no puede generar QR de delegación")
+        if vehiculo.estado == "inactivo":
+            raise Exception("Vehículo inactivo, no puede generar QR de delegación")
         codigo_hash = hashlib.sha256(f"{vehiculo.placa}-{uuid.uuid4()}".encode()).hexdigest()
-        horas = max(1, min(input.horas_validez or 8, 24))
+        horas = max(1, min(input.horas_validez or 24, 168))
+        generado_por = info.context.request.user if info.context.request.user.is_authenticated else None
         return QrSesion.objects.create(
             vehiculo=vehiculo,
             codigo_hash=codigo_hash,
+            motivo=input.motivo,
             fecha_expiracion=timezone.now() + timedelta(hours=horas),
+            generado_por=generado_por,
         )
 
     @strawberry.mutation
     def registrar_acceso(self, info: Info, input: ValidarAccesoInput) -> RegistroAccesoType:
+        from apps.vehiculos.models import Vehiculo
         if input.tipo not in ["entrada", "salida"]:
             raise Exception("Tipo inválido. Opciones: entrada, salida")
         punto = PuntoAcceso.objects.filter(pk=input.punto_acceso_id, activo=True).first()
         if not punto:
             raise Exception("Punto de acceso no encontrado o inactivo")
-        qr_sesion = pase_temporal = vehiculo = None
-        qr = QrSesion.objects.filter(codigo_hash=input.codigo, usado=False).select_related("vehiculo").first()
-        if qr:
-            if qr.fecha_expiracion <= timezone.now():
-                raise Exception("QR expirado")
-            qr.usado = True
-            qr.save()
-            qr_sesion = qr
-            vehiculo = qr.vehiculo
+
+        qr_delegacion = pase_temporal = vehiculo = None
+        metodo_acceso = None
+
+        # Nivel 1: QR permanente del vehículo
+        vehiculo = Vehiculo.objects.filter(codigo_qr=input.codigo).first()
+        if vehiculo:
+            if vehiculo.estado == "sancionado":
+                raise Exception("Vehículo sancionado. Regularice sus multas para acceder.")
+            if vehiculo.estado == "inactivo":
+                raise Exception("Vehículo inactivo. Contacte a la administración.")
+            metodo_acceso = "qr_permanente"
         else:
-            pase = PaseTemporal.objects.filter(codigo=input.codigo).first()
-            if pase:
-                ahora = timezone.now()
-                if not (pase.activo and pase.valido_desde <= ahora <= pase.valido_hasta and pase.usos_actual < pase.usos_max):
-                    raise Exception("Pase temporal inválido o expirado")
-                pase.usos_actual += 1
-                pase.save()
-                pase_temporal = pase
-                vehiculo = pase.vehiculo
+            # Nivel 2: QR de delegación
+            qr = QrSesion.objects.filter(codigo_hash=input.codigo, usado=False).select_related("vehiculo").first()
+            if qr:
+                if qr.fecha_expiracion <= timezone.now():
+                    raise Exception("QR de delegación expirado")
+                if qr.vehiculo.estado == "sancionado":
+                    raise Exception("Vehículo sancionado. No puede ingresar.")
+                qr.usado = True
+                qr.save()
+                qr_delegacion = qr
+                vehiculo = qr.vehiculo
+                metodo_acceso = "qr_delegacion"
             else:
-                raise Exception("Código QR o pase temporal no válido")
+                # Nivel 3: Pase temporal para visitantes
+                pase = PaseTemporal.objects.filter(codigo=input.codigo).first()
+                if pase:
+                    ahora = timezone.now()
+                    if not (pase.activo and pase.valido_desde <= ahora <= pase.valido_hasta and pase.usos_actual < pase.usos_max):
+                        raise Exception("Pase temporal inválido o expirado")
+                    pase.usos_actual += 1
+                    pase.save()
+                    pase_temporal = pase
+                    vehiculo = pase.vehiculo
+                    metodo_acceso = "pase_temporal"
+                else:
+                    raise Exception("Código no reconocido. Verifique el QR o pase temporal.")
+
         registrado_por = info.context.request.user if info.context.request.user.is_authenticated else None
         return RegistroAcceso.objects.create(
-            punto_acceso=punto, vehiculo=vehiculo, qr_sesion=qr_sesion,
-            pase_temporal=pase_temporal, tipo=input.tipo, registrado_por=registrado_por,
+            punto_acceso=punto,
+            vehiculo=vehiculo,
+            qr_delegacion=qr_delegacion,
+            pase_temporal=pase_temporal,
+            tipo=input.tipo,
+            metodo_acceso=metodo_acceso,
+            registrado_por=registrado_por,
+        )
+
+    @strawberry.mutation
+    def registrar_acceso_manual(self, info: Info, input: AccesoManualInput) -> RegistroAccesoType:
+        from apps.vehiculos.models import Vehiculo
+        if input.tipo not in ["entrada", "salida"]:
+            raise Exception("Tipo inválido. Opciones: entrada, salida")
+        punto = PuntoAcceso.objects.filter(pk=input.punto_acceso_id, activo=True).first()
+        if not punto:
+            raise Exception("Punto de acceso no encontrado o inactivo")
+        vehiculo = Vehiculo.objects.filter(placa=input.placa.upper()).first()
+        if not vehiculo:
+            raise Exception(f"Vehículo con placa {input.placa.upper()} no registrado en el sistema")
+        if vehiculo.estado == "sancionado":
+            raise Exception("Vehículo sancionado. No puede ingresar hasta regularizar sus multas.")
+        if vehiculo.estado == "inactivo":
+            raise Exception("Vehículo inactivo. Contacte a la administración.")
+        registrado_por = info.context.request.user if info.context.request.user.is_authenticated else None
+        return RegistroAcceso.objects.create(
+            punto_acceso=punto,
+            vehiculo=vehiculo,
+            tipo=input.tipo,
+            metodo_acceso="manual",
+            observacion=input.observacion or "",
+            registrado_por=registrado_por,
         )
 
     @strawberry.mutation
@@ -220,7 +286,7 @@ class AccesoMutation:
             vehiculo=vehiculo, visitante=visitante,
             codigo=uuid.uuid4().hex[:12].upper(),
             valido_desde=valido_desde, valido_hasta=valido_hasta,
-            usos_max=input.usos_max or 1, generado_por=generado_por,
+            usos_max=input.usos_max or 2, generado_por=generado_por,
         )
 
     @strawberry.mutation

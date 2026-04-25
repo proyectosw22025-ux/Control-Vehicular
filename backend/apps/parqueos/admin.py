@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import CategoriaEspacio, ZonaParqueo, EspacioParqueo, Tarifa, SesionParqueo, Reserva
+from .models import CategoriaEspacio, ZonaParqueo, EspacioParqueo, SesionParqueo, Reserva
 
 
 @admin.register(CategoriaEspacio)
@@ -19,15 +19,9 @@ class EspacioParqueoAdmin(admin.ModelAdmin):
     list_filter = ("zona", "categoria", "estado")
 
 
-@admin.register(Tarifa)
-class TarifaAdmin(admin.ModelAdmin):
-    list_display = ("categoria", "tipo_vehiculo", "precio_hora", "precio_dia", "activo")
-    list_filter = ("activo",)
-
-
 @admin.register(SesionParqueo)
 class SesionParqueoAdmin(admin.ModelAdmin):
-    list_display = ("espacio", "vehiculo", "hora_entrada", "hora_salida", "estado", "total_cobrado")
+    list_display = ("espacio", "vehiculo", "hora_entrada", "hora_salida", "estado")
     list_filter = ("estado",)
 
 

@@ -59,31 +59,6 @@ class EspacioParqueo(models.Model):
         return f"{self.zona.nombre} - #{self.numero} ({self.get_estado_display()})"
 
 
-class Tarifa(models.Model):
-    categoria = models.ForeignKey(
-        CategoriaEspacio, on_delete=models.PROTECT, related_name="tarifas"
-    )
-    tipo_vehiculo = models.ForeignKey(
-        "vehiculos.TipoVehiculo",
-        on_delete=models.PROTECT,
-        related_name="tarifas",
-        null=True,
-        blank=True,
-        help_text="Nulo = aplica a todos los tipos",
-    )
-    precio_hora = models.DecimalField(max_digits=8, decimal_places=2)
-    precio_dia = models.DecimalField(max_digits=8, decimal_places=2)
-    activo = models.BooleanField(default=True)
-
-    class Meta:
-        db_table = "tarifas"
-        verbose_name = "Tarifa"
-        verbose_name_plural = "Tarifas"
-
-    def __str__(self):
-        return f"{self.categoria} - Bs {self.precio_hora}/h"
-
-
 class SesionParqueo(models.Model):
     ESTADOS = [
         ("activa", "Activa"),
@@ -99,12 +74,6 @@ class SesionParqueo(models.Model):
     )
     hora_entrada = models.DateTimeField(auto_now_add=True)
     hora_salida = models.DateTimeField(null=True, blank=True)
-    tarifa = models.ForeignKey(
-        Tarifa, on_delete=models.SET_NULL, null=True, blank=True
-    )
-    total_cobrado = models.DecimalField(
-        max_digits=8, decimal_places=2, null=True, blank=True
-    )
     estado = models.CharField(max_length=10, choices=ESTADOS, default="activa")
 
     class Meta:
@@ -115,36 +84,6 @@ class SesionParqueo(models.Model):
 
     def __str__(self):
         return f"{self.vehiculo} en {self.espacio} ({self.get_estado_display()})"
-
-
-class PagoSesion(models.Model):
-    METODOS = [
-        ("efectivo", "Efectivo"),
-        ("transferencia", "Transferencia"),
-        ("qr_pago", "QR de pago"),
-    ]
-
-    sesion = models.OneToOneField(
-        SesionParqueo, on_delete=models.CASCADE, related_name="pago"
-    )
-    fecha_pago = models.DateTimeField(auto_now_add=True)
-    monto = models.DecimalField(max_digits=8, decimal_places=2)
-    metodo_pago = models.CharField(max_length=15, choices=METODOS)
-    comprobante = models.CharField(max_length=100, blank=True)
-    registrado_por = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        related_name="pagos_sesion_registrados",
-    )
-
-    class Meta:
-        db_table = "pagos_sesion"
-        verbose_name = "Pago de sesión"
-        verbose_name_plural = "Pagos de sesión"
-
-    def __str__(self):
-        return f"Pago sesión #{self.sesion_id} - Bs {self.monto}"
 
 
 class Reserva(models.Model):
