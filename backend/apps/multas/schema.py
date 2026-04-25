@@ -13,13 +13,13 @@ class TipoMultaType:
     id: int
     nombre: str
     descripcion: str
-    monto_base: float
+    monto_base: Decimal
 
 
 @strawberry.type
 class MultaType:
     id: int
-    monto: float
+    monto: Decimal
     descripcion: str
     fecha: datetime
     estado: str
@@ -45,7 +45,7 @@ class MultaType:
 class PagoMultaType:
     id: int
     fecha_pago: datetime
-    monto_pagado: float
+    monto_pagado: Decimal
     metodo_pago: str
     comprobante: str
 
@@ -73,7 +73,7 @@ class RegistrarMultaInput:
     vehiculo_id: int
     tipo_id: int
     descripcion: str
-    monto_override: Optional[float] = None
+    monto_override: Optional[Decimal] = None
 
 
 @strawberry.input
@@ -150,7 +150,7 @@ class MultasMutation:
             raise Exception("Vehículo no encontrado")
         if not tipo:
             raise Exception("Tipo de multa no encontrado")
-        monto = Decimal(str(input.monto_override)) if input.monto_override else tipo.monto_base
+        monto = input.monto_override if input.monto_override is not None else tipo.monto_base
         registrado_por = info.context.request.user if info.context.request.user.is_authenticated else None
         multa = Multa.objects.create(
             vehiculo=vehiculo, tipo=tipo, monto=monto,

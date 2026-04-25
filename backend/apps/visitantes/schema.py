@@ -110,7 +110,7 @@ class VisitantesQuery:
     @strawberry.field
     def visitas_por_anfitrion(self, info: Info, anfitrion_id: int, estado: Optional[str] = None) -> List[VisitaType]:
         qs = Visita.objects.filter(anfitrion_id=anfitrion_id).select_related(
-            "visitante", "tipo_visita", "vehiculo"
+            "visitante", "anfitrion", "tipo_visita", "vehiculo"
         ).order_by("-created_at")
         if estado:
             qs = qs.filter(estado=estado)

@@ -109,7 +109,7 @@ class VehiculosQuery:
 
     @strawberry.field
     def vehiculo_por_placa(self, info: Info, placa: str) -> Optional[VehiculoType]:
-        return Vehiculo.objects.filter(placa=placa.upper()).first()
+        return Vehiculo.objects.select_related("tipo", "propietario").filter(placa=placa.upper()).first()
 
     @strawberry.field
     def tipos_vehiculo(self, info: Info) -> List[TipoVehiculoType]:

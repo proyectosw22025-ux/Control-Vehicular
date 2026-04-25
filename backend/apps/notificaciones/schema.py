@@ -51,7 +51,7 @@ class NotificacionesQuery:
         user = info.context.request.user
         if not user.is_authenticated:
             raise Exception("Autenticación requerida")
-        qs = Notificacion.objects.filter(usuario=user).order_by("-fecha")
+        qs = Notificacion.objects.filter(usuario=user).select_related("tipo").order_by("-fecha")
         if solo_no_leidas:
             qs = qs.filter(leido=False)
         return list(qs[:limite])

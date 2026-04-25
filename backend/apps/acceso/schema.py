@@ -275,6 +275,8 @@ class AccesoMutation:
         valido_hasta = dt.fromisoformat(input.valido_hasta).replace(tzinfo=tz)
         if valido_hasta <= valido_desde:
             raise Exception("La fecha de fin debe ser posterior a la de inicio")
+        if not input.vehiculo_id and not input.visitante_id:
+            raise Exception("Debe especificar al menos un vehículo o visitante para el pase")
         vehiculo = Vehiculo.objects.filter(pk=input.vehiculo_id).first() if input.vehiculo_id else None
         visitante = Visitante.objects.filter(pk=input.visitante_id).first() if input.visitante_id else None
         if input.vehiculo_id and not vehiculo:
