@@ -23,6 +23,12 @@ staticfiles/
 # Claude Code internal
 .claude/
 
+# Node / Frontend
+node_modules/
+dist/
+.vite/
+*.local
+
 # IDE
 .vscode/
 .idea/
