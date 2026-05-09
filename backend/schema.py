@@ -6,6 +6,7 @@ from apps.acceso.schema import AccesoQuery, AccesoMutation
 from apps.visitantes.schema import VisitantesQuery, VisitantesMutation
 from apps.multas.schema import MultasQuery, MultasMutation
 from apps.notificaciones.schema import NotificacionesQuery, NotificacionesMutation
+from estadisticas_schema import EstadisticasQuery
 
 
 @strawberry.type
@@ -17,6 +18,7 @@ class Query(
     VisitantesQuery,
     MultasQuery,
     NotificacionesQuery,
+    EstadisticasQuery,
 ):
     pass
 

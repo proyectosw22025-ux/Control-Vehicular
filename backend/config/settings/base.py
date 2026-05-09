@@ -8,6 +8,7 @@ CELERY_APP = "celery_app"
 SECRET_KEY = config("SECRET_KEY")
 
 INSTALLED_APPS = [
+    "daphne",                             # debe ser el primero para sobrescribir runserver
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",

@@ -158,6 +158,18 @@ class MultasMutation:
         )
         vehiculo.estado = "sancionado"
         vehiculo.save()
+
+        # Notificar al propietario del vehículo
+        propietario = getattr(vehiculo, "propietario", None)
+        if propietario:
+            from apps.notificaciones.utils import enviar_notificacion
+            enviar_notificacion(
+                usuario=propietario,
+                titulo=f"Multa registrada — {vehiculo.placa}",
+                mensaje=f"Se registró una multa por '{tipo.nombre}' de Bs {monto}. {input.descripcion}",
+                tipo_codigo="multa_registrada",
+            )
+
         return multa
 
     @strawberry.mutation

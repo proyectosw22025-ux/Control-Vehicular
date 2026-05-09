@@ -230,7 +230,7 @@ class AccesoMutation:
                     raise Exception("Código no reconocido. Verifique el QR o pase temporal.")
 
         registrado_por = info.context.request.user if info.context.request.user.is_authenticated else None
-        return RegistroAcceso.objects.create(
+        registro = RegistroAcceso.objects.create(
             punto_acceso=punto,
             vehiculo=vehiculo,
             qr_delegacion=qr_delegacion,
@@ -239,6 +239,20 @@ class AccesoMutation:
             metodo_acceso=metodo_acceso,
             registrado_por=registrado_por,
         )
+
+        # Notificar al propietario del vehículo
+        propietario = getattr(vehiculo, "propietario", None)
+        if propietario:
+            from apps.notificaciones.utils import enviar_notificacion
+            accion = "entró a" if input.tipo == "entrada" else "salió de"
+            enviar_notificacion(
+                usuario=propietario,
+                titulo=f"Vehículo {accion} la universidad",
+                mensaje=f"{vehiculo.placa} registró {input.tipo} en {punto.nombre}.",
+                tipo_codigo="acceso_vehiculo",
+            )
+
+        return registro
 
     @strawberry.mutation
     def registrar_acceso_manual(self, info: Info, input: AccesoManualInput) -> RegistroAccesoType:

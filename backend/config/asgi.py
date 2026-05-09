@@ -1,7 +1,6 @@
 import os
 from django.core.asgi import get_asgi_application
 from channels.routing import ProtocolTypeRouter, URLRouter
-from channels.auth import AuthMiddlewareStack
 from django.urls import path
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.development")
@@ -9,6 +8,7 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.development")
 django_asgi_app = get_asgi_application()
 
 from apps.notificaciones.consumers import NotificacionConsumer
+from apps.notificaciones.jwt_ws_middleware import JWTWebSocketAuthMiddleware
 
 websocket_urlpatterns = [
     path("ws/notificaciones/", NotificacionConsumer.as_asgi()),
@@ -16,7 +16,7 @@ websocket_urlpatterns = [
 
 application = ProtocolTypeRouter({
     "http": django_asgi_app,
-    "websocket": AuthMiddlewareStack(
+    "websocket": JWTWebSocketAuthMiddleware(
         URLRouter(websocket_urlpatterns)
     ),
 })

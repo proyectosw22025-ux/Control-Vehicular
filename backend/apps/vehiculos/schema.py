@@ -1,9 +1,12 @@
+import hashlib
+import uuid
 import strawberry
 from strawberry.types import Info
 from typing import List, Optional
 from datetime import datetime, date
 
 from .models import TipoVehiculo, Vehiculo, DocumentoVehiculo, HistorialPropietario
+from apps.usuarios.utils import tiene_rol
 
 
 @strawberry.type
@@ -131,6 +134,8 @@ class VehiculosQuery:
 class VehiculosMutation:
     @strawberry.mutation
     def registrar_vehiculo(self, info: Info, input: CrearVehiculoInput) -> VehiculoType:
+        if not tiene_rol(info.context.request.user, "Administrador"):
+            raise Exception("Solo administradores pueden registrar vehículos")
         from apps.usuarios.models import Usuario
         if Vehiculo.objects.filter(placa=input.placa.upper()).exists():
             raise Exception(f"La placa {input.placa} ya está registrada")
@@ -158,6 +163,8 @@ class VehiculosMutation:
 
     @strawberry.mutation
     def actualizar_vehiculo(self, info: Info, id: int, input: ActualizarVehiculoInput) -> VehiculoType:
+        if not tiene_rol(info.context.request.user, "Administrador"):
+            raise Exception("Solo administradores pueden actualizar vehículos")
         v = Vehiculo.objects.filter(pk=id).first()
         if not v:
             raise Exception("Vehículo no encontrado")
@@ -171,18 +178,36 @@ class VehiculosMutation:
             v.color = input.color
         if input.estado is not None:
             if input.estado not in ["activo", "inactivo", "sancionado"]:
-                raise Exception("Estado inválido")
+                raise Exception("Estado inválido. Opciones: activo, inactivo, sancionado")
             v.estado = input.estado
         v.save()
         return v
 
     @strawberry.mutation
+    def regenerar_qr(self, info: Info, vehiculo_id: int) -> VehiculoType:
+        """Genera un nuevo codigo_qr para el vehículo, invalidando el anterior."""
+        solicitante = info.context.request.user
+        if not solicitante.is_authenticated:
+            raise Exception("Autenticación requerida")
+        v = Vehiculo.objects.select_related("tipo", "propietario").filter(pk=vehiculo_id).first()
+        if not v:
+            raise Exception("Vehículo no encontrado")
+        # Admin puede regenerar cualquier QR; el propietario solo el suyo
+        if not tiene_rol(solicitante, "Administrador") and v.propietario_id != solicitante.pk:
+            raise Exception("Solo puedes regenerar el QR de tu propio vehículo")
+        v.codigo_qr = hashlib.sha256(f"{v.placa}-{uuid.uuid4()}".encode()).hexdigest()
+        v.save()
+        return v
+
+    @strawberry.mutation
     def agregar_documento(self, info: Info, input: AgregarDocumentoInput) -> DocumentoVehiculoType:
+        if not tiene_rol(info.context.request.user, "Administrador"):
+            raise Exception("Solo administradores pueden agregar documentos")
         vehiculo = Vehiculo.objects.filter(pk=input.vehiculo_id).first()
         if not vehiculo:
             raise Exception("Vehículo no encontrado")
         if input.tipo_doc not in ["soat", "tecnica", "circulacion", "otro"]:
-            raise Exception("Tipo de documento inválido")
+            raise Exception("Tipo de documento inválido. Opciones: soat, tecnica, circulacion, otro")
         fecha = date.fromisoformat(input.fecha_vencimiento)
         return DocumentoVehiculo.objects.create(
             vehiculo=vehiculo,
@@ -193,6 +218,8 @@ class VehiculosMutation:
 
     @strawberry.mutation
     def crear_tipo_vehiculo(self, info: Info, nombre: str, descripcion: Optional[str] = "") -> TipoVehiculoType:
+        if not tiene_rol(info.context.request.user, "Administrador"):
+            raise Exception("Solo administradores pueden crear tipos de vehículo")
         if TipoVehiculo.objects.filter(nombre=nombre).exists():
             raise Exception(f"Ya existe el tipo '{nombre}'")
         return TipoVehiculo.objects.create(nombre=nombre, descripcion=descripcion or "")
