@@ -434,49 +434,62 @@ export default function Parqueos() {
           {zonasMapa.length === 0 ? (
             <div className="text-center py-12 text-slate-400 text-sm">No hay zonas de parqueo activas</div>
           ) : (
-            zonasMapa.map((zona: any) => (
-              <div key={zona.id} className="bg-white rounded-xl shadow-sm p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="font-semibold text-slate-800">{zona.nombre}</h3>
-                    {zona.ubicacion && <p className="text-xs text-slate-400">{zona.ubicacion}</p>}
-                  </div>
-                  <div className="text-right">
-                    <span className="text-lg font-bold text-green-600">{zona.espaciosDisponibles}</span>
-                    <span className="text-slate-400 text-sm"> / {zona.capacidadTotal} libres</span>
-                  </div>
-                </div>
+            zonasMapa.map((zona: any) => {
+              const esps: any[] = zona.espacios
+              const cDisp = esps.filter((e: any) => e.estado === 'disponible').length
+              const cOcup = esps.filter((e: any) => e.estado === 'ocupado').length
+              const cRes  = esps.filter((e: any) => e.estado === 'reservado').length
+              const cMant = esps.filter((e: any) => e.estado === 'mantenimiento').length
 
-                {zona.espacios.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic">Sin espacios registrados</p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {zona.espacios.map((esp: any) => {
-                      const estadoColor: Record<string, string> = {
-                        disponible:    'bg-green-100 border-green-400 text-green-800 hover:bg-green-200',
-                        ocupado:       'bg-red-100 border-red-400 text-red-800 hover:bg-red-200',
-                        reservado:     'bg-blue-100 border-blue-400 text-blue-800 hover:bg-blue-200',
-                        mantenimiento: 'bg-slate-100 border-slate-300 text-slate-500 hover:bg-slate-200',
-                      }
-                      const cls = estadoColor[esp.estado] ?? 'bg-slate-100 border-slate-300 text-slate-500'
-                      return (
-                        <div
-                          key={esp.id}
-                          title={`#${esp.numero} · ${esp.categoria.nombre} · ${esp.estado}${esp.ubicacionReferencia ? ' · ' + esp.ubicacionReferencia : ''}`}
-                          className={`w-14 h-14 rounded-lg border-2 flex flex-col items-center justify-center cursor-default transition-colors ${cls}`}
-                          style={{ borderColor: esp.estado === 'disponible' ? esp.categoria.color : undefined }}
-                        >
-                          <span className="text-xs font-bold leading-tight">{esp.numero}</span>
-                          <span className="text-[10px] leading-tight opacity-70 text-center px-0.5 truncate max-w-full">
-                            {esp.categoria.nombre.slice(0, 4)}
-                          </span>
-                        </div>
-                      )
-                    })}
+              const estadoColor: Record<string, string> = {
+                disponible:    'bg-green-100 border-green-400 text-green-800 hover:bg-green-200',
+                ocupado:       'bg-red-100 border-red-400 text-red-800 hover:bg-red-200',
+                reservado:     'bg-blue-100 border-blue-400 text-blue-800 hover:bg-blue-200',
+                mantenimiento: 'bg-slate-100 border-slate-300 text-slate-500 hover:bg-slate-200',
+              }
+
+              return (
+                <div key={zona.id} className="bg-white rounded-xl shadow-sm p-5">
+                  {/* Encabezado zona */}
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <h3 className="font-semibold text-slate-800">{zona.nombre}</h3>
+                      {zona.ubicacion && <p className="text-xs text-slate-400">{zona.ubicacion}</p>}
+                    </div>
+                    <div className="flex gap-2 text-xs font-medium shrink-0 ml-4">
+                      <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{cDisp} libres</span>
+                      {cOcup > 0 && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded-full">{cOcup} ocupados</span>}
+                      {cRes  > 0 && <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{cRes} reservados</span>}
+                      {cMant > 0 && <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{cMant} mantenim.</span>}
+                      <span className="text-slate-400 px-2 py-0.5">{esps.length} total</span>
+                    </div>
                   </div>
-                )}
-              </div>
-            ))
+
+                  {esps.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic">Sin espacios registrados en esta zona</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {esps.map((esp: any) => {
+                        const cls = estadoColor[esp.estado] ?? 'bg-slate-100 border-slate-300 text-slate-500'
+                        return (
+                          <div
+                            key={esp.id}
+                            title={`#${esp.numero} · ${esp.categoria.nombre} · ${esp.estado}${esp.ubicacionReferencia ? ' · ' + esp.ubicacionReferencia : ''}`}
+                            className={`w-14 h-14 rounded-lg border-2 flex flex-col items-center justify-center cursor-default transition-colors ${cls}`}
+                            style={{ borderColor: esp.estado === 'disponible' ? esp.categoria.color : undefined }}
+                          >
+                            <span className="text-xs font-bold leading-tight">{esp.numero}</span>
+                            <span className="text-[10px] leading-tight opacity-70 text-center px-0.5 truncate max-w-full">
+                              {esp.categoria.nombre.slice(0, 4)}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })
           )}
         </div>
       )}

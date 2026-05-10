@@ -42,10 +42,35 @@ export function useNotificaciones(onNueva?: (n: NotifPayload) => void) {
       } catch { /* ignorar mensajes malformados */ }
     }
 
-    ws.onclose = () => {
+    ws.onclose = async (event) => {
       wsRef.current = null
       if (!activeRef.current) return
-      // Reconexión exponencial simple (4 s)
+
+      if (event.code === 4001) {
+        // Token expirado/inválido — intentar refrescar antes de reconectar
+        const refresh = localStorage.getItem('refresh_token')
+        if (!refresh) return  // sin refresh token: no reconectar, esperar login
+        try {
+          const res = await fetch('http://127.0.0.1:8000/graphql/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              query: 'mutation RefreshToken($refresh: String!) { refreshToken(refresh: $refresh) }',
+              variables: { refresh },
+            }),
+          })
+          const json = await res.json()
+          const newToken: string | undefined = json.data?.refreshToken
+          if (!newToken) return  // refresh falló: no reconectar
+          localStorage.setItem('access_token', newToken)
+          timerRef.current = setTimeout(conectar, 500)
+        } catch {
+          // error de red durante refresh: no reconectar en bucle
+        }
+        return
+      }
+
+      // Cierre normal (red, servidor reiniciado, etc.): reconectar en 4 s
       timerRef.current = setTimeout(conectar, 4000)
     }
 
