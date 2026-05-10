@@ -18,6 +18,22 @@ export const ACTUALIZAR_VEHICULO_MUTATION = gql`
   }
 `
 
+export const APROBAR_VEHICULO_MUTATION = gql`
+  mutation AprobarVehiculo($vehiculoId: Int!) {
+    aprobarVehiculo(vehiculoId: $vehiculoId) {
+      id placa estado
+    }
+  }
+`
+
+export const RECHAZAR_VEHICULO_MUTATION = gql`
+  mutation RechazarVehiculo($vehiculoId: Int!, $motivo: String!) {
+    rechazarVehiculo(vehiculoId: $vehiculoId, motivo: $motivo) {
+      id placa estado
+    }
+  }
+`
+
 export const REGENERAR_QR_MUTATION = gql`
   mutation RegenerarQr($vehiculoId: Int!) {
     regenerarQr(vehiculoId: $vehiculoId) {

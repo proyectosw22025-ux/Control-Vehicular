@@ -4,9 +4,12 @@ import strawberry
 from strawberry.types import Info
 from typing import List, Optional
 from datetime import datetime, date
+from django.db.models import Q
 
 from .models import TipoVehiculo, Vehiculo, DocumentoVehiculo, HistorialPropietario
 from apps.usuarios.utils import tiene_rol
+
+ESTADOS_VALIDOS = ["pendiente", "activo", "inactivo", "sancionado"]
 
 
 @strawberry.type
@@ -61,6 +64,14 @@ class HistorialPropietarioType:
         return f"{self.usuario.nombre} {self.usuario.apellido}"
 
 
+@strawberry.type
+class VehiculosPage:
+    items: List[VehiculoType]
+    total: int
+    pagina: int
+    total_paginas: int
+
+
 # ──────────────────────────────────────────────
 # INPUTS
 # ──────────────────────────────────────────────
@@ -100,11 +111,51 @@ class AgregarDocumentoInput:
 @strawberry.type
 class VehiculosQuery:
     @strawberry.field
-    def vehiculos(self, info: Info, propietario_id: Optional[int] = None) -> List[VehiculoType]:
+    def vehiculos(
+        self,
+        info: Info,
+        propietario_id: Optional[int] = None,
+        buscar: Optional[str] = None,
+        estado: Optional[str] = None,
+        pagina: int = 1,
+        por_pagina: int = 20,
+    ) -> VehiculosPage:
         qs = Vehiculo.objects.select_related("tipo", "propietario")
         if propietario_id:
             qs = qs.filter(propietario_id=propietario_id)
-        return list(qs)
+        if estado:
+            qs = qs.filter(estado=estado)
+        if buscar:
+            b = buscar.strip()
+            qs = qs.filter(
+                Q(placa__icontains=b)
+                | Q(marca__icontains=b)
+                | Q(modelo__icontains=b)
+                | Q(propietario__nombre__icontains=b)
+                | Q(propietario__apellido__icontains=b)
+            )
+        # excluir pendientes de la lista general (solo admin los ve en vehiculos_pendientes)
+        usuario = info.context.request.user
+        if not tiene_rol(usuario, "Administrador"):
+            qs = qs.exclude(estado="pendiente")
+
+        qs = qs.order_by("-created_at")
+        total = qs.count()
+        pagina = max(1, pagina)
+        offset = (pagina - 1) * por_pagina
+        items = list(qs[offset: offset + por_pagina])
+        total_paginas = max(1, (total + por_pagina - 1) // por_pagina)
+        return VehiculosPage(items=items, total=total, pagina=pagina, total_paginas=total_paginas)
+
+    @strawberry.field
+    def vehiculos_pendientes(self, info: Info) -> List[VehiculoType]:
+        if not tiene_rol(info.context.request.user, "Administrador"):
+            raise Exception("Solo administradores pueden ver vehículos pendientes")
+        return list(
+            Vehiculo.objects.select_related("tipo", "propietario")
+            .filter(estado="pendiente")
+            .order_by("created_at")
+        )
 
     @strawberry.field
     def vehiculo(self, info: Info, id: int) -> Optional[VehiculoType]:
@@ -159,7 +210,69 @@ class VehiculosMutation:
             usuario=propietario,
             fecha_inicio=vehiculo.created_at.date(),
         )
+        # Notificar al administrador que hay un vehículo pendiente de aprobación
+        try:
+            from apps.usuarios.models import UsuarioRol
+            admins = [ur.usuario for ur in UsuarioRol.objects.filter(
+                rol__nombre="Administrador"
+            ).select_related("usuario").distinct()]
+            from apps.notificaciones.utils import enviar_notificacion
+            for admin in admins:
+                enviar_notificacion(
+                    usuario=admin,
+                    titulo=f"Vehículo pendiente — {vehiculo.placa}",
+                    mensaje=f"{vehiculo.marca} {vehiculo.modelo} registrado por {propietario.nombre} {propietario.apellido} requiere aprobación.",
+                    tipo_codigo="vehiculo_pendiente",
+                )
+        except Exception:
+            pass
         return vehiculo
+
+    @strawberry.mutation
+    def aprobar_vehiculo(self, info: Info, vehiculo_id: int) -> VehiculoType:
+        if not tiene_rol(info.context.request.user, "Administrador"):
+            raise Exception("Solo administradores pueden aprobar vehículos")
+        v = Vehiculo.objects.select_related("tipo", "propietario").filter(pk=vehiculo_id).first()
+        if not v:
+            raise Exception("Vehículo no encontrado")
+        if v.estado != "pendiente":
+            raise Exception("El vehículo no está pendiente de aprobación")
+        v.estado = "activo"
+        v.save()
+        try:
+            from apps.notificaciones.utils import enviar_notificacion
+            enviar_notificacion(
+                usuario=v.propietario,
+                titulo=f"Vehículo aprobado — {v.placa}",
+                mensaje=f"Tu vehículo {v.marca} {v.modelo} ({v.placa}) fue aprobado y está activo.",
+                tipo_codigo="vehiculo_aprobado",
+            )
+        except Exception:
+            pass
+        return v
+
+    @strawberry.mutation
+    def rechazar_vehiculo(self, info: Info, vehiculo_id: int, motivo: str) -> VehiculoType:
+        if not tiene_rol(info.context.request.user, "Administrador"):
+            raise Exception("Solo administradores pueden rechazar vehículos")
+        v = Vehiculo.objects.select_related("tipo", "propietario").filter(pk=vehiculo_id).first()
+        if not v:
+            raise Exception("Vehículo no encontrado")
+        if v.estado != "pendiente":
+            raise Exception("El vehículo no está pendiente de aprobación")
+        v.estado = "inactivo"
+        v.save()
+        try:
+            from apps.notificaciones.utils import enviar_notificacion
+            enviar_notificacion(
+                usuario=v.propietario,
+                titulo=f"Vehículo rechazado — {v.placa}",
+                mensaje=f"Tu vehículo {v.marca} {v.modelo} ({v.placa}) no fue aprobado. Motivo: {motivo}",
+                tipo_codigo="vehiculo_rechazado",
+            )
+        except Exception:
+            pass
+        return v
 
     @strawberry.mutation
     def actualizar_vehiculo(self, info: Info, id: int, input: ActualizarVehiculoInput) -> VehiculoType:
@@ -177,22 +290,20 @@ class VehiculosMutation:
         if input.color is not None:
             v.color = input.color
         if input.estado is not None:
-            if input.estado not in ["activo", "inactivo", "sancionado"]:
-                raise Exception("Estado inválido. Opciones: activo, inactivo, sancionado")
+            if input.estado not in ESTADOS_VALIDOS:
+                raise Exception(f"Estado inválido. Opciones: {', '.join(ESTADOS_VALIDOS)}")
             v.estado = input.estado
         v.save()
         return v
 
     @strawberry.mutation
     def regenerar_qr(self, info: Info, vehiculo_id: int) -> VehiculoType:
-        """Genera un nuevo codigo_qr para el vehículo, invalidando el anterior."""
         solicitante = info.context.request.user
         if not solicitante.is_authenticated:
             raise Exception("Autenticación requerida")
         v = Vehiculo.objects.select_related("tipo", "propietario").filter(pk=vehiculo_id).first()
         if not v:
             raise Exception("Vehículo no encontrado")
-        # Admin puede regenerar cualquier QR; el propietario solo el suyo
         if not tiene_rol(solicitante, "Administrador") and v.propietario_id != solicitante.pk:
             raise Exception("Solo puedes regenerar el QR de tu propio vehículo")
         v.codigo_qr = hashlib.sha256(f"{v.placa}-{uuid.uuid4()}".encode()).hexdigest()

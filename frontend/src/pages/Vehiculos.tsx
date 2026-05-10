@@ -1,18 +1,25 @@
 import { useState, FormEvent } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
-import { Car, Plus, RefreshCw, FileText, Edit, QrCode, X, AlertTriangle } from 'lucide-react'
+import {
+  Car, Plus, RefreshCw, FileText, Edit, QrCode, X,
+  AlertTriangle, Search, ChevronLeft, ChevronRight,
+  CheckCircle, XCircle, Clock,
+} from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { QrImage } from '../components/QrImage'
-import { VEHICULOS_QUERY, TIPOS_VEHICULO_QUERY } from '../graphql/queries/vehiculos'
+import { VEHICULOS_QUERY, VEHICULOS_PENDIENTES_QUERY, TIPOS_VEHICULO_QUERY } from '../graphql/queries/vehiculos'
 import {
   REGISTRAR_VEHICULO_MUTATION,
   ACTUALIZAR_VEHICULO_MUTATION,
   REGENERAR_QR_MUTATION,
   AGREGAR_DOCUMENTO_MUTATION,
+  APROBAR_VEHICULO_MUTATION,
+  RECHAZAR_VEHICULO_MUTATION,
 } from '../graphql/mutations/vehiculos'
 import { USUARIOS_QUERY } from '../graphql/queries/usuarios'
 
 const ESTADO_BADGE: Record<string, string> = {
+  pendiente:  'bg-amber-100 text-amber-700',
   activo:     'bg-green-100 text-green-700',
   inactivo:   'bg-slate-100 text-slate-600',
   sancionado: 'bg-red-100 text-red-700',
@@ -25,38 +32,58 @@ const TIPO_DOC_LABELS: Record<string, string> = {
   otro:        'Otro',
 }
 
+type Documento = { id: number; tipoDoc: string; numero: string; fechaVencimiento: string }
 type Vehiculo = {
   id: number; placa: string; marca: string; modelo: string; anio: number;
   color: string; estado: string; codigoQr: string; createdAt: string;
   tipo: { id: number; nombre: string }; propietarioNombre: string;
-  documentos: { id: number; tipoDoc: string; numero: string; fechaVencimiento: string }[]
+  documentos: Documento[]
 }
 
-type Modal = 'registrar' | 'editar' | 'documento' | 'qr' | null
+type Tab   = 'lista' | 'pendientes'
+type Modal = 'registrar' | 'editar' | 'documento' | 'qr' | 'rechazar' | null
+
+const POR_PAGINA = 15
 
 export default function Vehiculos() {
   const { usuario, esAdmin } = useAuth()
-  const [modal, setModal] = useState<Modal>(null)
-  const [seleccionado, setSeleccionado] = useState<Vehiculo | null>(null)
+  const [tab, setTab]                     = useState<Tab>('lista')
+  const [modal, setModal]                 = useState<Modal>(null)
+  const [seleccionado, setSeleccionado]   = useState<Vehiculo | null>(null)
   const [confirmarRegen, setConfirmarRegen] = useState(false)
-  const [error, setError] = useState('')
-  const [filtroEstado, setFiltroEstado] = useState('')
+  const [error, setError]                 = useState('')
+  const [filtroEstado, setFiltroEstado]   = useState('')
+  const [busqueda, setBusqueda]           = useState('')
+  const [pagina, setPagina]               = useState(1)
+  const [motivoRechazo, setMotivoRechazo] = useState('')
 
   const propietarioId = esAdmin ? undefined : usuario.id
 
   const { data, loading, refetch } = useQuery(VEHICULOS_QUERY, {
-    variables: { propietarioId },
+    variables: { propietarioId, buscar: busqueda || undefined, estado: filtroEstado || undefined, pagina, porPagina: POR_PAGINA },
     fetchPolicy: 'cache-and-network',
   })
-  const { data: tiposData } = useQuery(TIPOS_VEHICULO_QUERY)
+  const { data: pendientesData, refetch: refetchPendientes } = useQuery(VEHICULOS_PENDIENTES_QUERY, {
+    skip: !esAdmin,
+    fetchPolicy: 'cache-and-network',
+  })
+  const { data: tiposData }    = useQuery(TIPOS_VEHICULO_QUERY)
   const { data: usuariosData } = useQuery(USUARIOS_QUERY, { skip: !esAdmin })
 
   const [registrarVehiculo, { loading: loadingRegistrar }] = useMutation(REGISTRAR_VEHICULO_MUTATION, {
-    onCompleted() { cerrarModal(); refetch() },
+    onCompleted() { cerrarModal(); refetch(); refetchPendientes() },
     onError(e) { setError(e.message) },
   })
   const [actualizarVehiculo, { loading: loadingActualizar }] = useMutation(ACTUALIZAR_VEHICULO_MUTATION, {
     onCompleted() { cerrarModal(); refetch() },
+    onError(e) { setError(e.message) },
+  })
+  const [aprobarVehiculo, { loading: loadingAprobar }] = useMutation(APROBAR_VEHICULO_MUTATION, {
+    onCompleted() { refetch(); refetchPendientes() },
+    onError(e) { setError(e.message) },
+  })
+  const [rechazarVehiculo, { loading: loadingRechazar }] = useMutation(RECHAZAR_VEHICULO_MUTATION, {
+    onCompleted() { cerrarModal(); refetch(); refetchPendientes() },
     onError(e) { setError(e.message) },
   })
   const [regenerarQr] = useMutation(REGENERAR_QR_MUTATION, {
@@ -71,33 +98,42 @@ export default function Vehiculos() {
     onError(e) { setError(e.message) },
   })
 
-  const vehiculos: Vehiculo[] = data?.vehiculos ?? []
-  const tipos = tiposData?.tiposVehiculo ?? []
+  const page      = data?.vehiculos
+  const vehiculos: Vehiculo[] = page?.items ?? []
+  const total: number         = page?.total ?? 0
+  const totalPaginas: number  = page?.totalPaginas ?? 1
+  const tipos    = tiposData?.tiposVehiculo ?? []
   const usuarios = usuariosData?.usuarios ?? []
+  const pendientes: Vehiculo[] = pendientesData?.vehiculosPendientes ?? []
 
-  const vehiculosFiltrados = filtroEstado
-    ? vehiculos.filter(v => v.estado === filtroEstado)
-    : vehiculos
+  function cerrarModal() {
+    setModal(null); setSeleccionado(null); setError(''); setConfirmarRegen(false); setMotivoRechazo('')
+  }
+  function abrirQr(v: Vehiculo)       { setSeleccionado(v); setModal('qr') }
+  function abrirEditar(v: Vehiculo)   { setSeleccionado(v); setModal('editar') }
+  function abrirDocumento(v: Vehiculo){ setSeleccionado(v); setModal('documento') }
+  function abrirRechazar(v: Vehiculo) { setSeleccionado(v); setModal('rechazar') }
 
-  function cerrarModal() { setModal(null); setSeleccionado(null); setError(''); setConfirmarRegen(false) }
-
-  function abrirQr(v: Vehiculo) { setSeleccionado(v); setModal('qr') }
-  function abrirEditar(v: Vehiculo) { setSeleccionado(v); setModal('editar') }
-  function abrirDocumento(v: Vehiculo) { setSeleccionado(v); setModal('documento') }
+  function cambioBusqueda(val: string) { setBusqueda(val); setPagina(1) }
+  function cambioEstado(val: string)   { setFiltroEstado(val); setPagina(1) }
 
   function handleRegistrar(e: FormEvent<HTMLFormElement>) {
     e.preventDefault(); setError('')
     const f = new FormData(e.currentTarget)
+    const placa = (f.get('placa') as string).trim().toUpperCase()
+    if (!/^[A-Z0-9\-]{3,10}$/.test(placa)) {
+      setError('La placa debe tener entre 3 y 10 caracteres alfanuméricos'); return
+    }
     registrarVehiculo({
       variables: {
         input: {
-          placa:        (f.get('placa') as string).trim().toUpperCase(),
-          tipoId:       parseInt(f.get('tipoId') as string),
-          propietarioId:parseInt(f.get('propietarioId') as string),
-          marca:        (f.get('marca') as string).trim(),
-          modelo:       (f.get('modelo') as string).trim(),
-          anio:         parseInt(f.get('anio') as string),
-          color:        (f.get('color') as string).trim(),
+          placa,
+          tipoId:        parseInt(f.get('tipoId') as string),
+          propietarioId: parseInt(f.get('propietarioId') as string),
+          marca:  (f.get('marca') as string).trim(),
+          modelo: (f.get('modelo') as string).trim(),
+          anio:   parseInt(f.get('anio') as string),
+          color:  (f.get('color') as string).trim(),
         },
       },
     })
@@ -110,11 +146,11 @@ export default function Vehiculos() {
       variables: {
         id: seleccionado!.id,
         input: {
-          marca:   (f.get('marca') as string).trim() || null,
-          modelo:  (f.get('modelo') as string).trim() || null,
-          anio:    parseInt(f.get('anio') as string) || null,
-          color:   (f.get('color') as string).trim() || null,
-          estado:  (f.get('estado') as string) || null,
+          marca:  (f.get('marca') as string).trim() || null,
+          modelo: (f.get('modelo') as string).trim() || null,
+          anio:   parseInt(f.get('anio') as string) || null,
+          color:  (f.get('color') as string).trim() || null,
+          estado: (f.get('estado') as string) || null,
         },
       },
     })
@@ -126,23 +162,27 @@ export default function Vehiculos() {
     agregarDocumento({
       variables: {
         input: {
-          vehiculoId:      seleccionado!.id,
-          tipoDoc:         f.get('tipoDoc') as string,
-          numero:          (f.get('numero') as string).trim(),
-          fechaVencimiento:f.get('fechaVencimiento') as string,
+          vehiculoId:       seleccionado!.id,
+          tipoDoc:          f.get('tipoDoc') as string,
+          numero:           (f.get('numero') as string).trim(),
+          fechaVencimiento: f.get('fechaVencimiento') as string,
         },
       },
     })
   }
 
+  function handleRechazar(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault(); setError('')
+    if (!motivoRechazo.trim()) { setError('Debes indicar el motivo del rechazo'); return }
+    rechazarVehiculo({ variables: { vehiculoId: seleccionado!.id, motivo: motivoRechazo.trim() } })
+  }
+
   return (
     <div className="p-8">
       {/* Encabezado */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <div className="bg-emerald-500 text-white p-2 rounded-xl">
-            <Car size={20} />
-          </div>
+          <div className="bg-emerald-500 text-white p-2 rounded-xl"><Car size={20} /></div>
           <div>
             <h1 className="text-xl font-bold text-slate-800">Vehículos</h1>
             <p className="text-slate-500 text-xs">
@@ -150,105 +190,263 @@ export default function Vehiculos() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <select
-            value={filtroEstado}
-            onChange={e => setFiltroEstado(e.target.value)}
-            className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+        {esAdmin && (
+          <button
+            onClick={() => setModal('registrar')}
+            className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
           >
-            <option value="">Todos los estados</option>
-            <option value="activo">Activo</option>
-            <option value="inactivo">Inactivo</option>
-            <option value="sancionado">Sancionado</option>
-          </select>
-          {esAdmin && (
-            <button
-              onClick={() => setModal('registrar')}
-              className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-            >
-              <Plus size={16} /> Registrar Vehículo
-            </button>
-          )}
-        </div>
+            <Plus size={16} /> Registrar Vehículo
+          </button>
+        )}
       </div>
 
-      {/* Tabla */}
-      {loading ? (
-        <div className="text-center py-12 text-slate-400">Cargando vehículos...</div>
-      ) : vehiculosFiltrados.length === 0 ? (
-        <div className="text-center py-12 text-slate-400">
-          <Car size={40} className="mx-auto mb-2 opacity-30" />
-          <p>No hay vehículos registrados</p>
-          {!esAdmin && <p className="text-xs mt-1">Solicita al administrador que registre tu vehículo</p>}
-        </div>
-      ) : (
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
-              <tr>
-                <th className="px-4 py-3 text-left">Placa</th>
-                <th className="px-4 py-3 text-left">Tipo</th>
-                <th className="px-4 py-3 text-left">Marca / Modelo</th>
-                <th className="px-4 py-3 text-left">Año</th>
-                <th className="px-4 py-3 text-left">Color</th>
-                <th className="px-4 py-3 text-left">Estado</th>
-                {esAdmin && <th className="px-4 py-3 text-left">Propietario</th>}
-                <th className="px-4 py-3 text-left">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {vehiculosFiltrados.map(v => (
-                <tr key={v.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-3 font-mono font-bold text-slate-800">{v.placa}</td>
-                  <td className="px-4 py-3 text-slate-600">{v.tipo?.nombre}</td>
-                  <td className="px-4 py-3 text-slate-700">{v.marca} {v.modelo}</td>
-                  <td className="px-4 py-3 text-slate-600">{v.anio}</td>
-                  <td className="px-4 py-3 text-slate-600 capitalize">{v.color}</td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ESTADO_BADGE[v.estado] ?? 'bg-slate-100 text-slate-600'}`}>
-                      {v.estado}
-                    </span>
-                  </td>
-                  {esAdmin && <td className="px-4 py-3 text-slate-600">{v.propietarioNombre}</td>}
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => abrirQr(v)}
-                        title="Ver QR"
-                        className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                      >
-                        <QrCode size={15} />
-                      </button>
-                      {esAdmin && (
-                        <>
-                          <button
-                            onClick={() => abrirEditar(v)}
-                            title="Editar"
-                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          >
-                            <Edit size={15} />
-                          </button>
-                          <button
-                            onClick={() => abrirDocumento(v)}
-                            title="Documentos"
-                            className="p-1.5 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-colors"
-                          >
-                            <FileText size={15} />
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Tabs (solo admin) */}
+      {esAdmin && (
+        <div className="flex gap-1 mb-4 border-b border-slate-200">
+          <TabBtn active={tab === 'lista'} onClick={() => setTab('lista')}>
+            Lista de vehículos
+          </TabBtn>
+          <TabBtn active={tab === 'pendientes'} onClick={() => setTab('pendientes')}>
+            <span className="flex items-center gap-1.5">
+              <Clock size={13} />
+              Pendientes de aprobación
+              {pendientes.length > 0 && (
+                <span className="bg-amber-500 text-white text-xs w-4 h-4 flex items-center justify-center rounded-full font-bold">
+                  {pendientes.length > 9 ? '9+' : pendientes.length}
+                </span>
+              )}
+            </span>
+          </TabBtn>
         </div>
       )}
+
+      {/* ── TAB: LISTA ── */}
+      {tab === 'lista' && (
+        <>
+          {/* Barra de búsqueda y filtros */}
+          <div className="flex items-center gap-3 mb-4">
+            <div className="relative flex-1 max-w-sm">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Buscar por placa, marca, modelo, propietario..."
+                value={busqueda}
+                onChange={e => cambioBusqueda(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
+              />
+            </div>
+            <select
+              value={filtroEstado}
+              onChange={e => cambioEstado(e.target.value)}
+              className="border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+            >
+              <option value="">Todos los estados</option>
+              <option value="activo">Activo</option>
+              <option value="inactivo">Inactivo</option>
+              <option value="sancionado">Sancionado</option>
+            </select>
+            {(busqueda || filtroEstado) && (
+              <button
+                onClick={() => { cambioBusqueda(''); cambioEstado('') }}
+                className="text-xs text-slate-400 hover:text-slate-600 underline"
+              >
+                Limpiar
+              </button>
+            )}
+          </div>
+
+          {loading ? (
+            <div className="space-y-2">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="bg-white rounded-xl h-14 animate-pulse" />
+              ))}
+            </div>
+          ) : vehiculos.length === 0 ? (
+            <div className="text-center py-16 text-slate-400">
+              <Car size={40} className="mx-auto mb-2 opacity-30" />
+              <p className="font-medium text-slate-600">
+                {busqueda || filtroEstado ? 'Sin resultados para esta búsqueda' : 'No hay vehículos registrados'}
+              </p>
+              {!esAdmin && !busqueda && (
+                <p className="text-xs mt-1">Solicita al administrador que registre tu vehículo</p>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+                    <tr>
+                      <th className="px-4 py-3 text-left">Placa</th>
+                      <th className="px-4 py-3 text-left">Tipo</th>
+                      <th className="px-4 py-3 text-left">Marca / Modelo</th>
+                      <th className="px-4 py-3 text-left">Año</th>
+                      <th className="px-4 py-3 text-left">Color</th>
+                      <th className="px-4 py-3 text-left">Estado</th>
+                      {esAdmin && <th className="px-4 py-3 text-left">Propietario</th>}
+                      <th className="px-4 py-3 text-left">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {vehiculos.map(v => (
+                      <tr key={v.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-3 font-mono font-bold text-slate-800">{v.placa}</td>
+                        <td className="px-4 py-3 text-slate-600">{v.tipo?.nombre}</td>
+                        <td className="px-4 py-3 text-slate-700">{v.marca} {v.modelo}</td>
+                        <td className="px-4 py-3 text-slate-600">{v.anio}</td>
+                        <td className="px-4 py-3 text-slate-600 capitalize">{v.color}</td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ESTADO_BADGE[v.estado] ?? 'bg-slate-100 text-slate-600'}`}>
+                            {v.estado}
+                          </span>
+                        </td>
+                        {esAdmin && <td className="px-4 py-3 text-slate-600">{v.propietarioNombre}</td>}
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => abrirQr(v)} title="Ver QR"
+                              className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors">
+                              <QrCode size={15} />
+                            </button>
+                            {esAdmin && (
+                              <>
+                                <button onClick={() => abrirEditar(v)} title="Editar"
+                                  className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                                  <Edit size={15} />
+                                </button>
+                                <button onClick={() => abrirDocumento(v)} title="Documentos"
+                                  className="p-1.5 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-colors">
+                                  <FileText size={15} />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Paginación */}
+              {totalPaginas > 1 && (
+                <div className="flex items-center justify-between mt-4 text-sm text-slate-500">
+                  <span>{total} vehículo{total !== 1 ? 's' : ''} · Página {pagina} de {totalPaginas}</span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setPagina(p => Math.max(1, p - 1))}
+                      disabled={pagina === 1}
+                      className="p-1.5 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    {Array.from({ length: totalPaginas }, (_, i) => i + 1)
+                      .filter(p => p === 1 || p === totalPaginas || Math.abs(p - pagina) <= 1)
+                      .reduce<(number | '…')[]>((acc, p, idx, arr) => {
+                        if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push('…')
+                        acc.push(p); return acc
+                      }, [])
+                      .map((p, i) =>
+                        p === '…' ? (
+                          <span key={`e${i}`} className="px-2">…</span>
+                        ) : (
+                          <button
+                            key={p}
+                            onClick={() => setPagina(p as number)}
+                            className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${
+                              pagina === p
+                                ? 'bg-emerald-500 text-white'
+                                : 'hover:bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        )
+                      )}
+                    <button
+                      onClick={() => setPagina(p => Math.min(totalPaginas, p + 1))}
+                      disabled={pagina === totalPaginas}
+                      className="p-1.5 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                </div>
+              )}
+              {totalPaginas === 1 && total > 0 && (
+                <p className="text-center text-xs text-slate-400 mt-3">{total} vehículo{total !== 1 ? 's' : ''}</p>
+              )}
+            </>
+          )}
+        </>
+      )}
+
+      {/* ── TAB: PENDIENTES ── */}
+      {tab === 'pendientes' && esAdmin && (
+        <>
+          {pendientes.length === 0 ? (
+            <div className="text-center py-16 text-slate-400">
+              <CheckCircle size={40} className="mx-auto mb-2 text-emerald-400 opacity-60" />
+              <p className="font-medium text-slate-600">No hay vehículos pendientes</p>
+              <p className="text-xs mt-1">Todos los vehículos han sido revisados</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {pendientes.map(v => (
+                <div key={v.id} className="bg-white rounded-xl shadow-sm border border-amber-200 p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-mono font-bold text-slate-800 text-lg">{v.placa}</span>
+                        <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                          <Clock size={10} /> Pendiente
+                        </span>
+                      </div>
+                      <p className="text-slate-600 text-sm">{v.marca} {v.modelo} · {v.anio} · <span className="capitalize">{v.color}</span></p>
+                      <p className="text-slate-500 text-xs mt-0.5">Tipo: {v.tipo?.nombre} · Propietario: {v.propietarioNombre}</p>
+                      <p className="text-slate-400 text-xs mt-0.5">
+                        Registrado: {new Date(v.createdAt).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' })}
+                      </p>
+                      {v.documentos.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {v.documentos.map(d => (
+                            <span key={d.id} className="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">
+                              {TIPO_DOC_LABELS[d.tipoDoc]} · vence {d.fechaVencimiento}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-2 shrink-0">
+                      <button
+                        onClick={() => aprobarVehiculo({ variables: { vehiculoId: v.id } })}
+                        disabled={loadingAprobar}
+                        className="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-sm px-3 py-2 rounded-lg transition-colors disabled:opacity-50 font-medium"
+                      >
+                        <CheckCircle size={15} /> Aprobar
+                      </button>
+                      <button
+                        onClick={() => abrirRechazar(v)}
+                        className="flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-600 text-sm px-3 py-2 rounded-lg transition-colors font-medium border border-red-200"
+                      >
+                        <XCircle size={15} /> Rechazar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── MODALES ── */}
 
       {/* Modal Registrar */}
       {modal === 'registrar' && (
         <ModalWrapper titulo="Registrar Vehículo" onClose={cerrarModal}>
+          <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+            El vehículo quedará en estado <strong>Pendiente</strong> hasta que sea aprobado.
+          </p>
           <form onSubmit={handleRegistrar} className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <Campo label="Placa *" name="placa" placeholder="ABC-123" />
@@ -278,7 +476,36 @@ export default function Vehiculos() {
               <Campo label="Color *" name="color" placeholder="Blanco" />
             </div>
             {error && <MsgError texto={error} />}
-            <BtnSubmit loading={loadingRegistrar} label="Registrar" />
+            <BtnSubmit loading={loadingRegistrar} label="Registrar vehículo" />
+          </form>
+        </ModalWrapper>
+      )}
+
+      {/* Modal Rechazar */}
+      {modal === 'rechazar' && seleccionado && (
+        <ModalWrapper titulo={`Rechazar — ${seleccionado.placa}`} onClose={cerrarModal}>
+          <form onSubmit={handleRechazar} className="space-y-3">
+            <p className="text-sm text-slate-600">
+              Indica el motivo del rechazo. El propietario recibirá una notificación.
+            </p>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Motivo *</label>
+              <textarea
+                value={motivoRechazo}
+                onChange={e => setMotivoRechazo(e.target.value)}
+                rows={3}
+                placeholder="Ej: Documentación incompleta, placa ilegible..."
+                className={`${inputCls} resize-none`}
+              />
+            </div>
+            {error && <MsgError texto={error} />}
+            <button
+              type="submit"
+              disabled={loadingRechazar}
+              className="w-full bg-red-500 hover:bg-red-600 text-white font-medium py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50"
+            >
+              {loadingRechazar ? 'Rechazando...' : 'Confirmar rechazo'}
+            </button>
           </form>
         </ModalWrapper>
       )}
@@ -298,6 +525,7 @@ export default function Vehiculos() {
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Estado</label>
               <select name="estado" defaultValue={seleccionado.estado} className={inputCls}>
+                <option value="pendiente">Pendiente de aprobación</option>
                 <option value="activo">Activo</option>
                 <option value="inactivo">Inactivo</option>
                 <option value="sancionado">Sancionado</option>
@@ -350,8 +578,6 @@ export default function Vehiculos() {
       {modal === 'qr' && seleccionado && (
         <ModalWrapper titulo={`Código QR — ${seleccionado.placa}`} onClose={cerrarModal}>
           <div className="flex flex-col items-center gap-4">
-
-            {/* Info del vehículo */}
             <div className="w-full bg-slate-50 rounded-xl px-4 py-3 text-center">
               <p className="font-mono font-bold text-slate-800 text-lg">{seleccionado.placa}</p>
               <p className="text-slate-500 text-sm">{seleccionado.marca} {seleccionado.modelo} · {seleccionado.anio}</p>
@@ -360,16 +586,21 @@ export default function Vehiculos() {
               </span>
             </div>
 
-            {/* QR real */}
-            <QrImage
-              value={seleccionado.codigoQr}
-              size={220}
-              label={`QR permanente — ${seleccionado.placa}`}
-              showDownload
-              downloadName={`QR-${seleccionado.placa}`}
-            />
+            {seleccionado.estado === 'pendiente' ? (
+              <div className="w-full bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-2 text-amber-700 text-xs">
+                <Clock size={14} className="shrink-0 mt-0.5" />
+                Este vehículo aún no ha sido aprobado. El QR no será válido en los puntos de acceso hasta su aprobación.
+              </div>
+            ) : (
+              <QrImage
+                value={seleccionado.codigoQr}
+                size={220}
+                label={`QR permanente — ${seleccionado.placa}`}
+                showDownload
+                downloadName={`QR-${seleccionado.placa}`}
+              />
+            )}
 
-            {/* Alerta de estado sancionado */}
             {seleccionado.estado === 'sancionado' && (
               <div className="w-full bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-2 text-red-700 text-xs">
                 <AlertTriangle size={14} className="shrink-0 mt-0.5" />
@@ -377,40 +608,37 @@ export default function Vehiculos() {
               </div>
             )}
 
-            {/* Regenerar QR */}
-            {!confirmarRegen ? (
-              <button
-                onClick={() => setConfirmarRegen(true)}
-                className="flex items-center gap-2 text-sm text-orange-600 hover:text-orange-800 border border-orange-200 hover:border-orange-400 px-4 py-2 rounded-xl transition-colors"
-              >
-                <RefreshCw size={14} /> Regenerar QR
-              </button>
-            ) : (
-              <div className="w-full bg-amber-50 border border-amber-200 rounded-xl p-4">
-                <p className="text-amber-800 text-sm font-medium mb-1">¿Confirmar regeneración?</p>
-                <p className="text-amber-700 text-xs mb-3">
-                  El código QR actual quedará <strong>invalidado permanentemente</strong>. El vehículo necesitará este nuevo QR para acceder.
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      regenerarQr({ variables: { vehiculoId: seleccionado.id } })
-                      setConfirmarRegen(false)
-                    }}
-                    className="flex-1 bg-orange-500 hover:bg-orange-600 text-white text-sm py-2 rounded-lg transition-colors"
-                  >
-                    Sí, regenerar
-                  </button>
-                  <button
-                    onClick={() => setConfirmarRegen(false)}
-                    className="flex-1 border border-slate-300 text-slate-600 text-sm py-2 rounded-lg hover:bg-slate-50 transition-colors"
-                  >
-                    Cancelar
-                  </button>
+            {seleccionado.estado !== 'pendiente' && (
+              !confirmarRegen ? (
+                <button
+                  onClick={() => setConfirmarRegen(true)}
+                  className="flex items-center gap-2 text-sm text-orange-600 hover:text-orange-800 border border-orange-200 hover:border-orange-400 px-4 py-2 rounded-xl transition-colors"
+                >
+                  <RefreshCw size={14} /> Regenerar QR
+                </button>
+              ) : (
+                <div className="w-full bg-amber-50 border border-amber-200 rounded-xl p-4">
+                  <p className="text-amber-800 text-sm font-medium mb-1">¿Confirmar regeneración?</p>
+                  <p className="text-amber-700 text-xs mb-3">
+                    El código QR actual quedará <strong>invalidado permanentemente</strong>.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { regenerarQr({ variables: { vehiculoId: seleccionado.id } }); setConfirmarRegen(false) }}
+                      className="flex-1 bg-orange-500 hover:bg-orange-600 text-white text-sm py-2 rounded-lg transition-colors"
+                    >
+                      Sí, regenerar
+                    </button>
+                    <button
+                      onClick={() => setConfirmarRegen(false)}
+                      className="flex-1 border border-slate-300 text-slate-600 text-sm py-2 rounded-lg hover:bg-slate-50 transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )
             )}
-
             {error && <MsgError texto={error} />}
           </div>
         </ModalWrapper>
@@ -419,9 +647,24 @@ export default function Vehiculos() {
   )
 }
 
-// ── Componentes auxiliares ──────────────────────────────
+// ── Componentes auxiliares ────────────────────────────────────────
 
 const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400'
+
+function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+        active
+          ? 'border-emerald-500 text-emerald-600'
+          : 'border-transparent text-slate-500 hover:text-slate-700'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
 
 function Campo({ label, name, type = 'text', placeholder = '', defaultValue = '' }: {
   label: string; name: string; type?: string; placeholder?: string; defaultValue?: string
@@ -445,9 +688,7 @@ function ModalWrapper({ titulo, onClose, children }: {
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <h2 className="font-semibold text-slate-800">{titulo}</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
-            <X size={18} />
-          </button>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
         </div>
         <div className="px-6 py-4">{children}</div>
       </div>
@@ -457,7 +698,8 @@ function ModalWrapper({ titulo, onClose, children }: {
 
 function MsgError({ texto }: { texto: string }) {
   return (
-    <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">
+    <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2 flex items-start gap-2">
+      <AlertTriangle size={14} className="shrink-0 mt-0.5" />
       {texto}
     </div>
   )

@@ -1,5 +1,6 @@
 import os
 from celery import Celery
+from celery.schedules import crontab
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.development")
 
@@ -16,5 +17,9 @@ app.conf.beat_schedule = {
     "limpiar-pases-cada-hora": {
         "task": "acceso.limpiar_pases_expirados",
         "schedule": 3600.0,
+    },
+    "alertar-documentos-diario": {
+        "task": "vehiculos.alertar_documentos",
+        "schedule": crontab(hour=8, minute=0),  # Todos los días a las 8:00 AM
     },
 }

@@ -43,7 +43,7 @@ export default function Parqueos() {
     skip: !zonaSelId,
   })
   const { data: categoriasData } = useQuery(CATEGORIAS_ESPACIO_QUERY)
-  const { data: vehiculosData } = useQuery(VEHICULOS_QUERY, { variables: {} })
+  const { data: vehiculosData } = useQuery(VEHICULOS_QUERY, { variables: { porPagina: 500 } })
   const { data: historialData } = useQuery(HISTORIAL_SESIONES_QUERY, {
     variables: { vehiculoId: vehiculoHistId, limite: 15 },
     skip: !vehiculoHistId,
@@ -69,7 +69,7 @@ export default function Parqueos() {
   const zonas = zonasData?.zonas ?? []
   const espacios = espaciosData?.espaciosPorZona ?? []
   const categorias = categoriasData?.categoriasEspacio ?? []
-  const vehiculos = vehiculosData?.vehiculos ?? []
+  const vehiculos = vehiculosData?.vehiculos?.items ?? []
   const historial = historialData?.historialSesiones ?? []
   const zonaActual = zonas.find((z: any) => z.id === zonaSelId)
 

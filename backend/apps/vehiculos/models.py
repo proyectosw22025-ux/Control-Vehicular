@@ -19,6 +19,7 @@ class TipoVehiculo(models.Model):
 
 class Vehiculo(models.Model):
     ESTADOS = [
+        ("pendiente", "Pendiente de aprobación"),
         ("activo", "Activo"),
         ("inactivo", "Inactivo"),
         ("sancionado", "Sancionado"),
@@ -35,7 +36,7 @@ class Vehiculo(models.Model):
     modelo = models.CharField(max_length=60)
     anio = models.PositiveSmallIntegerField()
     color = models.CharField(max_length=40)
-    estado = models.CharField(max_length=15, choices=ESTADOS, default="activo")
+    estado = models.CharField(max_length=15, choices=ESTADOS, default="pendiente")
     foto = models.ImageField(upload_to="vehiculos/fotos/", blank=True, null=True)
     codigo_qr = models.CharField(
         max_length=64, unique=True, blank=True,

@@ -48,7 +48,7 @@ export default function Multas() {
     skip: !esPersonal,
   })
   const { data: misVehiculosData } = useQuery(VEHICULOS_QUERY, {
-    variables: { propietarioId: esPersonal ? undefined : usuario.id },
+    variables: { propietarioId: esPersonal ? undefined : usuario.id, porPagina: 500 },
     fetchPolicy: 'cache-and-network',
   })
   const { data: multasVehData, refetch: refetchVeh } = useQuery(MULTAS_VEHICULO_QUERY, {
@@ -77,7 +77,7 @@ export default function Multas() {
     onError(e) { setError(e.message) },
   })
 
-  const misVehiculos = misVehiculosData?.vehiculos ?? []
+  const misVehiculos = misVehiculosData?.vehiculos?.items ?? []
   const tipos = tiposData?.tiposMulta ?? []
   const multasPendientes: Multa[] = pendientesData?.multasPendientes ?? []
   const multasVehiculo: Multa[] = multasVehData?.multasVehiculo ?? []

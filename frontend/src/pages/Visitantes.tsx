@@ -36,7 +36,7 @@ export default function Visitantes() {
     fetchPolicy: 'cache-and-network',
   })
   const { data: tiposData } = useQuery(TIPOS_VISITA_QUERY)
-  const { data: vehiculosData } = useQuery(VEHICULOS_QUERY, { variables: {} })
+  const { data: vehiculosData } = useQuery(VEHICULOS_QUERY, { variables: { porPagina: 500 } })
   const { data: usuariosData } = useQuery(USUARIOS_QUERY)
   const { data: visitantesData, refetch: refetchBusqueda } = useQuery(VISITANTES_QUERY, {
     variables: { buscar: busqueda || null },
@@ -72,7 +72,7 @@ export default function Visitantes() {
 
   const visitasActivas = visitasData?.visitasActivas ?? []
   const tipos = tiposData?.tiposVisita ?? []
-  const vehiculos = vehiculosData?.vehiculos ?? []
+  const vehiculos = vehiculosData?.vehiculos?.items ?? []
   const usuarios = usuariosData?.usuarios ?? []
   const visitantesResultado = visitantesData?.visitantes ?? []
 

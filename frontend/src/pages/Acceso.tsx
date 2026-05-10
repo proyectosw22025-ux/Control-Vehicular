@@ -41,7 +41,7 @@ export default function Acceso() {
     variables: { limite: 30 },
     fetchPolicy: 'cache-and-network',
   })
-  const { data: vehiculosData } = useQuery(VEHICULOS_QUERY, { variables: {} })
+  const { data: vehiculosData } = useQuery(VEHICULOS_QUERY, { variables: { porPagina: 500 } })
 
   const [registrarAcceso, { loading: loadingQr }] = useMutation(REGISTRAR_ACCESO_MUTATION, {
     onCompleted(d) {
@@ -78,7 +78,7 @@ export default function Acceso() {
   const codigoInputRef = useRef<HTMLInputElement>(null)
   const puntos = puntosData?.puntosAcceso ?? []
   const registros = registrosData?.registrosAcceso ?? []
-  const vehiculos = vehiculosData?.vehiculos ?? []
+  const vehiculos = vehiculosData?.vehiculos?.items ?? []
 
   function handleQr(e: FormEvent<HTMLFormElement>) {
     e.preventDefault(); setResultado(null); setError('')
