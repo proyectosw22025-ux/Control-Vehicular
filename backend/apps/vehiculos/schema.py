@@ -210,13 +210,12 @@ class VehiculosMutation:
             usuario=propietario,
             fecha_inicio=vehiculo.created_at.date(),
         )
-        # Notificar al administrador que hay un vehículo pendiente de aprobación
         try:
             from apps.usuarios.models import UsuarioRol
+            from apps.notificaciones.utils import enviar_notificacion, enviar_email
             admins = [ur.usuario for ur in UsuarioRol.objects.filter(
                 rol__nombre="Administrador"
             ).select_related("usuario").distinct()]
-            from apps.notificaciones.utils import enviar_notificacion
             for admin in admins:
                 enviar_notificacion(
                     usuario=admin,
@@ -224,6 +223,16 @@ class VehiculosMutation:
                     mensaje=f"{vehiculo.marca} {vehiculo.modelo} registrado por {propietario.nombre} {propietario.apellido} requiere aprobación.",
                     tipo_codigo="vehiculo_pendiente",
                 )
+            enviar_email(
+                usuario=propietario,
+                asunto=f"Vehículo {vehiculo.placa} registrado — pendiente de aprobación",
+                cuerpo=(
+                    f"Hola {propietario.nombre},\n\n"
+                    f"Tu vehículo {vehiculo.marca} {vehiculo.modelo} ({vehiculo.placa}) ha sido registrado "
+                    f"y está pendiente de aprobación por un administrador.\n\n"
+                    f"Recibirás otra notificación cuando sea procesado.\n"
+                ),
+            )
         except Exception:
             pass
         return vehiculo
@@ -240,12 +249,21 @@ class VehiculosMutation:
         v.estado = "activo"
         v.save()
         try:
-            from apps.notificaciones.utils import enviar_notificacion
+            from apps.notificaciones.utils import enviar_notificacion, enviar_email
             enviar_notificacion(
                 usuario=v.propietario,
                 titulo=f"Vehículo aprobado — {v.placa}",
                 mensaje=f"Tu vehículo {v.marca} {v.modelo} ({v.placa}) fue aprobado y está activo.",
                 tipo_codigo="vehiculo_aprobado",
+            )
+            enviar_email(
+                usuario=v.propietario,
+                asunto=f"Vehículo {v.placa} aprobado",
+                cuerpo=(
+                    f"Hola {v.propietario.nombre},\n\n"
+                    f"Tu vehículo {v.marca} {v.modelo} ({v.placa}) ha sido aprobado y está activo en el sistema.\n\n"
+                    f"Ya puedes usar el QR para acceder al parqueo.\n"
+                ),
             )
         except Exception:
             pass
@@ -263,12 +281,22 @@ class VehiculosMutation:
         v.estado = "inactivo"
         v.save()
         try:
-            from apps.notificaciones.utils import enviar_notificacion
+            from apps.notificaciones.utils import enviar_notificacion, enviar_email
             enviar_notificacion(
                 usuario=v.propietario,
                 titulo=f"Vehículo rechazado — {v.placa}",
                 mensaje=f"Tu vehículo {v.marca} {v.modelo} ({v.placa}) no fue aprobado. Motivo: {motivo}",
                 tipo_codigo="vehiculo_rechazado",
+            )
+            enviar_email(
+                usuario=v.propietario,
+                asunto=f"Vehículo {v.placa} no aprobado",
+                cuerpo=(
+                    f"Hola {v.propietario.nombre},\n\n"
+                    f"Tu vehículo {v.marca} {v.modelo} ({v.placa}) no fue aprobado.\n"
+                    f"Motivo: {motivo}\n\n"
+                    f"Puedes contactar con administración para más información.\n"
+                ),
             )
         except Exception:
             pass

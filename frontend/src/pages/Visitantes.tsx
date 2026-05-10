@@ -1,6 +1,6 @@
 import { useState, FormEvent } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
-import { UserCheck, Plus, Search, LogIn, LogOut, X } from 'lucide-react'
+import { UserCheck, Plus, Search, LogIn, LogOut, X, FileDown } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import {
   VISITANTES_QUERY,
@@ -121,12 +121,25 @@ export default function Visitantes() {
 
   return (
     <div className="p-8">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="bg-cyan-500 text-white p-2 rounded-xl"><UserCheck size={20} /></div>
-        <div>
-          <h1 className="text-xl font-bold text-slate-800">Visitantes</h1>
-          <p className="text-slate-500 text-xs">Registro y gestión de visitas</p>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <div className="bg-cyan-500 text-white p-2 rounded-xl"><UserCheck size={20} /></div>
+          <div>
+            <h1 className="text-xl font-bold text-slate-800">Visitantes</h1>
+            <p className="text-slate-500 text-xs">Registro y gestión de visitas</p>
+          </div>
         </div>
+        <button onClick={async () => {
+          const t = localStorage.getItem('access_token') || ''
+          const resp = await fetch('http://localhost:8000/api/pdf/visitas/', { headers: { Authorization: `Bearer ${t}` } })
+          if (!resp.ok) { alert('Sin acceso'); return }
+          const blob = await resp.blob()
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a'); a.href = url; a.download = `visitas_${new Date().toISOString().slice(0,10)}.pdf`; a.click(); URL.revokeObjectURL(url)
+        }}
+          className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+          <FileDown size={15} /> Exportar PDF
+        </button>
       </div>
 
       {/* Tabs */}

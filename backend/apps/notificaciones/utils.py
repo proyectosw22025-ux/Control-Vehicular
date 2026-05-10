@@ -1,7 +1,25 @@
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+from django.core.mail import send_mail
+from django.conf import settings
 
 from .models import Notificacion, TipoNotificacion
+
+
+def enviar_email(usuario, asunto: str, cuerpo: str) -> None:
+    email = getattr(usuario, 'email', None)
+    if not email:
+        return
+    try:
+        send_mail(
+            subject=asunto,
+            message=cuerpo,
+            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@parqueo.edu.bo'),
+            recipient_list=[email],
+            fail_silently=True,
+        )
+    except Exception:
+        pass
 
 
 def enviar_notificacion(usuario, titulo: str, mensaje: str, tipo_codigo: str | None = None) -> Notificacion:

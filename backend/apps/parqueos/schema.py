@@ -168,6 +168,14 @@ class ParqueosQuery:
         )
 
     @strawberry.field
+    def sesiones_activas(self, info: Info) -> List[SesionParqueoType]:
+        return list(
+            SesionParqueo.objects.filter(estado="activa")
+            .select_related("espacio__zona", "espacio__categoria", "vehiculo")
+            .order_by("-hora_entrada")
+        )
+
+    @strawberry.field
     def categorias_espacio(self, info: Info) -> List[CategoriaEspacioType]:
         return list(CategoriaEspacio.objects.all())
 

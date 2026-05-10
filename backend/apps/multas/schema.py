@@ -159,15 +159,26 @@ class MultasMutation:
         vehiculo.estado = "sancionado"
         vehiculo.save()
 
-        # Notificar al propietario del vehículo
         propietario = getattr(vehiculo, "propietario", None)
         if propietario:
-            from apps.notificaciones.utils import enviar_notificacion
+            from apps.notificaciones.utils import enviar_notificacion, enviar_email
             enviar_notificacion(
                 usuario=propietario,
                 titulo=f"Multa registrada — {vehiculo.placa}",
                 mensaje=f"Se registró una multa por '{tipo.nombre}' de Bs {monto}. {input.descripcion}",
                 tipo_codigo="multa_registrada",
+            )
+            enviar_email(
+                usuario=propietario,
+                asunto=f"Multa registrada para vehículo {vehiculo.placa}",
+                cuerpo=(
+                    f"Hola {propietario.nombre},\n\n"
+                    f"Se registró una multa para tu vehículo {vehiculo.placa}:\n"
+                    f"  Tipo: {tipo.nombre}\n"
+                    f"  Monto: Bs {monto}\n"
+                    f"  Descripción: {input.descripcion}\n\n"
+                    f"Ingresa al sistema para ver los detalles y realizar el pago.\n"
+                ),
             )
 
         return multa

@@ -102,9 +102,9 @@ class VisitantesQuery:
     @strawberry.field
     def visitas_activas(self, info: Info) -> List[VisitaType]:
         return list(
-            Visita.objects.filter(estado="activa")
+            Visita.objects.filter(estado__in=["pendiente", "activa"])
             .select_related("visitante", "anfitrion", "tipo_visita", "vehiculo")
-            .order_by("-fecha_entrada")
+            .order_by("-created_at")
         )
 
     @strawberry.field
@@ -150,10 +150,32 @@ class VisitantesMutation:
         vehiculo = Vehiculo.objects.filter(pk=input.vehiculo_id).first() if input.vehiculo_id else None
         if input.vehiculo_id and not vehiculo:
             raise Exception("Vehículo no encontrado")
-        return Visita.objects.create(
+        visita = Visita.objects.create(
             visitante=visitante, anfitrion=anfitrion, tipo_visita=tipo_visita,
             vehiculo=vehiculo, motivo=input.motivo,
         )
+        try:
+            from apps.notificaciones.utils import enviar_notificacion, enviar_email
+            enviar_notificacion(
+                usuario=anfitrion,
+                titulo=f"Visita registrada — {visitante.nombre} {visitante.apellido}",
+                mensaje=f"El visitante {visitante.nombre} {visitante.apellido} (CI: {visitante.ci}) quiere verte. Motivo: {input.motivo}",
+                tipo_codigo="visita_registrada",
+            )
+            enviar_email(
+                usuario=anfitrion,
+                asunto=f"Nueva visita: {visitante.nombre} {visitante.apellido}",
+                cuerpo=(
+                    f"Hola {anfitrion.nombre},\n\n"
+                    f"Se registró una visita para usted:\n"
+                    f"  Visitante: {visitante.nombre} {visitante.apellido} (CI: {visitante.ci})\n"
+                    f"  Motivo: {input.motivo}\n\n"
+                    f"Ingrese al sistema para confirmar el ingreso.\n"
+                ),
+            )
+        except Exception:
+            pass
+        return visita
 
     @strawberry.mutation
     def iniciar_visita(self, info: Info, visita_id: int) -> VisitaType:

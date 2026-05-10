@@ -58,3 +58,16 @@ export const HISTORIAL_SESIONES_QUERY = gql`
     }
   }
 `
+
+export const SESIONES_ACTIVAS_QUERY = gql`
+  query SesionesActivas {
+    sesionesActivas {
+      id
+      horaEntrada
+      estado
+      duracionMinutos
+      placaVehiculo
+      espacio { id numero zona { nombre } }
+    }
+  }
+`

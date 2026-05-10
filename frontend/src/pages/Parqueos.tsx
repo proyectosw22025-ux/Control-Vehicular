@@ -1,11 +1,12 @@
 import { useState, FormEvent } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
-import { ParkingSquare, Plus, MapPin, Car, Clock, X } from 'lucide-react'
+import { ParkingSquare, Plus, MapPin, Car, Clock, X, FileDown } from 'lucide-react'
 import {
   ZONAS_QUERY,
   ESPACIOS_POR_ZONA_QUERY,
   CATEGORIAS_ESPACIO_QUERY,
   HISTORIAL_SESIONES_QUERY,
+  SESIONES_ACTIVAS_QUERY,
 } from '../graphql/queries/parqueos'
 import { VEHICULOS_QUERY } from '../graphql/queries/vehiculos'
 import {
@@ -23,7 +24,7 @@ const ESTADO_ESPACIO_COLOR: Record<string, string> = {
   'fuera de servicio': 'bg-slate-100 text-slate-500 border-slate-200',
 }
 
-type Tab = 'zonas' | 'espacios' | 'sesion'
+type Tab = 'zonas' | 'espacios' | 'activas' | 'historial'
 
 export default function Parqueos() {
   const { esAdmin, esGuardia } = useAuth()
@@ -48,6 +49,10 @@ export default function Parqueos() {
     variables: { vehiculoId: vehiculoHistId, limite: 15 },
     skip: !vehiculoHistId,
   })
+  const { data: sesionesActivasData, refetch: refetchActivas } = useQuery(SESIONES_ACTIVAS_QUERY, {
+    fetchPolicy: 'cache-and-network',
+    skip: tab !== 'activas',
+  })
 
   const [crearZona, { loading: loadingZona }] = useMutation(CREAR_ZONA_MUTATION, {
     onCompleted() { setModal(null); setError(''); refetchZonas() },
@@ -58,11 +63,15 @@ export default function Parqueos() {
     onError(e) { setError(e.message) },
   })
   const [iniciarSesion, { loading: loadingIniciar }] = useMutation(INICIAR_SESION_MUTATION, {
-    onCompleted() { setModal(null); setError(''); if (zonaSelId) refetchEspacios() },
+    onCompleted() { setModal(null); setError(''); if (zonaSelId) refetchEspacios(); refetchActivas() },
     onError(e) { setError(e.message) },
   })
-  const [cerrarSesion] = useMutation(CERRAR_SESION_MUTATION, {
-    onCompleted() { if (zonaSelId) refetchEspacios() },
+  const [cerrarSesion, { loading: loadingCerrar }] = useMutation(CERRAR_SESION_MUTATION, {
+    onCompleted() {
+      if (zonaSelId) refetchEspacios()
+      refetchZonas()
+      refetchActivas()
+    },
     onError(e) { alert(e.message) },
   })
 
@@ -71,6 +80,7 @@ export default function Parqueos() {
   const categorias = categoriasData?.categoriasEspacio ?? []
   const vehiculos = vehiculosData?.vehiculos?.items ?? []
   const historial = historialData?.historialSesiones ?? []
+  const sesionesActivas = sesionesActivasData?.sesionesActivas ?? []
   const zonaActual = zonas.find((z: any) => z.id === zonaSelId)
 
   function handleCrearZona(e: FormEvent<HTMLFormElement>) {
@@ -116,6 +126,25 @@ export default function Parqueos() {
     })
   }
 
+  async function descargarPDF(tipo: string) {
+    const t = localStorage.getItem('access_token') || ''
+    try {
+      const resp = await fetch(`http://localhost:8000/api/pdf/${tipo}/`, {
+        headers: { Authorization: `Bearer ${t}` },
+      })
+      if (!resp.ok) throw new Error('Sin acceso')
+      const blob = await resp.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${tipo}_${new Date().toISOString().slice(0, 10)}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      alert('No se pudo generar el PDF')
+    }
+  }
+
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-6">
@@ -126,25 +155,46 @@ export default function Parqueos() {
             <p className="text-slate-500 text-xs">Gestión de zonas y espacios de estacionamiento</p>
           </div>
         </div>
-        {esAdmin && (
-          <div className="flex gap-2">
-            <button onClick={() => { setModal('zona'); setError('') }}
-              className="flex items-center gap-1 bg-violet-100 hover:bg-violet-200 text-violet-700 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
-              <Plus size={14} /> Nueva zona
-            </button>
-            <button onClick={() => { setModal('espacio'); setError('') }}
-              className="flex items-center gap-1 bg-violet-500 hover:bg-violet-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
-              <Plus size={14} /> Nuevo espacio
-            </button>
-          </div>
-        )}
+        <div className="flex gap-2 flex-wrap justify-end">
+          {esAdmin && (
+            <>
+              <button onClick={() => { setModal('zona'); setError('') }}
+                className="flex items-center gap-1 bg-violet-100 hover:bg-violet-200 text-violet-700 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
+                <Plus size={14} /> Nueva zona
+              </button>
+              <button onClick={() => { setModal('espacio'); setError('') }}
+                className="flex items-center gap-1 bg-violet-500 hover:bg-violet-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
+                <Plus size={14} /> Nuevo espacio
+              </button>
+            </>
+          )}
+          {esAdmin && (
+            <div className="flex gap-1">
+              <button onClick={() => descargarPDF('vehiculos')}
+                className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
+                <FileDown size={14} /> PDF Vehículos
+              </button>
+              <button onClick={() => descargarPDF('sesiones')}
+                className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
+                <FileDown size={14} /> PDF Sesiones
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-1 mb-4 border-b border-slate-200">
         <TabBtn active={tab === 'zonas'}    onClick={() => setTab('zonas')}    label="Zonas" />
         <TabBtn active={tab === 'espacios'} onClick={() => setTab('espacios')} label="Espacios" />
-        <TabBtn active={tab === 'sesion'}   onClick={() => setTab('sesion')}   label="Historial sesiones" />
+        {esPersonal && (
+          <TabBtn
+            active={tab === 'activas'}
+            onClick={() => setTab('activas')}
+            label={`Sesiones activas${sesionesActivas.length > 0 ? ` (${sesionesActivas.length})` : ''}`}
+          />
+        )}
+        <TabBtn active={tab === 'historial'} onClick={() => setTab('historial')} label="Historial" />
       </div>
 
       {/* Zonas */}
@@ -235,8 +285,67 @@ export default function Parqueos() {
         </div>
       )}
 
+      {/* Sesiones activas */}
+      {tab === 'activas' && (
+        <div>
+          {sesionesActivas.length === 0 ? (
+            <div className="text-center py-12 text-slate-400">
+              <Car size={40} className="mx-auto mb-2 opacity-20" />
+              <p>No hay vehículos en el parqueo en este momento</p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Vehículo</th>
+                    <th className="px-4 py-3 text-left">Espacio</th>
+                    <th className="px-4 py-3 text-left">Zona</th>
+                    <th className="px-4 py-3 text-left">Entrada</th>
+                    <th className="px-4 py-3 text-left">Duración</th>
+                    {esPersonal && <th className="px-4 py-3 text-center">Acción</th>}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {sesionesActivas.map((s: any) => (
+                    <tr key={s.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 font-mono font-semibold text-slate-800">{s.placaVehiculo}</td>
+                      <td className="px-4 py-3 text-slate-600">#{s.espacio.numero}</td>
+                      <td className="px-4 py-3 text-slate-500 text-xs">{s.espacio.zona.nombre}</td>
+                      <td className="px-4 py-3 text-slate-500 text-xs">
+                        {new Date(s.horaEntrada).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' })}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="flex items-center gap-1 text-violet-600 font-medium text-xs">
+                          <Clock size={12} />
+                          {s.duracionMinutos !== null ? `${s.duracionMinutos} min` : '—'}
+                        </span>
+                      </td>
+                      {esPersonal && (
+                        <td className="px-4 py-3 text-center">
+                          <button
+                            disabled={loadingCerrar}
+                            onClick={() => cerrarSesion({ variables: { sesionId: s.id } })}
+                            className="bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 px-3 py-1 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                          >
+                            Registrar salida
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="px-4 py-2 bg-slate-50 border-t border-slate-100 text-xs text-slate-400">
+                {sesionesActivas.length} vehículo{sesionesActivas.length !== 1 ? 's' : ''} en parqueo
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Historial sesiones */}
-      {tab === 'sesion' && (
+      {tab === 'historial' && (
         <div>
           <div className="mb-4">
             <label className="block text-xs font-medium text-slate-600 mb-1">Vehículo</label>
