@@ -13,6 +13,17 @@ CORS_ALLOWED_ORIGINS = [
 
 CORS_ALLOW_CREDENTIALS = True
 
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+]
+
 # En desarrollo no se necesita Redis — InMemoryChannelLayer funciona en proceso único
 CHANNEL_LAYERS = {
     "default": {

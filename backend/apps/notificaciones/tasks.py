@@ -1,9 +1,11 @@
+from typing import Optional
 from celery import shared_task
 from asgiref.sync import async_to_sync
-from channels.layers import get_channel_layer
+from channels.layers import get_channel_layer  # type: ignore[import-untyped]
 
 
-def enviar_notificacion(usuario_id: int, titulo: str, mensaje: str, tipo_codigo: str = None, datos_extra: dict = None):
+def _enviar_notificacion_ws(usuario_id: int, titulo: str, mensaje: str, tipo_codigo: Optional[str] = None, datos_extra: Optional[dict] = None):
+    """Crea la notificación en BD y la entrega por WebSocket si hay canal activo."""
     from .models import TipoNotificacion, Notificacion
     from django.contrib.auth import get_user_model
     Usuario = get_user_model()
@@ -11,9 +13,7 @@ def enviar_notificacion(usuario_id: int, titulo: str, mensaje: str, tipo_codigo:
         usuario = Usuario.objects.get(pk=usuario_id)
     except Usuario.DoesNotExist:
         return None
-    tipo = None
-    if tipo_codigo:
-        tipo = TipoNotificacion.objects.filter(codigo=tipo_codigo).first()
+    tipo = TipoNotificacion.objects.filter(codigo=tipo_codigo).first() if tipo_codigo else None
     notif = Notificacion.objects.create(
         usuario=usuario,
         tipo=tipo,
@@ -22,23 +22,26 @@ def enviar_notificacion(usuario_id: int, titulo: str, mensaje: str, tipo_codigo:
         datos_extra=datos_extra or {},
     )
     channel_layer = get_channel_layer()
-    group_name = f"notificaciones_usuario_{usuario_id}"
-    async_to_sync(channel_layer.group_send)(
-        group_name,
-        {
-            "type": "notificacion_nueva",
-            "id": notif.pk,
-            "titulo": notif.titulo,
-            "mensaje": notif.mensaje,
-            "fecha": notif.fecha.isoformat(),
-        },
-    )
+    if channel_layer is not None:
+        try:
+            async_to_sync(channel_layer.group_send)(
+                f"notificaciones_usuario_{usuario_id}",
+                {
+                    "type": "notificacion_nueva",
+                    "id": notif.pk,
+                    "titulo": notif.titulo,
+                    "mensaje": notif.mensaje,
+                    "fecha": notif.fecha.isoformat(),
+                },
+            )
+        except Exception:
+            pass
     return notif
 
 
 @shared_task(name="notificaciones.notificar_multa")
 def notificar_multa(usuario_id: int, placa: str, monto: str):
-    enviar_notificacion(
+    _enviar_notificacion_ws(
         usuario_id=usuario_id,
         titulo="Nueva multa registrada",
         mensaje=f"Su vehículo {placa} tiene una multa de Bs {monto}.",
@@ -49,7 +52,7 @@ def notificar_multa(usuario_id: int, placa: str, monto: str):
 
 @shared_task(name="notificaciones.notificar_reserva_proxima")
 def notificar_reserva_proxima(usuario_id: int, espacio: str, fecha: str):
-    enviar_notificacion(
+    _enviar_notificacion_ws(
         usuario_id=usuario_id,
         titulo="Reserva próxima a vencer",
         mensaje=f"Su reserva en {espacio} vence a las {fecha}.",
@@ -60,7 +63,7 @@ def notificar_reserva_proxima(usuario_id: int, espacio: str, fecha: str):
 
 @shared_task(name="notificaciones.notificar_qr_generado")
 def notificar_qr_generado(usuario_id: int, placa: str, expiracion: str):
-    enviar_notificacion(
+    _enviar_notificacion_ws(
         usuario_id=usuario_id,
         titulo="QR de acceso generado",
         mensaje=f"Se generó un QR para {placa} válido hasta {expiracion}.",

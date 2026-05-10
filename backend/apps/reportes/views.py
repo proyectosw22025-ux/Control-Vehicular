@@ -1,21 +1,23 @@
 from io import BytesIO
 from datetime import datetime
+from typing import Any
 
 from django.http import HttpResponse, HttpResponseForbidden
+from django.utils import timezone
 from django.views import View
+from rest_framework_simplejwt.authentication import JWTAuthentication  # type: ignore[import-untyped]
 from reportlab.lib.pagesizes import letter, landscape
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.enums import TA_CENTER
 
 HEADER_COLOR = colors.HexColor("#5b21b6")   # violet-800
 ROW_ALT_COLOR = colors.HexColor("#f5f3ff")  # violet-50
 BORDER_COLOR = colors.HexColor("#ddd6fe")   # violet-200
 
 
-def _build_response(filename: str, build_fn) -> HttpResponse:
+def _build_response(filename: str, build_fn: Any) -> HttpResponse:
     buf = BytesIO()
     doc = SimpleDocTemplate(
         buf,
@@ -34,27 +36,24 @@ def _build_response(filename: str, build_fn) -> HttpResponse:
     buf.seek(0)
     resp = HttpResponse(buf, content_type="application/pdf")
     resp["Content-Disposition"] = f'attachment; filename="{filename}"'
-    resp["Access-Control-Allow-Origin"] = "*"
-    resp["Access-Control-Allow-Headers"] = "Authorization"
     return resp
 
 
-def _table(data, col_widths):
+def _table(data: list, col_widths: list) -> Table:
     t = Table(data, colWidths=col_widths)
-    n_rows = len(data)
     style = [
-        ("BACKGROUND",   (0, 0), (-1, 0), HEADER_COLOR),
-        ("TEXTCOLOR",    (0, 0), (-1, 0), colors.white),
-        ("FONTNAME",     (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE",     (0, 0), (-1, 0), 9),
-        ("ALIGN",        (0, 0), (-1, -1), "CENTER"),
-        ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, ROW_ALT_COLOR]),
-        ("GRID",         (0, 0), (-1, -1), 0.5, BORDER_COLOR),
-        ("FONTSIZE",     (0, 1), (-1, -1), 8),
-        ("FONTNAME",     (0, 1), (-1, -1), "Helvetica"),
-        ("TOPPADDING",   (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING",(0, 0), (-1, -1), 4),
+        ("BACKGROUND",    (0, 0), (-1, 0), HEADER_COLOR),
+        ("TEXTCOLOR",     (0, 0), (-1, 0), colors.white),
+        ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE",      (0, 0), (-1, 0), 9),
+        ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, ROW_ALT_COLOR]),
+        ("GRID",          (0, 0), (-1, -1), 0.5, BORDER_COLOR),
+        ("FONTSIZE",      (0, 1), (-1, -1), 8),
+        ("FONTNAME",      (0, 1), (-1, -1), "Helvetica"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]
     t.setStyle(TableStyle(style))
     return t
@@ -64,20 +63,16 @@ def _fecha() -> str:
     return datetime.now().strftime("%d/%m/%Y %H:%M")
 
 
-def _auth(request):
+def _auth(request: Any) -> bool:
     """Return True if the request is authenticated."""
     # JWTAuthMiddleware already sets request.user from Authorization header.
     # For direct browser downloads we also accept ?token= query param.
     token = request.GET.get("token")
     if token and not request.user.is_authenticated:
-        from rest_framework_simplejwt.authentication import JWTAuthentication
-        from rest_framework_simplejwt.exceptions import TokenError
         try:
             auth = JWTAuthentication()
             validated = auth.get_validated_token(token.encode())
-            from apps.usuarios.models import Usuario
-            user = auth.get_user(validated)
-            request.user = user
+            request.user = auth.get_user(validated)
         except Exception:
             pass
     return request.user.is_authenticated
@@ -88,7 +83,7 @@ def _auth(request):
 # ─────────────────────────────────────────────────────────────
 
 class VehiculosPDFView(View):
-    def get(self, request):
+    def get(self, request: Any) -> HttpResponse:
         if not _auth(request):
             return HttpResponseForbidden("Autenticación requerida")
 
@@ -101,16 +96,16 @@ class VehiculosPDFView(View):
 
         vehiculos = list(qs)
 
-        def build(title_style, sub_style):
+        def build(title_style: Any, sub_style: Any) -> list:
             titulo = f"Reporte de Vehículos — {_fecha()}"
             if estado:
                 titulo += f" · Estado: {estado}"
-            elements = [
+            elements: list[Any] = [
                 Paragraph("Sistema de Parqueo Universitario", title_style),
                 Paragraph(titulo, sub_style),
             ]
             headers = ["Placa", "Marca", "Modelo", "Año", "Color", "Tipo", "Estado", "Propietario", "Registro"]
-            rows = [headers]
+            rows: list[Any] = [headers]
             for v in vehiculos:
                 rows.append([
                     v.placa,
@@ -123,8 +118,7 @@ class VehiculosPDFView(View):
                     f"{v.propietario.nombre} {v.propietario.apellido}",
                     v.created_at.strftime("%d/%m/%Y"),
                 ])
-            widths = [2.5, 2.5, 2.5, 1.5, 2, 2.5, 2.5, 4, 2.5]
-            widths = [w * cm for w in widths]
+            widths = [w * cm for w in [2.5, 2.5, 2.5, 1.5, 2, 2.5, 2.5, 4, 2.5]]
             elements.append(_table(rows, widths))
             elements.append(Spacer(1, 0.5 * cm))
             elements.append(Paragraph(f"Total: {len(vehiculos)} vehículos", sub_style))
@@ -134,7 +128,7 @@ class VehiculosPDFView(View):
 
 
 class SesionesPDFView(View):
-    def get(self, request):
+    def get(self, request: Any) -> HttpResponse:
         if not _auth(request):
             return HttpResponseForbidden("Autenticación requerida")
 
@@ -144,15 +138,14 @@ class SesionesPDFView(View):
         ).order_by("-hora_entrada")[:200]
         sesiones = list(qs)
 
-        def build(title_style, sub_style):
-            elements = [
+        def build(title_style: Any, sub_style: Any) -> list:
+            elements: list[Any] = [
                 Paragraph("Sistema de Parqueo Universitario", title_style),
                 Paragraph(f"Historial de Sesiones de Parqueo — {_fecha()}", sub_style),
             ]
             headers = ["Espacio", "Zona", "Placa", "Entrada", "Salida", "Duración (min)", "Estado"]
-            rows = [headers]
+            rows: list[Any] = [headers]
             for s in sesiones:
-                from django.utils import timezone
                 salida = s.hora_salida or timezone.now()
                 dur = int((salida - s.hora_entrada).total_seconds() / 60)
                 rows.append([
@@ -164,8 +157,7 @@ class SesionesPDFView(View):
                     str(dur) if s.hora_salida else "—",
                     s.estado.upper(),
                 ])
-            widths = [2.5, 4, 2.5, 4, 4, 3, 2.5]
-            widths = [w * cm for w in widths]
+            widths = [w * cm for w in [2.5, 4, 2.5, 4, 4, 3, 2.5]]
             elements.append(_table(rows, widths))
             elements.append(Spacer(1, 0.5 * cm))
             elements.append(Paragraph(f"Total: {len(sesiones)} sesiones (últimas 200)", sub_style))
@@ -175,7 +167,7 @@ class SesionesPDFView(View):
 
 
 class VisitasPDFView(View):
-    def get(self, request):
+    def get(self, request: Any) -> HttpResponse:
         if not _auth(request):
             return HttpResponseForbidden("Autenticación requerida")
 
@@ -185,16 +177,16 @@ class VisitasPDFView(View):
         ).order_by("-created_at")[:200]
         visitas = list(qs)
 
-        def build(title_style, sub_style):
-            elements = [
+        def build(title_style: Any, sub_style: Any) -> list:
+            elements: list[Any] = [
                 Paragraph("Sistema de Parqueo Universitario", title_style),
                 Paragraph(f"Reporte de Visitas — {_fecha()}", sub_style),
             ]
             headers = ["Visitante", "CI", "Anfitrión", "Motivo", "Tipo", "Entrada", "Salida", "Estado"]
-            rows = [headers]
+            rows: list[Any] = [headers]
             for v in visitas:
                 rows.append([
-                    v.visitante.nombre_completo,
+                    f"{v.visitante.nombre} {v.visitante.apellido}",
                     v.visitante.ci,
                     f"{v.anfitrion.nombre} {v.anfitrion.apellido}",
                     v.motivo[:30],
@@ -203,8 +195,7 @@ class VisitasPDFView(View):
                     v.fecha_salida.strftime("%d/%m/%Y %H:%M") if v.fecha_salida else "—",
                     v.estado.upper(),
                 ])
-            widths = [3.5, 2, 3.5, 4, 3, 3.5, 3.5, 2.5]
-            widths = [w * cm for w in widths]
+            widths = [w * cm for w in [3.5, 2, 3.5, 4, 3, 3.5, 3.5, 2.5]]
             elements.append(_table(rows, widths))
             elements.append(Spacer(1, 0.5 * cm))
             elements.append(Paragraph(f"Total: {len(visitas)} visitas (últimas 200)", sub_style))
@@ -214,7 +205,7 @@ class VisitasPDFView(View):
 
 
 class MultasPDFView(View):
-    def get(self, request):
+    def get(self, request: Any) -> HttpResponse:
         if not _auth(request):
             return HttpResponseForbidden("Autenticación requerida")
 
@@ -224,13 +215,13 @@ class MultasPDFView(View):
         ).order_by("-fecha")[:200]
         multas = list(qs)
 
-        def build(title_style, sub_style):
-            elements = [
+        def build(title_style: Any, sub_style: Any) -> list:
+            elements: list[Any] = [
                 Paragraph("Sistema de Parqueo Universitario", title_style),
                 Paragraph(f"Reporte de Multas — {_fecha()}", sub_style),
             ]
             headers = ["Placa", "Propietario", "Tipo", "Monto (Bs)", "Descripción", "Fecha", "Estado"]
-            rows = [headers]
+            rows: list[Any] = [headers]
             for m in multas:
                 rows.append([
                     m.vehiculo.placa,
@@ -241,8 +232,7 @@ class MultasPDFView(View):
                     m.fecha.strftime("%d/%m/%Y %H:%M"),
                     m.estado.upper(),
                 ])
-            widths = [2.5, 4, 3.5, 2.5, 5, 3.5, 2.5]
-            widths = [w * cm for w in widths]
+            widths = [w * cm for w in [2.5, 4, 3.5, 2.5, 5, 3.5, 2.5]]
             elements.append(_table(rows, widths))
             elements.append(Spacer(1, 0.5 * cm))
             elements.append(Paragraph(f"Total: {len(multas)} multas (últimas 200)", sub_style))

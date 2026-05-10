@@ -153,7 +153,7 @@ export default function Multas() {
             <button onClick={async () => {
               const t = localStorage.getItem('access_token') || ''
               const resp = await fetch('http://localhost:8000/api/pdf/multas/', { headers: { Authorization: `Bearer ${t}` } })
-              if (!resp.ok) { alert('Sin acceso'); return }
+              if (!resp.ok) { alert(`Error al generar PDF (${resp.status})`); return }
               const blob = await resp.blob()
               const url = URL.createObjectURL(blob)
               const a = document.createElement('a'); a.href = url; a.download = `multas_${new Date().toISOString().slice(0,10)}.pdf`; a.click(); URL.revokeObjectURL(url)

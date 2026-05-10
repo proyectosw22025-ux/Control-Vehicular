@@ -15,6 +15,14 @@ media/
 staticfiles/
 *.log
 
+# Celery beat runtime scheduler files
+celerybeat-schedule.bak
+celerybeat-schedule.dat
+celerybeat-schedule.dir
+
+# Pyright workspace config (root pyrightconfig.json is the canonical one)
+backend/pyrightconfig.json
+
 # Environment variables (credentials)
 .env
 .env.*

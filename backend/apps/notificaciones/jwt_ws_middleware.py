@@ -1,6 +1,6 @@
 from urllib.parse import parse_qs
-from channels.middleware import BaseMiddleware
-from channels.db import database_sync_to_async
+from channels.middleware import BaseMiddleware  # type: ignore[import-untyped]
+from channels.db import database_sync_to_async  # type: ignore[import-untyped]
 from django.contrib.auth.models import AnonymousUser
 
 
@@ -11,7 +11,7 @@ class JWTWebSocketAuthMiddleware(BaseMiddleware):
     """
 
     async def __call__(self, scope, receive, send):
-        scope["user"] = await self._get_user(scope)
+        scope["user"] = await self._get_user(scope)  # type: ignore[typeddict-item]
         return await super().__call__(scope, receive, send)
 
     @database_sync_to_async

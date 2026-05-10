@@ -1,6 +1,6 @@
 import logging
-from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework.exceptions import AuthenticationFailed
+from rest_framework_simplejwt.authentication import JWTAuthentication  # type: ignore[import-untyped]
+from rest_framework.exceptions import AuthenticationFailed  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
 

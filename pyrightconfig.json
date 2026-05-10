@@ -1,0 +1,21 @@
+{
+  "venvPath": "./backend",
+  "venv": "venv",
+  "pythonVersion": "3.12",
+  "include": ["backend"],
+  "exclude": [
+    "**/migrations/**",
+    "**/__pycache__/**",
+    "**/management/commands/**"
+  ],
+  "reportMissingModuleSource": "none",
+  "reportMissingTypeStubs": "none",
+  "reportMissingImports": "warning",
+  "reportAttributeAccessIssue": "none",
+  "reportReturnType": "none",
+  "reportOperatorIssue": "none",
+  "reportArgumentType": "none",
+  "reportCallIssue": "none",
+  "reportIndexIssue": "none",
+  "reportIncompatibleVariableOverride": "none"
+}

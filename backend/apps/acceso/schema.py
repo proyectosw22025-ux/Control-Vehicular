@@ -166,6 +166,8 @@ class AccesoMutation:
         vehiculo = Vehiculo.objects.filter(pk=input.vehiculo_id).first()
         if not vehiculo:
             raise Exception("Vehículo no encontrado")
+        if vehiculo.estado == "pendiente":
+            raise Exception("Vehículo pendiente de aprobación, no puede generar QR de delegación")
         if vehiculo.estado == "sancionado":
             raise Exception("Vehículo sancionado, no puede generar QR de delegación")
         if vehiculo.estado == "inactivo":
@@ -196,6 +198,8 @@ class AccesoMutation:
         # Nivel 1: QR permanente del vehículo
         vehiculo = Vehiculo.objects.filter(codigo_qr=input.codigo).first()
         if vehiculo:
+            if vehiculo.estado == "pendiente":
+                raise Exception("Vehículo pendiente de aprobación. Espere la confirmación del administrador.")
             if vehiculo.estado == "sancionado":
                 raise Exception("Vehículo sancionado. Regularice sus multas para acceder.")
             if vehiculo.estado == "inactivo":
@@ -207,6 +211,8 @@ class AccesoMutation:
             if qr:
                 if qr.fecha_expiracion <= timezone.now():
                     raise Exception("QR de delegación expirado")
+                if qr.vehiculo.estado in ("pendiente", "inactivo"):
+                    raise Exception(f"Vehículo no habilitado para acceso (estado: {qr.vehiculo.estado}).")
                 if qr.vehiculo.estado == "sancionado":
                     raise Exception("Vehículo sancionado. No puede ingresar.")
                 qr.usado = True

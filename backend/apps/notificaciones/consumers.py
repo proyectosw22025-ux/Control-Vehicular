@@ -20,11 +20,13 @@ class NotificacionConsumer(AsyncWebsocketConsumer):
         no_leidas = await self.conteo_no_leidas()
         await self.send(json.dumps({"tipo": "conectado", "no_leidas": no_leidas}))
 
-    async def disconnect(self, close_code):
+    async def disconnect(self, code: int) -> None:
         if hasattr(self, "group_name"):
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
 
-    async def receive(self, text_data):
+    async def receive(self, text_data: str | None = None, bytes_data: bytes | None = None) -> None:
+        if not text_data:
+            return
         try:
             data = json.loads(text_data)
             if data.get("accion") == "marcar_leidas":
