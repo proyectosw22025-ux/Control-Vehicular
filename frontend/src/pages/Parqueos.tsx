@@ -215,7 +215,12 @@ export default function Parqueos() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {zonas.map((z: any) => {
-              const pct = z.capacidadTotal > 0 ? Math.round((1 - z.espaciosDisponibles / z.capacidadTotal) * 100) : 0
+              // Usar espaciosDisponibles como base real; capacidadTotal es solo planificación
+              // Solo calculamos % si hay espacios realmente registrados (via espaciosDisponibles <= capacidadTotal)
+              const totalReal = z.capacidadTotal > 0 ? z.capacidadTotal : 1
+              const ocupados = Math.max(0, totalReal - z.espaciosDisponibles)
+              const pct = Math.min(100, Math.round((ocupados / totalReal) * 100))
+              const sinEspacios = z.capacidadTotal > 0 && z.espaciosDisponibles === z.capacidadTotal && z.capacidadTotal > 1
               return (
                 <div key={z.id}
                   onClick={() => { setZonaSelId(z.id); setTab('espacios') }}
@@ -236,7 +241,7 @@ export default function Parqueos() {
                   <div className="mb-2">
                     <div className="flex justify-between text-xs text-slate-500 mb-1">
                       <span>{z.espaciosDisponibles} disponibles</span>
-                      <span>{z.capacidadTotal} total</span>
+                      <span>{z.capacidadTotal} capacidad</span>
                     </div>
                     <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                       <div
@@ -245,7 +250,11 @@ export default function Parqueos() {
                       />
                     </div>
                   </div>
-                  <p className="text-xs text-slate-400">{pct}% ocupado · clic para ver espacios</p>
+                  <p className="text-xs text-slate-400">
+                    {sinEspacios
+                      ? 'Sin espacios registrados aún · clic para agregar'
+                      : `${pct}% ocupado · clic para ver espacios`}
+                  </p>
                 </div>
               )
             })}
