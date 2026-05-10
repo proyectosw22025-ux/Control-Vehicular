@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, Car, ParkingSquare,
-  DoorOpen, UserCheck, AlertTriangle, Bell, LogOut, Menu, X, UserCircle, BarChart2, ShieldCheck,
+  DoorOpen, UserCheck, AlertTriangle, Bell, LogOut, Menu, X, UserCircle, BarChart2, ShieldCheck, Shield,
 } from 'lucide-react'
 import { useQuery } from '@apollo/client'
 import { useAuth } from '../hooks/useAuth'
@@ -20,6 +20,7 @@ const NAV_ITEMS = [
   { to: '/multas',        label: 'Multas',         icon: AlertTriangle,   roles: ['Administrador', 'Guardia'] },
   { to: '/notificaciones',label: 'Notificaciones', icon: Bell,            roles: ['all'] },
   { to: '/reportes',      label: 'Reportes',       icon: BarChart2,       roles: ['Administrador'] },
+  { to: '/auditoria',    label: 'Auditoría',      icon: Shield,          roles: ['Administrador'] },
 ]
 
 // ── Toast de notificación ──────────────────────────────────

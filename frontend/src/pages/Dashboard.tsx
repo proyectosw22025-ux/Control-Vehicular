@@ -6,6 +6,7 @@ import {
   LayoutDashboard, Clock,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
+import Onboarding from '../components/Onboarding'
 
 const DASHBOARD_QUERY = gql`
   query DashboardStats {
@@ -131,6 +132,7 @@ export default function Dashboard() {
 
   return (
     <div className="p-8 space-y-6">
+      <Onboarding />
 
       {/* ── Encabezado ── */}
       <div className="flex items-start justify-between">

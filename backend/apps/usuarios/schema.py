@@ -3,6 +3,7 @@ from strawberry.types import Info
 from typing import List, Optional
 from datetime import datetime
 from django.contrib.auth import authenticate
+from django.core.cache import cache
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import Usuario, Rol, Permiso, UsuarioRol, RolPermiso
@@ -151,11 +152,20 @@ class UsuariosQuery:
 class UsuariosMutation:
     @strawberry.mutation
     def login(self, info: Info, input: LoginInput) -> AuthPayload:
+        req = info.context.request
+        x_fwd = req.META.get("HTTP_X_FORWARDED_FOR")
+        ip = x_fwd.split(",")[0].strip() if x_fwd else (req.META.get("REMOTE_ADDR") or "unknown")
+        rate_key = f"login_attempts_{ip}"
+        attempts: int = cache.get(rate_key, 0)
+        if attempts >= 5:
+            raise Exception("Demasiados intentos de inicio de sesión. Espere 1 minuto.")
         user = authenticate(username=input.ci, password=input.password)
         if not user:
+            cache.set(rate_key, attempts + 1, timeout=60)
             raise Exception("Credenciales inválidas")
         if not user.is_active:
             raise Exception("Usuario inactivo")
+        cache.delete(rate_key)
         tokens = RefreshToken.for_user(user)
         return AuthPayload(
             access=str(tokens.access_token),

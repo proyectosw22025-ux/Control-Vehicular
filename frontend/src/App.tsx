@@ -16,6 +16,8 @@ import Notificaciones from './pages/Notificaciones'
 import Perfil from './pages/Perfil'
 import Reportes from './pages/Reportes'
 import GuardiaDashboard from './pages/GuardiaDashboard'
+import HistorialVehiculo from './pages/HistorialVehiculo'
+import Auditoria from './pages/Auditoria'
 
 export default function App() {
   return (
@@ -43,6 +45,8 @@ export default function App() {
             <Route path="perfil" element={<Perfil />} />
             <Route path="reportes" element={<Reportes />} />
             <Route path="guardia" element={<GuardiaDashboard />} />
+            <Route path="vehiculos/:vehiculoId/historial" element={<HistorialVehiculo />} />
+            <Route path="auditoria" element={<Auditoria />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -165,3 +165,25 @@ class RegistroAcceso(models.Model):
 
     def __str__(self):
         return f"{self.get_tipo_display()} - {self.vehiculo} en {self.punto_acceso} ({self.timestamp})"
+
+
+class AuditLog(models.Model):
+    accion = models.CharField(max_length=60)
+    descripcion = models.TextField()
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="audit_logs",
+    )
+    ip = models.GenericIPAddressField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "audit_logs"
+        verbose_name = "Registro de auditoría"
+        verbose_name_plural = "Registros de auditoría"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.accion} — {self.usuario} — {self.created_at}"

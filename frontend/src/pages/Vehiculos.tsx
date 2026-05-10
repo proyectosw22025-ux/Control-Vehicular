@@ -1,9 +1,10 @@
 import { useState, FormEvent } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
+import { useNavigate } from 'react-router-dom'
 import {
   Car, Plus, RefreshCw, FileText, Edit, QrCode, X,
   AlertTriangle, Search, ChevronLeft, ChevronRight,
-  CheckCircle, XCircle, Clock,
+  CheckCircle, XCircle, Clock, History,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { QrImage } from '../components/QrImage'
@@ -47,6 +48,7 @@ const POR_PAGINA = 15
 
 export default function Vehiculos() {
   const { usuario, esAdmin } = useAuth()
+  const navigate = useNavigate()
   const [tab, setTab]                     = useState<Tab>('lista')
   const [modal, setModal]                 = useState<Modal>(null)
   const [seleccionado, setSeleccionado]   = useState<Vehiculo | null>(null)
@@ -306,6 +308,10 @@ export default function Vehiculos() {
                             <button onClick={() => abrirQr(v)} title="Ver QR"
                               className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors">
                               <QrCode size={15} />
+                            </button>
+                            <button onClick={() => navigate(`/vehiculos/${v.id}/historial`)} title="Ver historial"
+                              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
+                              <History size={15} />
                             </button>
                             {esAdmin && (
                               <>

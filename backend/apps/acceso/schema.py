@@ -7,7 +7,7 @@ import uuid
 from django.utils import timezone
 from datetime import timedelta
 
-from .models import PuntoAcceso, QrSesion, PaseTemporal, RegistroAcceso
+from .models import PuntoAcceso, QrSesion, PaseTemporal, RegistroAcceso, AuditLog
 
 
 @strawberry.type
@@ -76,6 +76,34 @@ class RegistroAccesoType:
     @strawberry.field
     def placa_vehiculo(self) -> Optional[str]:
         return self.vehiculo.placa if self.vehiculo else None
+
+
+@strawberry.type
+class AuditLogType:
+    id: int
+    accion: str
+    descripcion: str
+    ip: Optional[str]
+    created_at: datetime
+
+    @strawberry.field
+    def usuario_nombre(self) -> str:
+        if self.usuario:
+            return f"{self.usuario.nombre} {self.usuario.apellido}"
+        return "Sistema"
+
+
+def _log_audit(usuario, accion: str, descripcion: str, request=None):
+    ip = None
+    if request:
+        x_fwd = request.META.get("HTTP_X_FORWARDED_FOR")
+        ip = x_fwd.split(",")[0].strip() if x_fwd else request.META.get("REMOTE_ADDR")
+    AuditLog.objects.create(
+        accion=accion,
+        descripcion=descripcion,
+        usuario=usuario if getattr(usuario, "is_authenticated", False) else None,
+        ip=ip,
+    )
 
 
 # ──────────────────────────────────────────────
@@ -152,6 +180,13 @@ class AccesoQuery:
         if not (pase.activo and pase.valido_desde <= ahora <= pase.valido_hasta and pase.usos_actual < pase.usos_max):
             raise Exception("Pase inválido, expirado o sin usos disponibles")
         return pase
+
+    @strawberry.field
+    def audit_log(self, info: Info, limite: int = 200) -> List[AuditLogType]:
+        from apps.usuarios.utils import tiene_rol
+        if not tiene_rol(info.context.request.user, "Administrador"):
+            raise Exception("Solo administradores pueden ver el registro de auditoría")
+        return list(AuditLog.objects.select_related("usuario")[:limite])
 
 
 # ──────────────────────────────────────────────
@@ -245,6 +280,12 @@ class AccesoMutation:
             metodo_acceso=metodo_acceso,
             registrado_por=registrado_por,
         )
+        _log_audit(
+            registrado_por,
+            "registrar_acceso",
+            f"{input.tipo.capitalize()} de {vehiculo.placa if vehiculo else '?'} en {punto.nombre} vía {metodo_acceso}",
+            request=info.context.request,
+        )
 
         # Notificar al propietario del vehículo
         propietario = getattr(vehiculo, "propietario", None)
@@ -276,7 +317,7 @@ class AccesoMutation:
         if vehiculo.estado == "inactivo":
             raise Exception("Vehículo inactivo. Contacte a la administración.")
         registrado_por = info.context.request.user if info.context.request.user.is_authenticated else None
-        return RegistroAcceso.objects.create(
+        registro = RegistroAcceso.objects.create(
             punto_acceso=punto,
             vehiculo=vehiculo,
             tipo=input.tipo,
@@ -284,6 +325,13 @@ class AccesoMutation:
             observacion=input.observacion or "",
             registrado_por=registrado_por,
         )
+        _log_audit(
+            registrado_por,
+            "acceso_manual",
+            f"{input.tipo.capitalize()} manual de {vehiculo.placa} en {punto.nombre}",
+            request=info.context.request,
+        )
+        return registro
 
     @strawberry.mutation
     def crear_pase_temporal(self, info: Info, input: CrearPaseTemporalInput) -> PaseTemporalType:

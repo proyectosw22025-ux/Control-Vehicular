@@ -58,3 +58,20 @@ export const TIPOS_VEHICULO_QUERY = gql`
     tiposVehiculo { id nombre descripcion }
   }
 `
+
+export const VEHICULO_QUERY = gql`
+  query Vehiculo($id: Int!) {
+    vehiculo(id: $id) {
+      id
+      placa
+      marca
+      modelo
+      anio
+      color
+      estado
+      createdAt
+      tipo { id nombre }
+      propietarioNombre
+    }
+  }
+`
