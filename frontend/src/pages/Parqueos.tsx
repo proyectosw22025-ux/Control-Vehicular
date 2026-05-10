@@ -215,12 +215,12 @@ export default function Parqueos() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {zonas.map((z: any) => {
-              // Usar espaciosDisponibles como base real; capacidadTotal es solo planificación
-              // Solo calculamos % si hay espacios realmente registrados (via espaciosDisponibles <= capacidadTotal)
-              const totalReal = z.capacidadTotal > 0 ? z.capacidadTotal : 1
-              const ocupados = Math.max(0, totalReal - z.espaciosDisponibles)
-              const pct = Math.min(100, Math.round((ocupados / totalReal) * 100))
-              const sinEspacios = z.capacidadTotal > 0 && z.espaciosDisponibles === z.capacidadTotal && z.capacidadTotal > 1
+              // totalRegistrados = espacios realmente en BD (puede ser < capacidadTotal)
+              const registrados: number = z.totalRegistrados ?? 0
+              const ocupados: number = z.espaciosOcupados ?? 0
+              const pct = registrados > 0 ? Math.round((ocupados / registrados) * 100) : 0
+              const sinRegistrar = registrados === 0
+
               return (
                 <div key={z.id}
                   onClick={() => { setZonaSelId(z.id); setTab('espacios') }}
@@ -241,19 +241,24 @@ export default function Parqueos() {
                   <div className="mb-2">
                     <div className="flex justify-between text-xs text-slate-500 mb-1">
                       <span>{z.espaciosDisponibles} disponibles</span>
-                      <span>{z.capacidadTotal} capacidad</span>
+                      {/* totalRegistrados = espacios reales en BD; capacidadTotal = planificación */}
+                      <span>{registrados} registrados · cap. {z.capacidadTotal}</span>
                     </div>
                     <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ${pct > 80 ? 'bg-red-400' : pct > 50 ? 'bg-orange-400' : 'bg-green-400'}`}
-                        style={{ width: `${pct}%` }}
-                      />
+                      {sinRegistrar ? (
+                        <div className="h-full w-full bg-slate-200 rounded-full" />
+                      ) : (
+                        <div
+                          className={`h-full rounded-full transition-all ${pct > 80 ? 'bg-red-400' : pct > 50 ? 'bg-orange-400' : 'bg-green-400'}`}
+                          style={{ width: `${Math.max(pct, 2)}%` }}
+                        />
+                      )}
                     </div>
                   </div>
                   <p className="text-xs text-slate-400">
-                    {sinEspacios
-                      ? 'Sin espacios registrados aún · clic para agregar'
-                      : `${pct}% ocupado · clic para ver espacios`}
+                    {sinRegistrar
+                      ? 'Sin espacios registrados · clic para agregar'
+                      : `${pct}% ocupado (${ocupados}/${registrados}) · clic para ver`}
                   </p>
                 </div>
               )

@@ -33,6 +33,15 @@ class ZonaParqueoType:
         return EspacioParqueo.objects.filter(zona_id=self.id, estado="disponible").count()
 
     @strawberry.field
+    def total_registrados(self) -> int:
+        """Espacios físicamente creados en BD, distinto de capacidad_total (que es planificación)."""
+        return EspacioParqueo.objects.filter(zona_id=self.id).count()
+
+    @strawberry.field
+    def espacios_ocupados(self) -> int:
+        return EspacioParqueo.objects.filter(zona_id=self.id, estado="ocupado").count()
+
+    @strawberry.field
     def espacios(self) -> List["EspacioParqueoType"]:
         return list(EspacioParqueo.objects.filter(zona_id=self.id).select_related("categoria").order_by("numero"))
 

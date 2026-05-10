@@ -10,6 +10,8 @@ export const ZONAS_QUERY = gql`
       capacidadTotal
       activo
       espaciosDisponibles
+      totalRegistrados
+      espaciosOcupados
     }
   }
 `
