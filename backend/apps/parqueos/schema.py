@@ -32,6 +32,10 @@ class ZonaParqueoType:
     def espacios_disponibles(self) -> int:
         return EspacioParqueo.objects.filter(zona_id=self.id, estado="disponible").count()
 
+    @strawberry.field
+    def espacios(self) -> List["EspacioParqueoType"]:
+        return list(EspacioParqueo.objects.filter(zona_id=self.id).select_related("categoria").order_by("numero"))
+
 
 @strawberry.type
 class EspacioParqueoType:
@@ -178,6 +182,14 @@ class ParqueosQuery:
     @strawberry.field
     def categorias_espacio(self, info: Info) -> List[CategoriaEspacioType]:
         return list(CategoriaEspacio.objects.all())
+
+    @strawberry.field
+    def mapa_parqueo(self, info: Info) -> List[ZonaParqueoType]:
+        return list(
+            ZonaParqueo.objects.filter(activo=True)
+            .prefetch_related("espacios__categoria")
+            .order_by("nombre")
+        )
 
 
 # ──────────────────────────────────────────────

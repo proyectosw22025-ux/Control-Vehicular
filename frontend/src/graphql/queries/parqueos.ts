@@ -71,3 +71,22 @@ export const SESIONES_ACTIVAS_QUERY = gql`
     }
   }
 `
+
+export const MAPA_PARQUEO_QUERY = gql`
+  query MapaParqueo {
+    mapaParqueo {
+      id
+      nombre
+      ubicacion
+      capacidadTotal
+      espaciosDisponibles
+      espacios {
+        id
+        numero
+        estado
+        ubicacionReferencia
+        categoria { id nombre color }
+      }
+    }
+  }
+`

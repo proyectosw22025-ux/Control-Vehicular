@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, Car, ParkingSquare,
-  DoorOpen, UserCheck, AlertTriangle, Bell, LogOut, Menu, X, UserCircle, BarChart2,
+  DoorOpen, UserCheck, AlertTriangle, Bell, LogOut, Menu, X, UserCircle, BarChart2, ShieldCheck,
 } from 'lucide-react'
 import { useQuery } from '@apollo/client'
 import { useAuth } from '../hooks/useAuth'
@@ -11,6 +11,7 @@ import { CONTEO_NO_LEIDAS_QUERY } from '../graphql/queries/notificaciones'
 
 const NAV_ITEMS = [
   { to: '/',              label: 'Dashboard',      icon: LayoutDashboard, roles: ['all'] },
+  { to: '/guardia',      label: 'Panel Guardia',  icon: ShieldCheck,     roles: ['Guardia', 'Administrador'] },
   { to: '/usuarios',      label: 'Usuarios',       icon: Users,           roles: ['Administrador'] },
   { to: '/vehiculos',     label: 'Vehículos',      icon: Car,             roles: ['all'] },
   { to: '/parqueos',      label: 'Parqueos',       icon: ParkingSquare,   roles: ['Administrador', 'Guardia'] },
