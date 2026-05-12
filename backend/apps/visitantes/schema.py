@@ -129,18 +129,35 @@ class VisitantesQuery:
 class VisitantesMutation:
     @strawberry.mutation
     def registrar_visitante(self, info: Info, input: CrearVisitanteInput) -> VisitanteType:
+        from apps.usuarios.utils import tiene_rol
+        from apps.acceso.utils import log_audit
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not tiene_rol(user, "Administrador") and not tiene_rol(user, "Guardia"):
+            raise Exception("Solo guardias y administradores pueden registrar visitantes")
         if Visitante.objects.filter(ci=input.ci).exists():
             raise Exception(f"Ya existe un visitante con CI {input.ci}")
-        return Visitante.objects.create(
+        visitante = Visitante.objects.create(
             nombre=input.nombre, apellido=input.apellido, ci=input.ci,
             telefono=input.telefono or "", email=input.email or "",
         )
+        log_audit(user, "visitante_registrado", f"Visitante {visitante.nombre} {visitante.apellido} (CI: {visitante.ci}) registrado", request=info.context.request)
+        return visitante
 
     @strawberry.mutation
     def registrar_visita(self, info: Info, input: RegistrarVisitaInput) -> VisitaType:
         from apps.usuarios.models import Usuario
+        from apps.usuarios.utils import tiene_rol
         from apps.vehiculos.models import Vehiculo
+        from apps.acceso.utils import log_audit
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not tiene_rol(user, "Administrador") and not tiene_rol(user, "Guardia"):
+            raise Exception("Solo guardias y administradores pueden registrar visitas")
         visitante = Visitante.objects.filter(pk=input.visitante_id).first()
+        # El anfitrión es siempre un usuario del sistema, validado por ID
         anfitrion = Usuario.objects.filter(pk=input.anfitrion_id).first()
         if not visitante:
             raise Exception("Visitante no encontrado")
@@ -154,6 +171,7 @@ class VisitantesMutation:
             visitante=visitante, anfitrion=anfitrion, tipo_visita=tipo_visita,
             vehiculo=vehiculo, motivo=input.motivo,
         )
+        log_audit(user, "visita_registrada", f"Visita de {visitante.nombre} {visitante.apellido} para {anfitrion.nombre} {anfitrion.apellido}", request=info.context.request)
         try:
             from apps.notificaciones.utils import enviar_notificacion, enviar_email
             enviar_notificacion(
@@ -179,17 +197,32 @@ class VisitantesMutation:
 
     @strawberry.mutation
     def iniciar_visita(self, info: Info, visita_id: int) -> VisitaType:
-        visita = Visita.objects.filter(pk=visita_id, estado="pendiente").first()
+        from apps.usuarios.utils import tiene_rol
+        from apps.acceso.utils import log_audit
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not tiene_rol(user, "Administrador") and not tiene_rol(user, "Guardia"):
+            raise Exception("Solo guardias y administradores pueden iniciar visitas")
+        visita = Visita.objects.select_related("visitante", "anfitrion").filter(pk=visita_id, estado="pendiente").first()
         if not visita:
             raise Exception("Visita pendiente no encontrada")
         visita.estado = "activa"
         visita.fecha_entrada = timezone.now()
         visita.save()
+        log_audit(user, "visita_iniciada", f"Visita #{visita_id} de {visita.visitante.nombre} {visita.visitante.apellido} iniciada", request=info.context.request)
         return visita
 
     @strawberry.mutation
     def finalizar_visita(self, info: Info, visita_id: int, observaciones: Optional[str] = "") -> VisitaType:
-        visita = Visita.objects.filter(pk=visita_id, estado="activa").first()
+        from apps.usuarios.utils import tiene_rol
+        from apps.acceso.utils import log_audit
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not tiene_rol(user, "Administrador") and not tiene_rol(user, "Guardia"):
+            raise Exception("Solo guardias y administradores pueden finalizar visitas")
+        visita = Visita.objects.select_related("visitante").filter(pk=visita_id, estado="activa").first()
         if not visita:
             raise Exception("Visita activa no encontrada")
         visita.estado = "completada"
@@ -197,4 +230,5 @@ class VisitantesMutation:
         if observaciones:
             visita.observaciones = observaciones
         visita.save()
+        log_audit(user, "visita_finalizada", f"Visita #{visita_id} de {visita.visitante.nombre} {visita.visitante.apellido} finalizada", request=info.context.request)
         return visita

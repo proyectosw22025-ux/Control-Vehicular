@@ -209,17 +209,33 @@ class ParqueosQuery:
 class ParqueosMutation:
     @strawberry.mutation
     def crear_zona(self, info: Info, input: CrearZonaInput) -> ZonaParqueoType:
+        from apps.usuarios.utils import tiene_rol
+        from apps.acceso.utils import log_audit
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not tiene_rol(user, "Administrador"):
+            raise Exception("Solo administradores pueden crear zonas de parqueo")
         if ZonaParqueo.objects.filter(nombre=input.nombre).exists():
             raise Exception(f"Ya existe la zona '{input.nombre}'")
-        return ZonaParqueo.objects.create(
+        zona = ZonaParqueo.objects.create(
             nombre=input.nombre,
             descripcion=input.descripcion or "",
             ubicacion=input.ubicacion or "",
             capacidad_total=input.capacidad_total,
         )
+        log_audit(user, "zona_creada", f"Zona '{zona.nombre}' creada", request=info.context.request)
+        return zona
 
     @strawberry.mutation
     def crear_espacio(self, info: Info, input: CrearEspacioInput) -> EspacioParqueoType:
+        from apps.usuarios.utils import tiene_rol
+        from apps.acceso.utils import log_audit
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not tiene_rol(user, "Administrador"):
+            raise Exception("Solo administradores pueden crear espacios de parqueo")
         zona = ZonaParqueo.objects.filter(pk=input.zona_id).first()
         categoria = CategoriaEspacio.objects.filter(pk=input.categoria_id).first()
         if not zona:
@@ -228,41 +244,78 @@ class ParqueosMutation:
             raise Exception("Categoría no encontrada")
         if EspacioParqueo.objects.filter(zona=zona, numero=input.numero).exists():
             raise Exception(f"Ya existe el espacio #{input.numero} en {zona.nombre}")
-        return EspacioParqueo.objects.create(
+        espacio = EspacioParqueo.objects.create(
             zona=zona, categoria=categoria, numero=input.numero,
             ubicacion_referencia=input.ubicacion_referencia or "",
         )
+        log_audit(user, "espacio_creado", f"Espacio {zona.nombre}#{input.numero} creado", request=info.context.request)
+        return espacio
 
     @strawberry.mutation
     def iniciar_sesion_parqueo(self, info: Info, input: IniciarSesionInput) -> SesionParqueoType:
         from apps.vehiculos.models import Vehiculo
-        espacio = EspacioParqueo.objects.filter(pk=input.espacio_id).first()
+        from apps.usuarios.utils import tiene_rol
+        from apps.acceso.utils import log_audit
+        from django.db import transaction
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not tiene_rol(user, "Administrador") and not tiene_rol(user, "Guardia"):
+            raise Exception("Solo guardias y administradores pueden iniciar sesiones de parqueo")
         vehiculo = Vehiculo.objects.filter(pk=input.vehiculo_id).first()
-        if not espacio:
-            raise Exception("Espacio no encontrado")
         if not vehiculo:
             raise Exception("Vehículo no encontrado")
-        if espacio.estado != "disponible":
-            raise Exception(f"El espacio #{espacio.numero} no está disponible")
+        if vehiculo.estado == "sancionado":
+            raise Exception("Vehículo sancionado. Debe regularizar sus multas antes de estacionar.")
+        if vehiculo.estado == "pendiente":
+            raise Exception("Vehículo pendiente de aprobación. No puede estacionar.")
+        if vehiculo.estado == "inactivo":
+            raise Exception("Vehículo inactivo. Contacte a la administración.")
         if SesionParqueo.objects.filter(vehiculo=vehiculo, estado="activa").exists():
-            raise Exception("El vehículo ya tiene una sesión activa")
-        sesion = SesionParqueo.objects.create(espacio=espacio, vehiculo=vehiculo)
-        espacio.estado = "ocupado"
-        espacio.save()
+            raise Exception("El vehículo ya tiene una sesión de parqueo activa")
+        # select_for_update evita race condition entre dos guardias simultáneos
+        with transaction.atomic():
+            espacio = EspacioParqueo.objects.select_for_update().filter(pk=input.espacio_id).first()
+            if not espacio:
+                raise Exception("Espacio no encontrado")
+            if espacio.estado != "disponible":
+                raise Exception(f"El espacio #{espacio.numero} no está disponible (estado: {espacio.estado})")
+            sesion = SesionParqueo.objects.create(espacio=espacio, vehiculo=vehiculo)
+            espacio.estado = "ocupado"
+            espacio.save()
+        log_audit(
+            user, "sesion_parqueo_iniciada",
+            f"Sesión iniciada: {vehiculo.placa} en {espacio.zona.nombre}#{espacio.numero}",
+            request=info.context.request,
+        )
         return sesion
 
     @strawberry.mutation
     def cerrar_sesion_parqueo(self, info: Info, sesion_id: int) -> SesionParqueoType:
-        sesion = SesionParqueo.objects.select_related("espacio").filter(
-            pk=sesion_id, estado="activa"
-        ).first()
-        if not sesion:
-            raise Exception("Sesión activa no encontrada")
-        sesion.hora_salida = timezone.now()
-        sesion.estado = "cerrada"
-        sesion.save()
-        sesion.espacio.estado = "disponible"
-        sesion.espacio.save()
+        from apps.usuarios.utils import tiene_rol
+        from apps.acceso.utils import log_audit
+        from django.db import transaction
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not tiene_rol(user, "Administrador") and not tiene_rol(user, "Guardia"):
+            raise Exception("Solo guardias y administradores pueden cerrar sesiones de parqueo")
+        with transaction.atomic():
+            sesion = SesionParqueo.objects.select_related("espacio__zona", "vehiculo").select_for_update().filter(
+                pk=sesion_id, estado="activa"
+            ).first()
+            if not sesion:
+                raise Exception("Sesión activa no encontrada")
+            sesion.hora_salida = timezone.now()
+            sesion.estado = "cerrada"
+            sesion.save()
+            sesion.espacio.estado = "disponible"
+            sesion.espacio.save()
+        log_audit(
+            user, "sesion_parqueo_cerrada",
+            f"Sesión cerrada: {sesion.vehiculo.placa} en {sesion.espacio.zona.nombre}#{sesion.espacio.numero}",
+            request=info.context.request,
+        )
         return sesion
 
     @strawberry.mutation

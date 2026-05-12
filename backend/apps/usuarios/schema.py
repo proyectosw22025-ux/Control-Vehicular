@@ -152,21 +152,26 @@ class UsuariosQuery:
 class UsuariosMutation:
     @strawberry.mutation
     def login(self, info: Info, input: LoginInput) -> AuthPayload:
+        from apps.acceso.utils import log_audit
         req = info.context.request
         x_fwd = req.META.get("HTTP_X_FORWARDED_FOR")
         ip = x_fwd.split(",")[0].strip() if x_fwd else (req.META.get("REMOTE_ADDR") or "unknown")
         rate_key = f"login_attempts_{ip}"
         attempts: int = cache.get(rate_key, 0)
         if attempts >= 5:
+            log_audit(None, "login_bloqueado", f"IP {ip} bloqueada por exceso de intentos (CI: {input.ci})", request=req)
             raise Exception("Demasiados intentos de inicio de sesión. Espere 1 minuto.")
         user = authenticate(username=input.ci, password=input.password)
         if not user:
             cache.set(rate_key, attempts + 1, timeout=60)
+            log_audit(None, "login_fallido", f"Intento fallido para CI {input.ci}", request=req)
             raise Exception("Credenciales inválidas")
         if not user.is_active:
-            raise Exception("Usuario inactivo")
+            log_audit(user, "login_inactivo", f"Intento de acceso de usuario inactivo: {user.ci}", request=req)
+            raise Exception("Usuario inactivo. Contacte a la administración.")
         cache.delete(rate_key)
         tokens = RefreshToken.for_user(user)
+        log_audit(user, "login_exitoso", f"Sesión iniciada por {user.ci}", request=req)
         return AuthPayload(
             access=str(tokens.access_token),
             refresh=str(tokens),
@@ -198,6 +203,8 @@ class UsuariosMutation:
             telefono=input.telefono or "",
             password=input.password,
         )
+        from apps.acceso.utils import log_audit
+        log_audit(None, "usuario_creado", f"Nuevo usuario registrado: CI={input.ci} tipo={tipo}", request=info.context.request)
         nombre_rol = TIPOS_USUARIO[tipo]
         descripcion_rol = {
             "Estudiante":             "Estudiante universitario — gestiona sus vehículos",
@@ -254,6 +261,8 @@ class UsuariosMutation:
             raise Exception("Usuario no encontrado")
         user.is_active = False
         user.save()
+        from apps.acceso.utils import log_audit
+        log_audit(info.context.request.user, "usuario_desactivado", f"Usuario {user.ci} ({user.nombre} {user.apellido}) desactivado", request=info.context.request)
         return MensajeType(ok=True, mensaje=f"Usuario {user.ci} desactivado")
 
     @strawberry.mutation
@@ -270,6 +279,9 @@ class UsuariosMutation:
             usuario=user, rol=rol,
             defaults={"asignado_por": info.context.request.user},
         )
+        if created:
+            from apps.acceso.utils import log_audit
+            log_audit(info.context.request.user, "rol_asignado", f"Rol '{rol.nombre}' asignado a {user.ci}", request=info.context.request)
         return MensajeType(ok=True, mensaje="Rol asignado" if created else "Ya tenía ese rol")
 
     @strawberry.mutation
@@ -281,6 +293,8 @@ class UsuariosMutation:
         ).delete()
         if not deleted:
             raise Exception("Asignación no encontrada")
+        from apps.acceso.utils import log_audit
+        log_audit(info.context.request.user, "rol_removido", f"Rol ID={input.rol_id} removido del usuario ID={input.usuario_id}", request=info.context.request)
         return MensajeType(ok=True, mensaje="Rol removido")
 
     @strawberry.mutation

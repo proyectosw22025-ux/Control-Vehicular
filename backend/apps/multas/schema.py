@@ -86,7 +86,6 @@ class PagarMultaInput:
 @strawberry.input
 class ApelarMultaInput:
     multa_id: int
-    usuario_id: int
     motivo: str
 
 
@@ -114,6 +113,12 @@ class MultasQuery:
 
     @strawberry.field
     def multas_pendientes(self, info: Info) -> List[MultaType]:
+        from apps.usuarios.utils import tiene_rol
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not tiene_rol(user, "Administrador") and not tiene_rol(user, "Guardia"):
+            raise Exception("Solo guardias y administradores pueden ver las multas pendientes")
         return list(
             Multa.objects.filter(estado="pendiente")
             .select_related("tipo", "vehiculo").order_by("-fecha")
@@ -144,6 +149,13 @@ class MultasMutation:
     @strawberry.mutation
     def registrar_multa(self, info: Info, input: RegistrarMultaInput) -> MultaType:
         from apps.vehiculos.models import Vehiculo
+        from apps.usuarios.utils import tiene_rol
+        from apps.acceso.utils import log_audit
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not tiene_rol(user, "Administrador") and not tiene_rol(user, "Guardia"):
+            raise Exception("Solo guardias y administradores pueden registrar multas")
         vehiculo = Vehiculo.objects.filter(pk=input.vehiculo_id).first()
         tipo = TipoMulta.objects.filter(pk=input.tipo_id).first()
         if not vehiculo:
@@ -158,6 +170,21 @@ class MultasMutation:
         )
         vehiculo.estado = "sancionado"
         vehiculo.save()
+        # Cerrar sesión de parqueo activa si el vehículo es sancionado
+        from apps.parqueos.models import SesionParqueo
+        from django.utils import timezone as tz
+        sesion_activa = SesionParqueo.objects.filter(vehiculo=vehiculo, estado="activa").first()
+        if sesion_activa:
+            sesion_activa.hora_salida = tz.now()
+            sesion_activa.estado = "cerrada"
+            sesion_activa.save()
+            sesion_activa.espacio.estado = "disponible"
+            sesion_activa.espacio.save()
+        log_audit(
+            user, "multa_registrada",
+            f"Multa '{tipo.nombre}' Bs {monto} registrada para {vehiculo.placa}",
+            request=info.context.request,
+        )
 
         propietario = getattr(vehiculo, "propietario", None)
         if propietario:
@@ -185,6 +212,10 @@ class MultasMutation:
 
     @strawberry.mutation
     def pagar_multa(self, info: Info, input: PagarMultaInput) -> PagoMultaType:
+        from apps.acceso.utils import log_audit
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
         multa = Multa.objects.filter(pk=input.multa_id, estado="pendiente").first()
         if not multa:
             raise Exception("Multa pendiente no encontrada")
@@ -193,33 +224,40 @@ class MultasMutation:
         pago = PagoMulta.objects.create(
             multa=multa, monto_pagado=multa.monto, metodo_pago=input.metodo_pago,
             comprobante=input.comprobante or "",
-            registrado_por=info.context.request.user if info.context.request.user.is_authenticated else None,
+            registrado_por=user,
         )
         multa.estado = "pagada"
         multa.save()
         if not Multa.objects.filter(vehiculo=multa.vehiculo, estado="pendiente").exists():
             multa.vehiculo.estado = "activo"
             multa.vehiculo.save()
+        log_audit(
+            user, "multa_pagada",
+            f"Multa #{multa.id} pagada vía {input.metodo_pago} para {multa.vehiculo.placa}",
+            request=info.context.request,
+        )
         return pago
 
     @strawberry.mutation
     def apelar_multa(self, info: Info, input: ApelarMultaInput) -> ApelacionMultaType:
-        from apps.usuarios.models import Usuario
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
         multa = Multa.objects.filter(pk=input.multa_id, estado="pendiente").first()
         if not multa:
             raise Exception("Multa pendiente no encontrada")
         if ApelacionMulta.objects.filter(multa=multa).exists():
             raise Exception("Esta multa ya tiene una apelación registrada")
-        usuario = Usuario.objects.filter(pk=input.usuario_id).first()
-        if not usuario:
-            raise Exception("Usuario no encontrado")
-        apelacion = ApelacionMulta.objects.create(multa=multa, usuario=usuario, motivo=input.motivo)
+        apelacion = ApelacionMulta.objects.create(multa=multa, usuario=user, motivo=input.motivo)
         multa.estado = "apelada"
         multa.save()
         return apelacion
 
     @strawberry.mutation
     def resolver_apelacion(self, info: Info, input: ResolverApelacionInput) -> ApelacionMultaType:
+        from apps.usuarios.utils import tiene_rol
+        if not tiene_rol(info.context.request.user, "Administrador"):
+            raise Exception("Solo administradores pueden resolver apelaciones")
         apelacion = ApelacionMulta.objects.select_related("multa").filter(
             pk=input.apelacion_id, estado="pendiente"
         ).first()
