@@ -1,7 +1,47 @@
 import hashlib
+import hmac
+import secrets
+import struct
+import time
 import uuid
 from django.db import models
 from django.conf import settings
+
+QR_INTERVAL = 30  # segundos por ventana TOTP
+
+
+def _totp_para_ventana(secret: str, ventana: int) -> str:
+    """Calcula el código TOTP para una ventana de tiempo específica."""
+    key = bytes.fromhex(secret) if len(secret) == 64 else secret.encode()
+    msg = struct.pack(">Q", ventana)
+    h = hmac.new(key, msg, hashlib.sha256).digest()
+    offset = h[-1] & 0x0F
+    code = struct.unpack(">I", h[offset: offset + 4])[0] & 0x7FFFFFFF
+    return str(code % 100_000_000).zfill(8)
+
+
+def generar_qr_dinamico(secret: str) -> tuple[str, int]:
+    """
+    Retorna (codigo_actual, segundos_restantes).
+    El código es válido hasta que cambie la ventana de tiempo.
+    """
+    ahora = time.time()
+    ventana = int(ahora) // QR_INTERVAL
+    segundos_restantes = QR_INTERVAL - int(ahora) % QR_INTERVAL
+    return _totp_para_ventana(secret, ventana), segundos_restantes
+
+
+def validar_qr_dinamico(secret: str, codigo: str, tolerancia: int = 1) -> bool:
+    """
+    Valida un código TOTP. Permite ±tolerancia ventanas para compensar
+    desfase de reloj entre el dispositivo del guardia y el servidor.
+    Un código válido solo sirve para un vehículo: el que tiene ese secret.
+    """
+    ventana = int(time.time()) // QR_INTERVAL
+    for delta in range(-tolerancia, tolerancia + 1):
+        if _totp_para_ventana(secret, ventana + delta) == str(codigo).zfill(8):
+            return True
+    return False
 
 
 class TipoVehiculo(models.Model):
@@ -40,7 +80,11 @@ class Vehiculo(models.Model):
     foto = models.ImageField(upload_to="vehiculos/fotos/", blank=True, null=True)
     codigo_qr = models.CharField(
         max_length=64, unique=True, blank=True,
-        help_text="Hash SHA-256 generado al registrar el vehículo. Funciona mientras estado=activo.",
+        help_text="Hash SHA-256 estático (legacy). Se mantiene para compatibilidad con QrSesion.",
+    )
+    qr_secret = models.CharField(
+        max_length=64, blank=True,
+        help_text="Clave secreta para QR dinámico TOTP. NUNCA se expone al cliente directamente.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -55,6 +99,8 @@ class Vehiculo(models.Model):
             self.codigo_qr = hashlib.sha256(
                 f"{self.placa}-{uuid.uuid4()}".encode()
             ).hexdigest()
+        if not self.qr_secret:
+            self.qr_secret = secrets.token_hex(32)
         super().save(*args, **kwargs)
 
     def __str__(self):

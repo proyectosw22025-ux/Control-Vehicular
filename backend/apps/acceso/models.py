@@ -115,10 +115,11 @@ class RegistroAcceso(models.Model):
         ("salida", "Salida"),
     ]
     METODOS = [
-        ("qr_permanente", "QR permanente del vehículo"),
-        ("qr_delegacion", "QR de delegación"),
+        ("qr_dinamico",  "QR dinámico TOTP (seguro, caduca cada 30s)"),
+        ("qr_permanente","QR permanente del vehículo (legacy)"),
+        ("qr_delegacion","QR de delegación"),
         ("pase_temporal", "Pase temporal"),
-        ("manual", "Ingreso manual por guardia"),
+        ("manual",       "Ingreso manual por guardia"),
     ]
 
     punto_acceso = models.ForeignKey(

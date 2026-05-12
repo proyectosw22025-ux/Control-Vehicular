@@ -13,6 +13,13 @@ ESTADOS_VALIDOS = ["pendiente", "activo", "inactivo", "sancionado"]
 
 
 @strawberry.type
+class QrDinamicoType:
+    codigo: str
+    segundos_restantes: int
+    intervalo: int
+
+
+@strawberry.type
 class TipoVehiculoType:
     id: int
     nombre: str
@@ -134,10 +141,13 @@ class VehiculosQuery:
                 | Q(propietario__nombre__icontains=b)
                 | Q(propietario__apellido__icontains=b)
             )
-        # excluir pendientes de la lista general (solo admin los ve en vehiculos_pendientes)
+        # Admins ven todo; otros ven sus propios pendientes + todos los activos/demás
         usuario = info.context.request.user
         if not tiene_rol(usuario, "Administrador"):
-            qs = qs.exclude(estado="pendiente")
+            if usuario.is_authenticated:
+                qs = qs.filter(~Q(estado="pendiente") | Q(propietario=usuario))
+            else:
+                qs = qs.exclude(estado="pendiente")
 
         qs = qs.order_by("-created_at")
         total = qs.count()
@@ -176,6 +186,29 @@ class VehiculosQuery:
             .select_related("usuario").order_by("-fecha_inicio")
         )
 
+    @strawberry.field
+    def qr_dinamico_vehiculo(self, info: Info, vehiculo_id: int) -> QrDinamicoType:
+        """
+        Retorna el código QR dinámico actual del vehículo (TOTP, caduca cada 30s).
+        Solo el propietario o un administrador puede solicitarlo.
+        El secret NUNCA viaja al cliente — solo el código generado.
+        """
+        from apps.vehiculos.models import generar_qr_dinamico, QR_INTERVAL
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        v = Vehiculo.objects.filter(pk=vehiculo_id).first()
+        if not v:
+            raise Exception("Vehículo no encontrado")
+        if not tiene_rol(user, "Administrador") and v.propietario_id != user.pk:
+            raise Exception("Solo puedes ver el QR de tu propio vehículo")
+        if v.estado != "activo":
+            raise Exception(f"El vehículo no está activo (estado: {v.estado})")
+        if not v.qr_secret:
+            raise Exception("Este vehículo aún no tiene QR dinámico. Regenere el QR.")
+        codigo, segundos = generar_qr_dinamico(v.qr_secret)
+        return QrDinamicoType(codigo=codigo, segundos_restantes=segundos, intervalo=QR_INTERVAL)
+
 
 # ──────────────────────────────────────────────
 # MUTATIONS
@@ -185,9 +218,13 @@ class VehiculosQuery:
 class VehiculosMutation:
     @strawberry.mutation
     def registrar_vehiculo(self, info: Info, input: CrearVehiculoInput) -> VehiculoType:
-        if not tiene_rol(info.context.request.user, "Administrador"):
-            raise Exception("Solo administradores pueden registrar vehículos")
         from apps.usuarios.models import Usuario
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        # Admins can register for anyone; others can only register their own vehicle
+        if not tiene_rol(user, "Administrador") and input.propietario_id != user.pk:
+            raise Exception("Solo puedes registrar vehículos a tu propia cuenta")
         if Vehiculo.objects.filter(placa=input.placa.upper()).exists():
             raise Exception(f"La placa {input.placa} ya está registrada")
         tipo = TipoVehiculo.objects.filter(pk=input.tipo_id).first()
@@ -239,7 +276,9 @@ class VehiculosMutation:
 
     @strawberry.mutation
     def aprobar_vehiculo(self, info: Info, vehiculo_id: int) -> VehiculoType:
-        if not tiene_rol(info.context.request.user, "Administrador"):
+        from apps.acceso.utils import log_audit
+        admin = info.context.request.user
+        if not tiene_rol(admin, "Administrador"):
             raise Exception("Solo administradores pueden aprobar vehículos")
         v = Vehiculo.objects.select_related("tipo", "propietario").filter(pk=vehiculo_id).first()
         if not v:
@@ -248,6 +287,7 @@ class VehiculosMutation:
             raise Exception("El vehículo no está pendiente de aprobación")
         v.estado = "activo"
         v.save()
+        log_audit(admin, "vehiculo_aprobado", f"Vehículo {v.placa} aprobado", request=info.context.request)
         try:
             from apps.notificaciones.utils import enviar_notificacion, enviar_email
             enviar_notificacion(
@@ -271,7 +311,9 @@ class VehiculosMutation:
 
     @strawberry.mutation
     def rechazar_vehiculo(self, info: Info, vehiculo_id: int, motivo: str) -> VehiculoType:
-        if not tiene_rol(info.context.request.user, "Administrador"):
+        from apps.acceso.utils import log_audit
+        admin = info.context.request.user
+        if not tiene_rol(admin, "Administrador"):
             raise Exception("Solo administradores pueden rechazar vehículos")
         v = Vehiculo.objects.select_related("tipo", "propietario").filter(pk=vehiculo_id).first()
         if not v:
@@ -280,6 +322,7 @@ class VehiculosMutation:
             raise Exception("El vehículo no está pendiente de aprobación")
         v.estado = "inactivo"
         v.save()
+        log_audit(admin, "vehiculo_rechazado", f"Vehículo {v.placa} rechazado. Motivo: {motivo}", request=info.context.request)
         try:
             from apps.notificaciones.utils import enviar_notificacion, enviar_email
             enviar_notificacion(

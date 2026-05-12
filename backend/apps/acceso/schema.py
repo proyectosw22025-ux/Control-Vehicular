@@ -8,6 +8,7 @@ from django.utils import timezone
 from datetime import timedelta
 
 from .models import PuntoAcceso, QrSesion, PaseTemporal, RegistroAcceso, AuditLog
+from .utils import log_audit
 
 
 @strawberry.type
@@ -92,18 +93,6 @@ class AuditLogType:
             return f"{self.usuario.nombre} {self.usuario.apellido}"
         return "Sistema"
 
-
-def _log_audit(usuario, accion: str, descripcion: str, request=None):
-    ip = None
-    if request:
-        x_fwd = request.META.get("HTTP_X_FORWARDED_FOR")
-        ip = x_fwd.split(",")[0].strip() if x_fwd else request.META.get("REMOTE_ADDR")
-    AuditLog.objects.create(
-        accion=accion,
-        descripcion=descripcion,
-        usuario=usuario if getattr(usuario, "is_authenticated", False) else None,
-        ip=ip,
-    )
 
 
 # ──────────────────────────────────────────────
@@ -227,20 +216,40 @@ class AccesoMutation:
         if not punto:
             raise Exception("Punto de acceso no encontrado o inactivo")
 
+        from apps.vehiculos.models import validar_qr_dinamico
         qr_delegacion = pase_temporal = vehiculo = None
         metodo_acceso = None
 
-        # Nivel 1: QR permanente del vehículo
-        vehiculo = Vehiculo.objects.filter(codigo_qr=input.codigo).first()
-        if vehiculo:
+        # Nivel 1: QR dinámico TOTP (cambia cada 30 segundos — no se puede copiar/imprimir)
+        # Buscamos todos los vehículos activos y validamos el TOTP contra su secret.
+        # Optimización: si el código tiene exactamente 8 dígitos numéricos → TOTP candidato.
+        codigo_limpio = input.codigo.strip()
+        if codigo_limpio.isdigit() and len(codigo_limpio) == 8:
+            for v in Vehiculo.objects.filter(estado="activo").only("id", "placa", "estado", "qr_secret", "propietario_id"):
+                if v.qr_secret and validar_qr_dinamico(v.qr_secret, codigo_limpio):
+                    vehiculo = v
+                    metodo_acceso = "qr_dinamico"
+                    break
+
+        if vehiculo is None:
+            # Nivel 2: QR estático legacy (codigo_qr SHA-256) — solo para compatibilidad
+            vehiculo = Vehiculo.objects.filter(codigo_qr=codigo_limpio).first()
+            if vehiculo:
+                if vehiculo.estado == "pendiente":
+                    raise Exception("Vehículo pendiente de aprobación. Espere la confirmación del administrador.")
+                if vehiculo.estado == "sancionado":
+                    raise Exception("Vehículo sancionado. Regularice sus multas para acceder.")
+                if vehiculo.estado == "inactivo":
+                    raise Exception("Vehículo inactivo. Contacte a la administración.")
+                metodo_acceso = "qr_permanente"
+
+        if vehiculo and metodo_acceso == "qr_dinamico":
             if vehiculo.estado == "pendiente":
                 raise Exception("Vehículo pendiente de aprobación. Espere la confirmación del administrador.")
             if vehiculo.estado == "sancionado":
                 raise Exception("Vehículo sancionado. Regularice sus multas para acceder.")
-            if vehiculo.estado == "inactivo":
-                raise Exception("Vehículo inactivo. Contacte a la administración.")
-            metodo_acceso = "qr_permanente"
-        else:
+
+        if vehiculo is None:
             # Nivel 2: QR de delegación
             qr = QrSesion.objects.filter(codigo_hash=input.codigo, usado=False).select_related("vehiculo").first()
             if qr:
@@ -280,7 +289,7 @@ class AccesoMutation:
             metodo_acceso=metodo_acceso,
             registrado_por=registrado_por,
         )
-        _log_audit(
+        log_audit(
             registrado_por,
             "registrar_acceso",
             f"{input.tipo.capitalize()} de {vehiculo.placa if vehiculo else '?'} en {punto.nombre} vía {metodo_acceso}",
@@ -312,6 +321,8 @@ class AccesoMutation:
         vehiculo = Vehiculo.objects.filter(placa=input.placa.upper()).first()
         if not vehiculo:
             raise Exception(f"Vehículo con placa {input.placa.upper()} no registrado en el sistema")
+        if vehiculo.estado == "pendiente":
+            raise Exception("Vehículo pendiente de aprobación. No puede ingresar hasta ser aprobado por el administrador.")
         if vehiculo.estado == "sancionado":
             raise Exception("Vehículo sancionado. No puede ingresar hasta regularizar sus multas.")
         if vehiculo.estado == "inactivo":
@@ -325,7 +336,7 @@ class AccesoMutation:
             observacion=input.observacion or "",
             registrado_por=registrado_por,
         )
-        _log_audit(
+        log_audit(
             registrado_por,
             "acceso_manual",
             f"{input.tipo.capitalize()} manual de {vehiculo.placa} en {punto.nombre}",
