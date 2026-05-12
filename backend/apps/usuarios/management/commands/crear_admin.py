@@ -3,17 +3,25 @@ from apps.usuarios.models import Usuario
 
 
 class Command(BaseCommand):
-    help = "Crea el superusuario inicial si no existe"
+    help = "Crea o resetea el superusuario inicial garantizando la contraseña correcta"
 
     def handle(self, *args, **kwargs):
-        if Usuario.objects.filter(ci="admin").exists():
-            self.stdout.write("Superusuario ya existe, omitiendo.")
-            return
-        Usuario.objects.create_superuser(
+        usuario, created = Usuario.objects.get_or_create(
             ci="admin",
-            email="admin@uagrm.edu.bo",
-            nombre="Administrador",
-            apellido="Sistema",
-            password="Admin1234!",
+            defaults={
+                "email": "admin@uagrm.edu.bo",
+                "nombre": "Administrador",
+                "apellido": "Sistema",
+                "is_superuser": True,
+                "is_staff": True,
+                "is_active": True,
+            },
         )
-        self.stdout.write(self.style.SUCCESS("Superusuario creado: CI=admin / Admin1234!"))
+        # Forzar contraseña correcta siempre (por si se creó con CRLF corrupto)
+        usuario.set_password("Admin1234!")
+        usuario.is_superuser = True
+        usuario.is_staff = True
+        usuario.is_active = True
+        usuario.save()
+        accion = "creado" if created else "actualizado"
+        self.stdout.write(self.style.SUCCESS(f"Superusuario {accion}: CI=admin / Admin1234!"))
