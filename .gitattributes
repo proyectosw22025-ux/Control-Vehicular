@@ -1,0 +1,9 @@
+# Forzar LF en archivos que se ejecutan en Linux (Docker)
+*.sh text eol=lf
+*.toml text eol=lf
+Dockerfile text eol=lf
+*.conf text eol=lf
+entrypoint.sh text eol=lf
+
+# Archivos de texto normales: auto
+* text=auto

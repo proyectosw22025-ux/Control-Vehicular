@@ -3,7 +3,7 @@ import { setContext } from '@apollo/client/link/context'
 import { onError } from '@apollo/client/link/error'
 import { Observable } from '@apollo/client/utilities'
 
-const GRAPHQL_URI = 'http://127.0.0.1:8000/graphql/'
+const GRAPHQL_URI = import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/'
 
 // ── Refresco de token ──────────────────────────────────────
 // Usa fetch nativo para evitar dependencia circular con el client de Apollo.

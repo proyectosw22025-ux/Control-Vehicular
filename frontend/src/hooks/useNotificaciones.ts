@@ -24,7 +24,8 @@ export function useNotificaciones(onNueva?: (n: NotifPayload) => void) {
     const token = localStorage.getItem('access_token')
     if (!token) return
 
-    const ws = new WebSocket(`ws://localhost:8000/ws/notificaciones/?token=${token}`)
+    const WS_BASE = import.meta.env.VITE_WS_URI ?? 'ws://localhost:8000/ws/notificaciones/'
+    const ws = new WebSocket(`${WS_BASE}?token=${token}`)
 
     ws.onopen = () => {
       if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
@@ -51,7 +52,8 @@ export function useNotificaciones(onNueva?: (n: NotifPayload) => void) {
         const refresh = localStorage.getItem('refresh_token')
         if (!refresh) return  // sin refresh token: no reconectar, esperar login
         try {
-          const res = await fetch('http://127.0.0.1:8000/graphql/', {
+          const GRAPHQL_URI = import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/'
+          const res = await fetch(GRAPHQL_URI, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
