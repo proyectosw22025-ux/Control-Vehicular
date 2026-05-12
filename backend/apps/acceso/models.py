@@ -147,7 +147,7 @@ class RegistroAcceso(models.Model):
         related_name="registros",
     )
     tipo = models.CharField(max_length=8, choices=TIPOS)
-    metodo_acceso = models.CharField(max_length=15, choices=METODOS, default="qr_permanente")
+    metodo_acceso = models.CharField(max_length=15, choices=METODOS, default="qr_dinamico")
     timestamp = models.DateTimeField(auto_now_add=True)
     observacion = models.TextField(blank=True)
     registrado_por = models.ForeignKey(
