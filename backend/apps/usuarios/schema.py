@@ -204,7 +204,19 @@ class UsuariosMutation:
             password=input.password,
         )
         from apps.acceso.utils import log_audit
+        from apps.notificaciones.email_templates import email_bienvenida
+        from apps.notificaciones.utils import enviar_email
         log_audit(None, "usuario_creado", f"Nuevo usuario registrado: CI={input.ci} tipo={tipo}", request=info.context.request)
+        try:
+            asunto_bv, html_bv = email_bienvenida(user.nombre)
+            enviar_email(
+                usuario=user,
+                asunto=asunto_bv,
+                cuerpo=f"Hola {user.nombre}, tu cuenta fue creada exitosamente.",
+                html=html_bv,
+            )
+        except Exception:
+            pass
         nombre_rol = TIPOS_USUARIO[tipo]
         descripcion_rol = {
             "Estudiante":             "Estudiante universitario — gestiona sus vehículos",

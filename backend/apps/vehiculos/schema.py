@@ -264,15 +264,15 @@ class VehiculosMutation:
                     mensaje=f"{vehiculo.marca} {vehiculo.modelo} registrado por {propietario.nombre} {propietario.apellido} requiere aprobación.",
                     tipo_codigo="vehiculo_pendiente",
                 )
+            from apps.notificaciones.email_templates import email_vehiculo_pendiente
+            asunto_prop, html_prop = email_vehiculo_pendiente(
+                propietario.nombre, vehiculo.placa, vehiculo.marca, vehiculo.modelo
+            )
             enviar_email(
                 usuario=propietario,
-                asunto=f"Vehículo {vehiculo.placa} registrado — pendiente de aprobación",
-                cuerpo=(
-                    f"Hola {propietario.nombre},\n\n"
-                    f"Tu vehículo {vehiculo.marca} {vehiculo.modelo} ({vehiculo.placa}) ha sido registrado "
-                    f"y está pendiente de aprobación por un administrador.\n\n"
-                    f"Recibirás otra notificación cuando sea procesado.\n"
-                ),
+                asunto=asunto_prop,
+                cuerpo=f"Hola {propietario.nombre}, tu vehículo {vehiculo.placa} está pendiente de aprobación.",
+                html=html_prop,
             )
         except Exception:
             pass
@@ -300,14 +300,15 @@ class VehiculosMutation:
                 mensaje=f"Tu vehículo {v.marca} {v.modelo} ({v.placa}) fue aprobado y está activo.",
                 tipo_codigo="vehiculo_aprobado",
             )
+            from apps.notificaciones.email_templates import email_vehiculo_aprobado
+            asunto_ap, html_ap = email_vehiculo_aprobado(
+                v.propietario.nombre, v.placa, v.marca, v.modelo
+            )
             enviar_email(
                 usuario=v.propietario,
-                asunto=f"Vehículo {v.placa} aprobado",
-                cuerpo=(
-                    f"Hola {v.propietario.nombre},\n\n"
-                    f"Tu vehículo {v.marca} {v.modelo} ({v.placa}) ha sido aprobado y está activo en el sistema.\n\n"
-                    f"Ya puedes usar el QR para acceder al parqueo.\n"
-                ),
+                asunto=asunto_ap,
+                cuerpo=f"Hola {v.propietario.nombre}, tu vehículo {v.placa} fue aprobado.",
+                html=html_ap,
             )
         except Exception:
             pass
@@ -335,15 +336,15 @@ class VehiculosMutation:
                 mensaje=f"Tu vehículo {v.marca} {v.modelo} ({v.placa}) no fue aprobado. Motivo: {motivo}",
                 tipo_codigo="vehiculo_rechazado",
             )
+            from apps.notificaciones.email_templates import email_vehiculo_rechazado
+            asunto_rch, html_rch = email_vehiculo_rechazado(
+                v.propietario.nombre, v.placa, v.marca, v.modelo, motivo
+            )
             enviar_email(
                 usuario=v.propietario,
-                asunto=f"Vehículo {v.placa} no aprobado",
-                cuerpo=(
-                    f"Hola {v.propietario.nombre},\n\n"
-                    f"Tu vehículo {v.marca} {v.modelo} ({v.placa}) no fue aprobado.\n"
-                    f"Motivo: {motivo}\n\n"
-                    f"Puedes contactar con administración para más información.\n"
-                ),
+                asunto=asunto_rch,
+                cuerpo=f"Hola {v.propietario.nombre}, tu vehículo {v.placa} no fue aprobado. Motivo: {motivo}",
+                html=html_rch,
             )
         except Exception:
             pass

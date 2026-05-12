@@ -195,17 +195,15 @@ class MultasMutation:
                 mensaje=f"Se registró una multa por '{tipo.nombre}' de Bs {monto}. {input.descripcion}",
                 tipo_codigo="multa_registrada",
             )
+            from apps.notificaciones.email_templates import email_multa_registrada
+            asunto_m, html_m = email_multa_registrada(
+                propietario.nombre, vehiculo.placa, tipo.nombre, str(monto), input.descripcion
+            )
             enviar_email(
                 usuario=propietario,
-                asunto=f"Multa registrada para vehículo {vehiculo.placa}",
-                cuerpo=(
-                    f"Hola {propietario.nombre},\n\n"
-                    f"Se registró una multa para tu vehículo {vehiculo.placa}:\n"
-                    f"  Tipo: {tipo.nombre}\n"
-                    f"  Monto: Bs {monto}\n"
-                    f"  Descripción: {input.descripcion}\n\n"
-                    f"Ingresa al sistema para ver los detalles y realizar el pago.\n"
-                ),
+                asunto=asunto_m,
+                cuerpo=f"Multa de Bs {monto} registrada para {vehiculo.placa}.",
+                html=html_m,
             )
 
         return multa
@@ -231,6 +229,23 @@ class MultasMutation:
         if not Multa.objects.filter(vehiculo=multa.vehiculo, estado="pendiente").exists():
             multa.vehiculo.estado = "activo"
             multa.vehiculo.save()
+        propietario_pago = getattr(multa.vehiculo, "propietario", None)
+        if propietario_pago:
+            try:
+                from apps.notificaciones.email_templates import email_multa_pagada
+                from apps.notificaciones.utils import enviar_email
+                asunto_pg, html_pg = email_multa_pagada(
+                    propietario_pago.nombre, multa.vehiculo.placa,
+                    str(multa.monto), input.metodo_pago
+                )
+                enviar_email(
+                    usuario=propietario_pago,
+                    asunto=asunto_pg,
+                    cuerpo=f"Tu multa de Bs {multa.monto} para {multa.vehiculo.placa} fue pagada.",
+                    html=html_pg,
+                )
+            except Exception:
+                pass
         log_audit(
             user, "multa_pagada",
             f"Multa #{multa.id} pagada vía {input.metodo_pago} para {multa.vehiculo.placa}",

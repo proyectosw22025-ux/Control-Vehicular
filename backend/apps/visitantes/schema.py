@@ -180,16 +180,18 @@ class VisitantesMutation:
                 mensaje=f"El visitante {visitante.nombre} {visitante.apellido} (CI: {visitante.ci}) quiere verte. Motivo: {input.motivo}",
                 tipo_codigo="visita_registrada",
             )
+            from apps.notificaciones.email_templates import email_visita_registrada
+            asunto_v, html_v = email_visita_registrada(
+                anfitrion.nombre,
+                f"{visitante.nombre} {visitante.apellido}",
+                visitante.ci,
+                input.motivo,
+            )
             enviar_email(
                 usuario=anfitrion,
-                asunto=f"Nueva visita: {visitante.nombre} {visitante.apellido}",
-                cuerpo=(
-                    f"Hola {anfitrion.nombre},\n\n"
-                    f"Se registró una visita para usted:\n"
-                    f"  Visitante: {visitante.nombre} {visitante.apellido} (CI: {visitante.ci})\n"
-                    f"  Motivo: {input.motivo}\n\n"
-                    f"Ingrese al sistema para confirmar el ingreso.\n"
-                ),
+                asunto=asunto_v,
+                cuerpo=f"Tienes una visita de {visitante.nombre} {visitante.apellido}.",
+                html=html_v,
             )
         except Exception:
             pass

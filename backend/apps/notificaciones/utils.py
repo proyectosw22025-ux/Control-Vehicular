@@ -6,7 +6,11 @@ from django.conf import settings
 from .models import Notificacion, TipoNotificacion
 
 
-def enviar_email(usuario, asunto: str, cuerpo: str) -> None:
+def enviar_email(usuario, asunto: str, cuerpo: str, html: str = "") -> None:
+    """
+    Envía un email al usuario. Si `html` se provee, se envía como email HTML
+    con `cuerpo` como fallback de texto plano.
+    """
     email = getattr(usuario, 'email', None)
     if not email:
         return
@@ -14,8 +18,9 @@ def enviar_email(usuario, asunto: str, cuerpo: str) -> None:
         send_mail(
             subject=asunto,
             message=cuerpo,
-            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@parqueo.edu.bo'),
+            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@uagrm.edu.bo'),
             recipient_list=[email],
+            html_message=html if html else None,
             fail_silently=True,
         )
     except Exception:
