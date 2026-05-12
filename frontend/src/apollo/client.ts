@@ -109,11 +109,24 @@ const errorLink = onError(({ graphQLErrors, operation, forward }) => {
   })
 })
 
+// Fetch con timeout de 20s para evitar "Guardando..." eterno en Railway
+const fetchWithTimeout: typeof fetch = (input, options = {}) => {
+  const controller = new AbortController()
+  const id = setTimeout(() => controller.abort(), 20_000)
+  return fetch(input, { ...options, signal: controller.signal })
+    .finally(() => clearTimeout(id))
+}
+
 // ── Link: HTTP ─────────────────────────────────────────────
-const httpLink = createHttpLink({ uri: GRAPHQL_URI })
+const httpLink = createHttpLink({ uri: GRAPHQL_URI, fetch: fetchWithTimeout })
 
 // ── Client: errorLink → authLink → httpLink ────────────────
 export const client = new ApolloClient({
   link: errorLink.concat(authLink).concat(httpLink),
   cache: new InMemoryCache(),
+  defaultOptions: {
+    mutate:     { errorPolicy: 'all' },
+    query:      { errorPolicy: 'all' },
+    watchQuery: { errorPolicy: 'all' },
+  },
 })
