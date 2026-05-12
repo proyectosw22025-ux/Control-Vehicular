@@ -6,22 +6,13 @@ class Command(BaseCommand):
     help = "Crea o resetea el superusuario inicial garantizando la contraseña correcta"
 
     def handle(self, *args, **kwargs):
-        usuario, created = Usuario.objects.get_or_create(
+        # Borrar y recrear garantiza hash correcto (igual que create_user en el registro)
+        Usuario.objects.filter(ci="admin").delete()
+        Usuario.objects.create_superuser(
             ci="admin",
-            defaults={
-                "email": "admin@uagrm.edu.bo",
-                "nombre": "Administrador",
-                "apellido": "Sistema",
-                "is_superuser": True,
-                "is_staff": True,
-                "is_active": True,
-            },
+            email="admin@uagrm.edu.bo",
+            nombre="Administrador",
+            apellido="Sistema",
+            password="Admin1234!",
         )
-        # Forzar contraseña correcta siempre (por si se creó con CRLF corrupto)
-        usuario.set_password("Admin1234!")
-        usuario.is_superuser = True
-        usuario.is_staff = True
-        usuario.is_active = True
-        usuario.save()
-        accion = "creado" if created else "actualizado"
-        self.stdout.write(self.style.SUCCESS(f"Superusuario {accion}: CI=admin / Admin1234!"))
+        self.stdout.write(self.style.SUCCESS("Superusuario recreado: CI=admin / Admin1234!"))
