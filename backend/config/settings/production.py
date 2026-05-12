@@ -46,6 +46,9 @@ DEFAULT_FROM_EMAIL = config(
     "DEFAULT_FROM_EMAIL", default="Parqueo UAGRM <noreply@uagrm.edu.bo>"
 )
 
+# Resend API — para enviar emails via HTTPS (más confiable que SMTP en cloud)
+RESEND_API_KEY = config("RESEND_API_KEY", default="")
+
 # ── Sentry — monitoreo de errores en producción ────────────────
 SENTRY_DSN = config("SENTRY_DSN", default="")
 if SENTRY_DSN:
