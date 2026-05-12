@@ -62,16 +62,19 @@ export const TIPOS_VEHICULO_QUERY = gql`
 export const VEHICULO_QUERY = gql`
   query Vehiculo($id: Int!) {
     vehiculo(id: $id) {
-      id
-      placa
-      marca
-      modelo
-      anio
-      color
-      estado
-      createdAt
+      id placa marca modelo anio color estado createdAt
       tipo { id nombre }
       propietarioNombre
+    }
+  }
+`
+
+export const QR_DINAMICO_QUERY = gql`
+  query QrDinamicoVehiculo($vehiculoId: Int!) {
+    qrDinamicoVehiculo(vehiculoId: $vehiculoId) {
+      codigo
+      segundosRestantes
+      intervalo
     }
   }
 `

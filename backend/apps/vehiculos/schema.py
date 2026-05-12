@@ -233,6 +233,9 @@ class VehiculosMutation:
             raise Exception("Tipo de vehículo no encontrado")
         if not propietario:
             raise Exception("Propietario no encontrado")
+        # Admin registra directamente como activo (no necesita aprobación de sí mismo)
+        # Propietario registra su propio vehículo → pendiente de aprobación
+        estado_inicial = "activo" if tiene_rol(user, "Administrador") else "pendiente"
         vehiculo = Vehiculo.objects.create(
             placa=input.placa.upper(),
             tipo=tipo,
@@ -241,6 +244,7 @@ class VehiculosMutation:
             modelo=input.modelo,
             anio=input.anio,
             color=input.color,
+            estado=estado_inicial,
         )
         HistorialPropietario.objects.create(
             vehiculo=vehiculo,
@@ -383,11 +387,15 @@ class VehiculosMutation:
 
     @strawberry.mutation
     def agregar_documento(self, info: Info, input: AgregarDocumentoInput) -> DocumentoVehiculoType:
-        if not tiene_rol(info.context.request.user, "Administrador"):
-            raise Exception("Solo administradores pueden agregar documentos")
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
         vehiculo = Vehiculo.objects.filter(pk=input.vehiculo_id).first()
         if not vehiculo:
             raise Exception("Vehículo no encontrado")
+        # Admin puede agregar a cualquier vehículo; propietario solo al suyo
+        if not tiene_rol(user, "Administrador") and vehiculo.propietario_id != user.pk:
+            raise Exception("Solo puedes agregar documentos a tus propios vehículos")
         if input.tipo_doc not in ["soat", "tecnica", "circulacion", "otro"]:
             raise Exception("Tipo de documento inválido. Opciones: soat, tecnica, circulacion, otro")
         fecha = date.fromisoformat(input.fecha_vencimiento)
@@ -397,6 +405,42 @@ class VehiculosMutation:
             numero=input.numero,
             fecha_vencimiento=fecha,
         )
+
+    @strawberry.mutation
+    def transferir_vehiculo(self, info: Info, vehiculo_id: int, nuevo_propietario_id: int) -> VehiculoType:
+        from apps.acceso.utils import log_audit
+        user = info.context.request.user
+        if not tiene_rol(user, "Administrador"):
+            raise Exception("Solo administradores pueden transferir vehículos")
+        vehiculo = Vehiculo.objects.select_related("propietario").filter(pk=vehiculo_id).first()
+        if not vehiculo:
+            raise Exception("Vehículo no encontrado")
+        from apps.usuarios.models import Usuario
+        nuevo_propietario = Usuario.objects.filter(pk=nuevo_propietario_id).first()
+        if not nuevo_propietario:
+            raise Exception("Nuevo propietario no encontrado")
+        if vehiculo.propietario_id == nuevo_propietario_id:
+            raise Exception("El vehículo ya pertenece a este usuario")
+        from django.utils import timezone as tz
+        # Cerrar historial del propietario actual
+        HistorialPropietario.objects.filter(
+            vehiculo=vehiculo, fecha_fin__isnull=True
+        ).update(fecha_fin=tz.now().date())
+        # Abrir historial para el nuevo propietario
+        HistorialPropietario.objects.create(
+            vehiculo=vehiculo,
+            usuario=nuevo_propietario,
+            fecha_inicio=tz.now().date(),
+        )
+        propietario_anterior = vehiculo.propietario
+        vehiculo.propietario = nuevo_propietario
+        vehiculo.save()
+        log_audit(
+            user, "vehiculo_transferido",
+            f"Vehículo {vehiculo.placa} transferido de {propietario_anterior.ci} a {nuevo_propietario.ci}",
+            request=info.context.request,
+        )
+        return vehiculo
 
     @strawberry.mutation
     def crear_tipo_vehiculo(self, info: Info, nombre: str, descripcion: Optional[str] = "") -> TipoVehiculoType:

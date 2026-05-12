@@ -7,7 +7,7 @@ import {
   CheckCircle, XCircle, Clock, History,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
-import { QrImage } from '../components/QrImage'
+import { QrDinamico } from '../components/QrDinamico'
 import { VEHICULOS_QUERY, VEHICULOS_PENDIENTES_QUERY, TIPOS_VEHICULO_QUERY } from '../graphql/queries/vehiculos'
 import {
   REGISTRAR_VEHICULO_MUTATION,
@@ -126,12 +126,15 @@ export default function Vehiculos() {
     if (!/^[A-Z0-9\-]{3,10}$/.test(placa)) {
       setError('La placa debe tener entre 3 y 10 caracteres alfanuméricos'); return
     }
+    const propietarioId = esAdmin
+      ? parseInt(f.get('propietarioId') as string)
+      : usuario.id
     registrarVehiculo({
       variables: {
         input: {
           placa,
-          tipoId:        parseInt(f.get('tipoId') as string),
-          propietarioId: parseInt(f.get('propietarioId') as string),
+          tipoId: parseInt(f.get('tipoId') as string),
+          propietarioId,
           marca:  (f.get('marca') as string).trim(),
           modelo: (f.get('modelo') as string).trim(),
           anio:   parseInt(f.get('anio') as string),
@@ -192,14 +195,12 @@ export default function Vehiculos() {
             </p>
           </div>
         </div>
-        {esAdmin && (
-          <button
-            onClick={() => setModal('registrar')}
-            className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-          >
-            <Plus size={16} /> Registrar Vehículo
-          </button>
-        )}
+        <button
+          onClick={() => setModal('registrar')}
+          className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+        >
+          <Plus size={16} /> Registrar Vehículo
+        </button>
       </div>
 
       {/* Tabs (solo admin) */}
@@ -243,6 +244,7 @@ export default function Vehiculos() {
               className="border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-400"
             >
               <option value="">Todos los estados</option>
+              <option value="pendiente">Pendiente</option>
               <option value="activo">Activo</option>
               <option value="inactivo">Inactivo</option>
               <option value="sancionado">Sancionado</option>
@@ -270,7 +272,7 @@ export default function Vehiculos() {
                 {busqueda || filtroEstado ? 'Sin resultados para esta búsqueda' : 'No hay vehículos registrados'}
               </p>
               {!esAdmin && !busqueda && (
-                <p className="text-xs mt-1">Solicita al administrador que registre tu vehículo</p>
+                <p className="text-xs mt-1">Usa el botón "Registrar Vehículo" para agregar tu primer vehículo</p>
               )}
             </div>
           ) : (
@@ -319,11 +321,18 @@ export default function Vehiculos() {
                                   className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
                                   <Edit size={15} />
                                 </button>
-                                <button onClick={() => abrirDocumento(v)} title="Documentos"
+                                    <button onClick={() => abrirDocumento(v)} title="Documentos"
                                   className="p-1.5 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-colors">
                                   <FileText size={15} />
                                 </button>
                               </>
+                            )}
+                            {/* Propietario también puede subir sus documentos */}
+                            {!esAdmin && v.propietarioNombre && (
+                              <button onClick={() => abrirDocumento(v)} title="Mis documentos"
+                                className="p-1.5 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-colors">
+                                <FileText size={15} />
+                              </button>
                             )}
                           </div>
                         </td>
@@ -464,15 +473,21 @@ export default function Vehiculos() {
                 </select>
               </div>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Propietario *</label>
-              <select name="propietarioId" required className={inputCls}>
-                <option value="">Seleccionar usuario...</option>
-                {usuarios.map((u: any) => (
-                  <option key={u.id} value={u.id}>{u.nombreCompleto} — {u.ci}</option>
-                ))}
-              </select>
-            </div>
+            {esAdmin ? (
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Propietario *</label>
+                <select name="propietarioId" required className={inputCls}>
+                  <option value="">Seleccionar usuario...</option>
+                  {usuarios.map((u: any) => (
+                    <option key={u.id} value={u.id}>{u.nombreCompleto} — {u.ci}</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600">
+                Propietario: <strong>{usuario.nombreCompleto}</strong> (tú)
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <Campo label="Marca *" name="marca" placeholder="Toyota" />
               <Campo label="Modelo *" name="modelo" placeholder="Corolla" />
@@ -580,65 +595,60 @@ export default function Vehiculos() {
         </ModalWrapper>
       )}
 
-      {/* Modal QR */}
+      {/* Modal QR Dinámico */}
       {modal === 'qr' && seleccionado && (
         <ModalWrapper titulo={`Código QR — ${seleccionado.placa}`} onClose={cerrarModal}>
           <div className="flex flex-col items-center gap-4">
-            <div className="w-full bg-slate-50 rounded-xl px-4 py-3 text-center">
-              <p className="font-mono font-bold text-slate-800 text-lg">{seleccionado.placa}</p>
-              <p className="text-slate-500 text-sm">{seleccionado.marca} {seleccionado.modelo} · {seleccionado.anio}</p>
-              <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-medium ${ESTADO_BADGE[seleccionado.estado] ?? 'bg-slate-100 text-slate-600'}`}>
-                {seleccionado.estado}
-              </span>
-            </div>
 
-            {seleccionado.estado === 'pendiente' ? (
+            {seleccionado.estado === 'pendiente' && (
               <div className="w-full bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-2 text-amber-700 text-xs">
                 <Clock size={14} className="shrink-0 mt-0.5" />
-                Este vehículo aún no ha sido aprobado. El QR no será válido en los puntos de acceso hasta su aprobación.
+                Vehículo <strong>pendiente de aprobación</strong>. El QR no será aceptado en portería hasta que un administrador lo apruebe.
               </div>
-            ) : (
-              <QrImage
-                value={seleccionado.codigoQr}
-                size={220}
-                label={`QR permanente — ${seleccionado.placa}`}
-                showDownload
-                downloadName={`QR-${seleccionado.placa}`}
-              />
             )}
 
             {seleccionado.estado === 'sancionado' && (
               <div className="w-full bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-2 text-red-700 text-xs">
                 <AlertTriangle size={14} className="shrink-0 mt-0.5" />
-                Este vehículo está sancionado. El QR puede ser rechazado en los puntos de acceso.
+                Vehículo <strong>sancionado</strong>. El QR será rechazado hasta regularizar todas las multas pendientes.
               </div>
             )}
 
-            {seleccionado.estado !== 'pendiente' && (
+            {seleccionado.estado === 'activo' && (
+              <QrDinamico vehiculoId={seleccionado.id} placa={seleccionado.placa} />
+            )}
+
+            {seleccionado.estado === 'inactivo' && (
+              <div className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-center text-slate-500 text-sm">
+                Vehículo inactivo. Contacta a la administración para reactivarlo.
+              </div>
+            )}
+
+            {/* Botón de emergencia: invalidar secret si hubo compromiso */}
+            {seleccionado.estado === 'activo' && (
               !confirmarRegen ? (
                 <button
                   onClick={() => setConfirmarRegen(true)}
-                  className="flex items-center gap-2 text-sm text-orange-600 hover:text-orange-800 border border-orange-200 hover:border-orange-400 px-4 py-2 rounded-xl transition-colors"
+                  className="flex items-center gap-2 text-xs text-slate-400 hover:text-orange-600 border border-slate-200 hover:border-orange-300 px-3 py-1.5 rounded-lg transition-colors"
                 >
-                  <RefreshCw size={14} /> Regenerar QR
+                  <RefreshCw size={12} /> Invalidar QR por seguridad
                 </button>
               ) : (
                 <div className="w-full bg-amber-50 border border-amber-200 rounded-xl p-4">
-                  <p className="text-amber-800 text-sm font-medium mb-1">¿Confirmar regeneración?</p>
+                  <p className="text-amber-800 text-sm font-medium mb-1">¿Invalidar QR actual?</p>
                   <p className="text-amber-700 text-xs mb-3">
-                    El código QR actual quedará <strong>invalidado permanentemente</strong>.
+                    Úsalo solo si crees que alguien tuvo acceso a tu pantalla en el momento exacto del código.
+                    Se generará un nuevo secreto — los códigos anteriores dejarán de funcionar.
                   </p>
                   <div className="flex gap-2">
                     <button
                       onClick={() => { regenerarQr({ variables: { vehiculoId: seleccionado.id } }); setConfirmarRegen(false) }}
                       className="flex-1 bg-orange-500 hover:bg-orange-600 text-white text-sm py-2 rounded-lg transition-colors"
                     >
-                      Sí, regenerar
+                      Sí, invalidar
                     </button>
-                    <button
-                      onClick={() => setConfirmarRegen(false)}
-                      className="flex-1 border border-slate-300 text-slate-600 text-sm py-2 rounded-lg hover:bg-slate-50 transition-colors"
-                    >
+                    <button onClick={() => setConfirmarRegen(false)}
+                      className="flex-1 border border-slate-300 text-slate-600 text-sm py-2 rounded-lg hover:bg-slate-50 transition-colors">
                       Cancelar
                     </button>
                   </div>
