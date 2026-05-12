@@ -1,6 +1,5 @@
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
-from django.core.mail import send_mail
 from django.conf import settings
 
 from .models import Notificacion, TipoNotificacion
@@ -8,23 +7,46 @@ from .models import Notificacion, TipoNotificacion
 
 def enviar_email(usuario, asunto: str, cuerpo: str, html: str = "") -> None:
     """
-    Envía un email al usuario. Si `html` se provee, se envía como email HTML
-    con `cuerpo` como fallback de texto plano.
+    Envía email vía Resend API (HTTPS) si RESEND_API_KEY está configurado.
+    Fallback a Django SMTP si no hay API key. Nunca bloquea la request.
     """
     email = getattr(usuario, 'email', None)
     if not email:
         return
-    try:
-        send_mail(
-            subject=asunto,
-            message=cuerpo,
-            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@uagrm.edu.bo'),
-            recipient_list=[email],
-            html_message=html if html else None,
-            fail_silently=True,
-        )
-    except Exception:
-        pass
+
+    api_key = getattr(settings, 'RESEND_API_KEY', '')
+    from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'Control Vehicular <onboarding@resend.dev>')
+
+    if api_key:
+        # Resend API — más confiable que SMTP en entornos cloud
+        try:
+            import resend
+            resend.api_key = api_key
+            params = {
+                "from": from_email,
+                "to": [email],
+                "subject": asunto,
+                "text": cuerpo,
+            }
+            if html:
+                params["html"] = html
+            resend.Emails.send(params)
+        except Exception:
+            pass
+    else:
+        # Fallback SMTP (desarrollo)
+        try:
+            from django.core.mail import send_mail
+            send_mail(
+                subject=asunto,
+                message=cuerpo,
+                from_email=from_email,
+                recipient_list=[email],
+                html_message=html if html else None,
+                fail_silently=True,
+            )
+        except Exception:
+            pass
 
 
 def enviar_notificacion(usuario, titulo: str, mensaje: str, tipo_codigo: str | None = None) -> Notificacion:
