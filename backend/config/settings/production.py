@@ -38,7 +38,7 @@ if EMAIL_HOST_USER and EMAIL_HOST_PASSWORD:
     EMAIL_HOST = config("EMAIL_HOST", default="smtp.gmail.com")
     EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
     EMAIL_USE_TLS = True
-    EMAIL_TIMEOUT = 5  # 5 segundos máximo para no bloquear la request
+    EMAIL_TIMEOUT = 30  # 30 segundos — Gmail SMTP necesita más tiempo que Resend
 else:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
