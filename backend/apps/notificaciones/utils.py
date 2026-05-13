@@ -1,3 +1,4 @@
+import threading
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.conf import settings
@@ -5,36 +6,22 @@ from django.conf import settings
 from .models import Notificacion, TipoNotificacion
 
 
-def enviar_email(usuario, asunto: str, cuerpo: str, html: str = "") -> None:
-    """
-    Envía email vía Resend API (HTTPS) si RESEND_API_KEY está configurado.
-    Fallback a Django SMTP si no hay API key. Nunca bloquea la request.
-    """
-    email = getattr(usuario, 'email', None)
-    if not email:
-        return
-
+def _enviar_email_sync(email: str, asunto: str, cuerpo: str, html: str) -> None:
+    """Envía el email de forma síncrona. Se llama desde un hilo separado."""
     api_key = getattr(settings, 'RESEND_API_KEY', '')
     from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'Control Vehicular <onboarding@resend.dev>')
 
     if api_key:
-        # Resend API — más confiable que SMTP en entornos cloud
         try:
             import resend
             resend.api_key = api_key
-            params = {
-                "from": from_email,
-                "to": [email],
-                "subject": asunto,
-                "text": cuerpo,
-            }
+            params: dict = {"from": from_email, "to": [email], "subject": asunto, "text": cuerpo}
             if html:
                 params["html"] = html
             resend.Emails.send(params)
         except Exception:
             pass
     else:
-        # Fallback SMTP (desarrollo)
         try:
             from django.core.mail import send_mail
             send_mail(
@@ -47,6 +34,22 @@ def enviar_email(usuario, asunto: str, cuerpo: str, html: str = "") -> None:
             )
         except Exception:
             pass
+
+
+def enviar_email(usuario, asunto: str, cuerpo: str, html: str = "") -> None:
+    """
+    Envía email en un hilo separado para no bloquear la request HTTP.
+    El usuario recibe la respuesta inmediatamente; el email llega en segundos.
+    """
+    email = getattr(usuario, 'email', None)
+    if not email:
+        return
+    hilo = threading.Thread(
+        target=_enviar_email_sync,
+        args=(email, asunto, cuerpo, html),
+        daemon=True,
+    )
+    hilo.start()
 
 
 def enviar_notificacion(usuario, titulo: str, mensaje: str, tipo_codigo: str | None = None) -> Notificacion:
