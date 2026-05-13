@@ -1,4 +1,4 @@
-import { useState, FormEvent } from 'react'
+import { useState, FormEvent, useCallback } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -8,6 +8,8 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { QrDinamico } from '../components/QrDinamico'
+import { useToast } from '../hooks/useToast'
+import { ToastContainer } from '../components/ToastContainer'
 import { VEHICULOS_QUERY, VEHICULOS_PENDIENTES_QUERY, TIPOS_VEHICULO_QUERY } from '../graphql/queries/vehiculos'
 import {
   REGISTRAR_VEHICULO_MUTATION,
@@ -49,15 +51,25 @@ const POR_PAGINA = 15
 export default function Vehiculos() {
   const { usuario, esAdmin } = useAuth()
   const navigate = useNavigate()
-  const [tab, setTab]                     = useState<Tab>('lista')
-  const [modal, setModal]                 = useState<Modal>(null)
-  const [seleccionado, setSeleccionado]   = useState<Vehiculo | null>(null)
+  const toast = useToast()
+
+  const [tab, setTab]                       = useState<Tab>('lista')
+  const [modal, setModal]                   = useState<Modal>(null)
+  const [seleccionado, setSeleccionado]     = useState<Vehiculo | null>(null)
   const [confirmarRegen, setConfirmarRegen] = useState(false)
-  const [error, setError]                 = useState('')
-  const [filtroEstado, setFiltroEstado]   = useState('')
-  const [busqueda, setBusqueda]           = useState('')
-  const [pagina, setPagina]               = useState(1)
-  const [motivoRechazo, setMotivoRechazo] = useState('')
+  const [error, setError]                   = useState('')
+  const [filtroEstado, setFiltroEstado]     = useState('')
+  const [busqueda, setBusqueda]             = useState('')
+  const [busquedaInput, setBusquedaInput]   = useState('')
+  const [pagina, setPagina]                 = useState(1)
+  const [motivoRechazo, setMotivoRechazo]   = useState('')
+
+  // Debounce 300ms en búsqueda
+  const handleBusqueda = useCallback((val: string) => {
+    setBusquedaInput(val)
+    const t = setTimeout(() => { setBusqueda(val); setPagina(1) }, 300)
+    return () => clearTimeout(t)
+  }, [])
 
   const propietarioId = esAdmin ? undefined : usuario.id
 
@@ -73,31 +85,43 @@ export default function Vehiculos() {
   const { data: usuariosData } = useQuery(USUARIOS_QUERY, { skip: !esAdmin })
 
   const [registrarVehiculo, { loading: loadingRegistrar }] = useMutation(REGISTRAR_VEHICULO_MUTATION, {
-    onCompleted() { cerrarModal(); refetch(); refetchPendientes() },
-    onError(e) { setError(e.message) },
+    onCompleted(d) {
+      cerrarModal(); refetch(); refetchPendientes()
+      const placa = d.registrarVehiculo.placa
+      esAdmin
+        ? toast.exito('Vehículo registrado', `${placa} está activo en el sistema`)
+        : toast.info('Vehículo enviado a revisión', `${placa} será aprobado por un administrador`)
+    },
+    onError(e) { setError(e.message); toast.error('Error al registrar', e.message) },
   })
   const [actualizarVehiculo, { loading: loadingActualizar }] = useMutation(ACTUALIZAR_VEHICULO_MUTATION, {
-    onCompleted() { cerrarModal(); refetch() },
-    onError(e) { setError(e.message) },
+    onCompleted() { cerrarModal(); refetch(); toast.exito('Vehículo actualizado correctamente') },
+    onError(e) { setError(e.message); toast.error('Error al actualizar', e.message) },
   })
   const [aprobarVehiculo, { loading: loadingAprobar }] = useMutation(APROBAR_VEHICULO_MUTATION, {
-    onCompleted() { refetch(); refetchPendientes() },
-    onError(e) { setError(e.message) },
+    onCompleted(d) {
+      refetch(); refetchPendientes()
+      toast.exito('Vehículo aprobado', `${d.aprobarVehiculo.placa} ya puede acceder al campus`)
+    },
+    onError(e) { setError(e.message); toast.error('Error al aprobar', e.message) },
   })
   const [rechazarVehiculo, { loading: loadingRechazar }] = useMutation(RECHAZAR_VEHICULO_MUTATION, {
-    onCompleted() { cerrarModal(); refetch(); refetchPendientes() },
-    onError(e) { setError(e.message) },
+    onCompleted(d) {
+      cerrarModal(); refetch(); refetchPendientes()
+      toast.alerta('Vehículo rechazado', `Se notificó al propietario de ${d.rechazarVehiculo.placa}`)
+    },
+    onError(e) { setError(e.message); toast.error('Error al rechazar', e.message) },
   })
   const [regenerarQr] = useMutation(REGENERAR_QR_MUTATION, {
     onCompleted(d) {
       setSeleccionado(prev => prev ? { ...prev, codigoQr: d.regenerarQr.codigoQr } : prev)
-      refetch()
+      refetch(); toast.exito('QR invalidado', 'El nuevo código QR ya está activo')
     },
-    onError(e) { setError(e.message) },
+    onError(e) { setError(e.message); toast.error('Error al regenerar QR', e.message) },
   })
   const [agregarDocumento, { loading: loadingDoc }] = useMutation(AGREGAR_DOCUMENTO_MUTATION, {
-    onCompleted() { cerrarModal(); refetch() },
-    onError(e) { setError(e.message) },
+    onCompleted() { cerrarModal(); refetch(); toast.exito('Documento agregado correctamente') },
+    onError(e) { setError(e.message); toast.error('Error al agregar documento', e.message) },
   })
 
   const page      = data?.vehiculos
@@ -233,8 +257,8 @@ export default function Vehiculos() {
               <input
                 type="text"
                 placeholder="Buscar por placa, marca, modelo, propietario..."
-                value={busqueda}
-                onChange={e => cambioBusqueda(e.target.value)}
+                value={busquedaInput}
+                onChange={e => handleBusqueda(e.target.value)}
                 className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
               />
             </div>
@@ -249,9 +273,9 @@ export default function Vehiculos() {
               <option value="inactivo">Inactivo</option>
               <option value="sancionado">Sancionado</option>
             </select>
-            {(busqueda || filtroEstado) && (
+            {(busquedaInput || filtroEstado) && (
               <button
-                onClick={() => { cambioBusqueda(''); cambioEstado('') }}
+                onClick={() => { handleBusqueda(''); setBusquedaInput(''); setFiltroEstado(''); setPagina(1) }}
                 className="text-xs text-slate-400 hover:text-slate-600 underline"
               >
                 Limpiar
@@ -696,6 +720,8 @@ export default function Vehiculos() {
           </div>
         </ModalWrapper>
       )}
+
+      <ToastContainer toasts={toast.toasts} onClose={toast.cerrar} />
     </div>
   )
 }
