@@ -1,4 +1,4 @@
-import { useState, FormEvent, useCallback } from 'react'
+import { useState, FormEvent, useCallback, useRef, useEffect } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -64,12 +64,15 @@ export default function Vehiculos() {
   const [pagina, setPagina]                 = useState(1)
   const [motivoRechazo, setMotivoRechazo]   = useState('')
 
-  // Debounce 300ms en búsqueda
+  // Debounce 300ms — useRef evita acumulación de timeouts (memory leak)
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const handleBusqueda = useCallback((val: string) => {
     setBusquedaInput(val)
-    const t = setTimeout(() => { setBusqueda(val); setPagina(1) }, 300)
-    return () => clearTimeout(t)
+    if (debounceTimer.current) clearTimeout(debounceTimer.current)
+    debounceTimer.current = setTimeout(() => { setBusqueda(val); setPagina(1) }, 300)
   }, [])
+  // Limpia el timer si el componente se desmonta antes de que dispare
+  useEffect(() => () => { if (debounceTimer.current) clearTimeout(debounceTimer.current) }, [])
 
   const propietarioId = esAdmin ? undefined : usuario.id
 

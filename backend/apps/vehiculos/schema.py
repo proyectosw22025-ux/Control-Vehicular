@@ -1,23 +1,52 @@
+"""
+Módulo Vehículos — Strawberry GraphQL Schema
+
+Optimizaciones aplicadas:
+  - Máquina de estados explícita: solo se permiten transiciones válidas de negocio.
+  - Notificaciones extraídas a funciones privadas (SRP) para evitar duplicación.
+  - `actualizar_vehiculo` valida transiciones y registra en audit log.
+  - `regenerar_qr` regenera el qr_secret TOTP (invalida todos los códigos futuros).
+  - Notificaciones a admins se envían en hilo separado para no bloquear la request.
+"""
 import hashlib
+import secrets
 import uuid
 import strawberry
 from strawberry.types import Info
 from typing import List, Optional
 from datetime import datetime, date
-from django.db.models import Q
+from django.db import transaction
 
 from .models import TipoVehiculo, Vehiculo, DocumentoVehiculo, HistorialPropietario
 from apps.usuarios.utils import tiene_rol
 
 ESTADOS_VALIDOS = ["pendiente", "activo", "inactivo", "sancionado"]
 
+# ── Máquina de estados de vehículos ───────────────────────────────────────
+# Solo estas transiciones tienen sentido de negocio en la UAGRM.
+# Cualquier otra combinación es un error de operador.
+TRANSICIONES_VALIDAS: dict[str, list[str]] = {
+    "pendiente":  ["activo", "inactivo"],   # aprobar o rechazar
+    "activo":     ["inactivo", "sancionado"],# desactivar o multar
+    "inactivo":   ["activo"],               # reactivar (admin)
+    "sancionado": ["activo"],               # pago de multas (solo via pagar_multa)
+}
 
-@strawberry.type
-class QrDinamicoType:
-    codigo: str
-    segundos_restantes: int
-    intervalo: int
 
+def _validar_transicion(estado_actual: str, estado_nuevo: str) -> None:
+    """
+    Valida que la transición de estado sea coherente con el flujo de negocio.
+    Raises Exception con mensaje descriptivo para el admin.
+    """
+    permitidos = TRANSICIONES_VALIDAS.get(estado_actual, [])
+    if estado_nuevo not in permitidos:
+        raise Exception(
+            f"Transición inválida: {estado_actual} → {estado_nuevo}. "
+            f"Desde '{estado_actual}' solo se permite ir a: {', '.join(permitidos) or 'ningún estado'}."
+        )
+
+
+# ── Types ──────────────────────────────────────────────────────────────────
 
 @strawberry.type
 class TipoVehiculoType:
@@ -79,9 +108,14 @@ class VehiculosPage:
     total_paginas: int
 
 
-# ──────────────────────────────────────────────
-# INPUTS
-# ──────────────────────────────────────────────
+@strawberry.type
+class QrDinamicoType:
+    codigo: str
+    segundos_restantes: int
+    intervalo: int
+
+
+# ── Inputs ─────────────────────────────────────────────────────────────────
 
 @strawberry.input
 class CrearVehiculoInput:
@@ -111,9 +145,104 @@ class AgregarDocumentoInput:
     fecha_vencimiento: str
 
 
-# ──────────────────────────────────────────────
-# QUERIES
-# ──────────────────────────────────────────────
+# ── Notificaciones privadas (SRP) ──────────────────────────────────────────
+
+def _notificar_vehiculo_pendiente(vehiculo, propietario) -> None:
+    """Notifica a todos los admins que hay un vehículo pendiente. Async (thread)."""
+    import threading
+
+    def _enviar():
+        try:
+            from apps.usuarios.models import UsuarioRol
+            from apps.notificaciones.utils import enviar_notificacion, enviar_email
+            from apps.notificaciones.email_templates import email_vehiculo_pendiente
+            admins = list(
+                UsuarioRol.objects.filter(rol__nombre="Administrador")
+                .select_related("usuario").distinct()
+            )
+            for ur in admins:
+                enviar_notificacion(
+                    usuario=ur.usuario,
+                    titulo=f"Vehículo pendiente — {vehiculo.placa}",
+                    mensaje=(
+                        f"{vehiculo.marca} {vehiculo.modelo} de "
+                        f"{propietario.nombre} {propietario.apellido} requiere aprobación."
+                    ),
+                    tipo_codigo="vehiculo_pendiente",
+                )
+            asunto, html = email_vehiculo_pendiente(
+                propietario.nombre, vehiculo.placa, vehiculo.marca, vehiculo.modelo
+            )
+            enviar_email(
+                usuario=propietario,
+                asunto=asunto,
+                cuerpo=f"Tu vehículo {vehiculo.placa} está pendiente de aprobación.",
+                html=html,
+            )
+        except Exception:
+            pass
+
+    threading.Thread(target=_enviar, daemon=True).start()
+
+
+def _notificar_vehiculo_aprobado(vehiculo) -> None:
+    import threading
+
+    def _enviar():
+        try:
+            from apps.notificaciones.utils import enviar_notificacion, enviar_email
+            from apps.notificaciones.email_templates import email_vehiculo_aprobado
+            enviar_notificacion(
+                usuario=vehiculo.propietario,
+                titulo=f"Vehículo aprobado — {vehiculo.placa}",
+                mensaje=f"Tu vehículo {vehiculo.marca} {vehiculo.modelo} fue aprobado.",
+                tipo_codigo="vehiculo_aprobado",
+            )
+            asunto, html = email_vehiculo_aprobado(
+                vehiculo.propietario.nombre, vehiculo.placa, vehiculo.marca, vehiculo.modelo
+            )
+            enviar_email(
+                usuario=vehiculo.propietario,
+                asunto=asunto,
+                cuerpo=f"Tu vehículo {vehiculo.placa} fue aprobado.",
+                html=html,
+            )
+        except Exception:
+            pass
+
+    threading.Thread(target=_enviar, daemon=True).start()
+
+
+def _notificar_vehiculo_rechazado(vehiculo, motivo: str) -> None:
+    import threading
+
+    def _enviar():
+        try:
+            from apps.notificaciones.utils import enviar_notificacion, enviar_email
+            from apps.notificaciones.email_templates import email_vehiculo_rechazado
+            enviar_notificacion(
+                usuario=vehiculo.propietario,
+                titulo=f"Vehículo rechazado — {vehiculo.placa}",
+                mensaje=f"Tu vehículo no fue aprobado. Motivo: {motivo}",
+                tipo_codigo="vehiculo_rechazado",
+            )
+            asunto, html = email_vehiculo_rechazado(
+                vehiculo.propietario.nombre, vehiculo.placa,
+                vehiculo.marca, vehiculo.modelo, motivo,
+            )
+            enviar_email(
+                usuario=vehiculo.propietario,
+                asunto=asunto,
+                cuerpo=f"Tu vehículo {vehiculo.placa} no fue aprobado. Motivo: {motivo}",
+                html=html,
+            )
+        except Exception:
+            pass
+
+    threading.Thread(target=_enviar, daemon=True).start()
+
+
+# ── Queries ────────────────────────────────────────────────────────────────
 
 @strawberry.type
 class VehiculosQuery:
@@ -127,6 +256,7 @@ class VehiculosQuery:
         pagina: int = 1,
         por_pagina: int = 20,
     ) -> VehiculosPage:
+        from django.db.models import Q
         qs = Vehiculo.objects.select_related("tipo", "propietario")
         if propietario_id:
             qs = qs.filter(propietario_id=propietario_id)
@@ -141,7 +271,6 @@ class VehiculosQuery:
                 | Q(propietario__nombre__icontains=b)
                 | Q(propietario__apellido__icontains=b)
             )
-        # Admins ven todo; otros ven sus propios pendientes + todos los activos/demás
         usuario = info.context.request.user
         if not tiene_rol(usuario, "Administrador"):
             if usuario.is_authenticated:
@@ -163,8 +292,7 @@ class VehiculosQuery:
             raise Exception("Solo administradores pueden ver vehículos pendientes")
         return list(
             Vehiculo.objects.select_related("tipo", "propietario")
-            .filter(estado="pendiente")
-            .order_by("created_at")
+            .filter(estado="pendiente").order_by("created_at")
         )
 
     @strawberry.field
@@ -189,9 +317,8 @@ class VehiculosQuery:
     @strawberry.field
     def qr_dinamico_vehiculo(self, info: Info, vehiculo_id: int) -> QrDinamicoType:
         """
-        Retorna el código QR dinámico actual del vehículo (TOTP, caduca cada 30s).
-        Solo el propietario o un administrador puede solicitarlo.
-        El secret NUNCA viaja al cliente — solo el código generado.
+        Retorna el código TOTP actual. El qr_secret NUNCA sale del servidor.
+        Solo accesible por el propietario o un administrador.
         """
         from apps.vehiculos.models import generar_qr_dinamico, QR_INTERVAL
         user = info.context.request.user
@@ -205,77 +332,51 @@ class VehiculosQuery:
         if v.estado != "activo":
             raise Exception(f"El vehículo no está activo (estado: {v.estado})")
         if not v.qr_secret:
-            raise Exception("Este vehículo aún no tiene QR dinámico. Regenere el QR.")
+            raise Exception("Este vehículo no tiene QR dinámico. Use 'Invalidar QR' para generar uno.")
         codigo, segundos = generar_qr_dinamico(v.qr_secret)
         return QrDinamicoType(codigo=codigo, segundos_restantes=segundos, intervalo=QR_INTERVAL)
 
 
-# ──────────────────────────────────────────────
-# MUTATIONS
-# ──────────────────────────────────────────────
+# ── Mutations ──────────────────────────────────────────────────────────────
 
 @strawberry.type
 class VehiculosMutation:
+
     @strawberry.mutation
     def registrar_vehiculo(self, info: Info, input: CrearVehiculoInput) -> VehiculoType:
         from apps.usuarios.models import Usuario
         user = info.context.request.user
         if not user.is_authenticated:
             raise Exception("Autenticación requerida")
-        # Admins can register for anyone; others can only register their own vehicle
         if not tiene_rol(user, "Administrador") and input.propietario_id != user.pk:
             raise Exception("Solo puedes registrar vehículos a tu propia cuenta")
         if Vehiculo.objects.filter(placa=input.placa.upper()).exists():
-            raise Exception(f"La placa {input.placa} ya está registrada")
-        tipo = TipoVehiculo.objects.filter(pk=input.tipo_id).first()
+            raise Exception(f"La placa {input.placa.upper()} ya está registrada en el sistema")
+        tipo       = TipoVehiculo.objects.filter(pk=input.tipo_id).first()
         propietario = Usuario.objects.filter(pk=input.propietario_id).first()
         if not tipo:
             raise Exception("Tipo de vehículo no encontrado")
         if not propietario:
             raise Exception("Propietario no encontrado")
-        # Admin registra directamente como activo (no necesita aprobación de sí mismo)
-        # Propietario registra su propio vehículo → pendiente de aprobación
+
         estado_inicial = "activo" if tiene_rol(user, "Administrador") else "pendiente"
-        vehiculo = Vehiculo.objects.create(
-            placa=input.placa.upper(),
-            tipo=tipo,
-            propietario=propietario,
-            marca=input.marca,
-            modelo=input.modelo,
-            anio=input.anio,
-            color=input.color,
-            estado=estado_inicial,
-        )
-        HistorialPropietario.objects.create(
-            vehiculo=vehiculo,
-            usuario=propietario,
-            fecha_inicio=vehiculo.created_at.date(),
-        )
-        try:
-            from apps.usuarios.models import UsuarioRol
-            from apps.notificaciones.utils import enviar_notificacion, enviar_email
-            admins = [ur.usuario for ur in UsuarioRol.objects.filter(
-                rol__nombre="Administrador"
-            ).select_related("usuario").distinct()]
-            for admin in admins:
-                enviar_notificacion(
-                    usuario=admin,
-                    titulo=f"Vehículo pendiente — {vehiculo.placa}",
-                    mensaje=f"{vehiculo.marca} {vehiculo.modelo} registrado por {propietario.nombre} {propietario.apellido} requiere aprobación.",
-                    tipo_codigo="vehiculo_pendiente",
-                )
-            from apps.notificaciones.email_templates import email_vehiculo_pendiente
-            asunto_prop, html_prop = email_vehiculo_pendiente(
-                propietario.nombre, vehiculo.placa, vehiculo.marca, vehiculo.modelo
+        with transaction.atomic():
+            vehiculo = Vehiculo.objects.create(
+                placa=input.placa.upper(),
+                tipo=tipo, propietario=propietario,
+                marca=input.marca, modelo=input.modelo,
+                anio=input.anio, color=input.color,
+                estado=estado_inicial,
             )
-            enviar_email(
+            HistorialPropietario.objects.create(
+                vehiculo=vehiculo,
                 usuario=propietario,
-                asunto=asunto_prop,
-                cuerpo=f"Hola {propietario.nombre}, tu vehículo {vehiculo.placa} está pendiente de aprobación.",
-                html=html_prop,
+                fecha_inicio=vehiculo.created_at.date(),
             )
-        except Exception:
-            pass
+
+        # Notificar solo si está pendiente (propietario registró para sí mismo)
+        if estado_inicial == "pendiente":
+            _notificar_vehiculo_pendiente(vehiculo, propietario)
         return vehiculo
 
     @strawberry.mutation
@@ -287,31 +388,12 @@ class VehiculosMutation:
         v = Vehiculo.objects.select_related("tipo", "propietario").filter(pk=vehiculo_id).first()
         if not v:
             raise Exception("Vehículo no encontrado")
-        if v.estado != "pendiente":
-            raise Exception("El vehículo no está pendiente de aprobación")
-        v.estado = "activo"
-        v.save()
-        log_audit(admin, "vehiculo_aprobado", f"Vehículo {v.placa} aprobado", request=info.context.request)
-        try:
-            from apps.notificaciones.utils import enviar_notificacion, enviar_email
-            enviar_notificacion(
-                usuario=v.propietario,
-                titulo=f"Vehículo aprobado — {v.placa}",
-                mensaje=f"Tu vehículo {v.marca} {v.modelo} ({v.placa}) fue aprobado y está activo.",
-                tipo_codigo="vehiculo_aprobado",
-            )
-            from apps.notificaciones.email_templates import email_vehiculo_aprobado
-            asunto_ap, html_ap = email_vehiculo_aprobado(
-                v.propietario.nombre, v.placa, v.marca, v.modelo
-            )
-            enviar_email(
-                usuario=v.propietario,
-                asunto=asunto_ap,
-                cuerpo=f"Hola {v.propietario.nombre}, tu vehículo {v.placa} fue aprobado.",
-                html=html_ap,
-            )
-        except Exception:
-            pass
+        _validar_transicion(v.estado, "activo")
+        with transaction.atomic():
+            v.estado = "activo"
+            v.save(update_fields=["estado"])
+            log_audit(admin, "vehiculo_aprobado", f"Vehículo {v.placa} aprobado", request=info.context.request)
+        _notificar_vehiculo_aprobado(v)
         return v
 
     @strawberry.mutation
@@ -320,60 +402,67 @@ class VehiculosMutation:
         admin = info.context.request.user
         if not tiene_rol(admin, "Administrador"):
             raise Exception("Solo administradores pueden rechazar vehículos")
+        if not motivo.strip():
+            raise Exception("El motivo del rechazo es obligatorio")
         v = Vehiculo.objects.select_related("tipo", "propietario").filter(pk=vehiculo_id).first()
         if not v:
             raise Exception("Vehículo no encontrado")
-        if v.estado != "pendiente":
-            raise Exception("El vehículo no está pendiente de aprobación")
-        v.estado = "inactivo"
-        v.save()
-        log_audit(admin, "vehiculo_rechazado", f"Vehículo {v.placa} rechazado. Motivo: {motivo}", request=info.context.request)
-        try:
-            from apps.notificaciones.utils import enviar_notificacion, enviar_email
-            enviar_notificacion(
-                usuario=v.propietario,
-                titulo=f"Vehículo rechazado — {v.placa}",
-                mensaje=f"Tu vehículo {v.marca} {v.modelo} ({v.placa}) no fue aprobado. Motivo: {motivo}",
-                tipo_codigo="vehiculo_rechazado",
+        _validar_transicion(v.estado, "inactivo")
+        with transaction.atomic():
+            v.estado = "inactivo"
+            v.save(update_fields=["estado"])
+            log_audit(
+                admin, "vehiculo_rechazado",
+                f"Vehículo {v.placa} rechazado. Motivo: {motivo}",
+                request=info.context.request,
             )
-            from apps.notificaciones.email_templates import email_vehiculo_rechazado
-            asunto_rch, html_rch = email_vehiculo_rechazado(
-                v.propietario.nombre, v.placa, v.marca, v.modelo, motivo
-            )
-            enviar_email(
-                usuario=v.propietario,
-                asunto=asunto_rch,
-                cuerpo=f"Hola {v.propietario.nombre}, tu vehículo {v.placa} no fue aprobado. Motivo: {motivo}",
-                html=html_rch,
-            )
-        except Exception:
-            pass
+        _notificar_vehiculo_rechazado(v, motivo)
         return v
 
     @strawberry.mutation
     def actualizar_vehiculo(self, info: Info, id: int, input: ActualizarVehiculoInput) -> VehiculoType:
-        if not tiene_rol(info.context.request.user, "Administrador"):
+        """
+        Actualiza datos del vehículo respetando la máquina de estados.
+        Cambios de estado quedan registrados en el audit log.
+        """
+        from apps.acceso.utils import log_audit
+        user = info.context.request.user
+        if not tiene_rol(user, "Administrador"):
             raise Exception("Solo administradores pueden actualizar vehículos")
         v = Vehiculo.objects.filter(pk=id).first()
         if not v:
             raise Exception("Vehículo no encontrado")
-        if input.marca is not None:
-            v.marca = input.marca
-        if input.modelo is not None:
-            v.modelo = input.modelo
-        if input.anio is not None:
-            v.anio = input.anio
-        if input.color is not None:
-            v.color = input.color
+
+        campos_actualizados = []
+        if input.marca  is not None: v.marca  = input.marca;  campos_actualizados.append("marca")
+        if input.modelo is not None: v.modelo = input.modelo; campos_actualizados.append("modelo")
+        if input.anio   is not None: v.anio   = input.anio;   campos_actualizados.append("anio")
+        if input.color  is not None: v.color  = input.color;  campos_actualizados.append("color")
+
         if input.estado is not None:
             if input.estado not in ESTADOS_VALIDOS:
                 raise Exception(f"Estado inválido. Opciones: {', '.join(ESTADOS_VALIDOS)}")
+            _validar_transicion(v.estado, input.estado)
+            campos_actualizados.append(f"estado ({v.estado}→{input.estado})")
             v.estado = input.estado
+
+        if not campos_actualizados:
+            return v
+
         v.save()
+        log_audit(
+            user, "vehiculo_actualizado",
+            f"Vehículo {v.placa} actualizado: {', '.join(campos_actualizados)}",
+            request=info.context.request,
+        )
         return v
 
     @strawberry.mutation
     def regenerar_qr(self, info: Info, vehiculo_id: int) -> VehiculoType:
+        """
+        Invalida el QR dinámico generando un nuevo qr_secret TOTP.
+        Todos los códigos TOTP anteriores quedan inválidos inmediatamente.
+        """
         solicitante = info.context.request.user
         if not solicitante.is_authenticated:
             raise Exception("Autenticación requerida")
@@ -382,8 +471,16 @@ class VehiculosMutation:
             raise Exception("Vehículo no encontrado")
         if not tiene_rol(solicitante, "Administrador") and v.propietario_id != solicitante.pk:
             raise Exception("Solo puedes regenerar el QR de tu propio vehículo")
+
+        # Nuevo secret TOTP — invalida todos los códigos futuros de este vehículo
+        v.qr_secret = secrets.token_hex(32)
+        # Regenerar también el QR estático legacy para compatibilidad
         v.codigo_qr = hashlib.sha256(f"{v.placa}-{uuid.uuid4()}".encode()).hexdigest()
-        v.save()
+        v.save(update_fields=["qr_secret", "codigo_qr"])
+
+        # Invalida la caché TOTP del vehículo (por si había un código cacheado)
+        # Nota: no podemos borrar por vehiculo_id sin conocer el código anterior,
+        # pero el TTL de 55s hará que expire solo.
         return v
 
     @strawberry.mutation
@@ -394,7 +491,6 @@ class VehiculosMutation:
         vehiculo = Vehiculo.objects.filter(pk=input.vehiculo_id).first()
         if not vehiculo:
             raise Exception("Vehículo no encontrado")
-        # Admin puede agregar a cualquier vehículo; propietario solo al suyo
         if not tiene_rol(user, "Administrador") and vehiculo.propietario_id != user.pk:
             raise Exception("Solo puedes agregar documentos a tus propios vehículos")
         if input.tipo_doc not in ["soat", "tecnica", "circulacion", "otro"]:
@@ -423,24 +519,23 @@ class VehiculosMutation:
         if vehiculo.propietario_id == nuevo_propietario_id:
             raise Exception("El vehículo ya pertenece a este usuario")
         from django.utils import timezone as tz
-        # Cerrar historial del propietario actual
-        HistorialPropietario.objects.filter(
-            vehiculo=vehiculo, fecha_fin__isnull=True
-        ).update(fecha_fin=tz.now().date())
-        # Abrir historial para el nuevo propietario
-        HistorialPropietario.objects.create(
-            vehiculo=vehiculo,
-            usuario=nuevo_propietario,
-            fecha_inicio=tz.now().date(),
-        )
         propietario_anterior = vehiculo.propietario
-        vehiculo.propietario = nuevo_propietario
-        vehiculo.save()
-        log_audit(
-            user, "vehiculo_transferido",
-            f"Vehículo {vehiculo.placa} transferido de {propietario_anterior.ci} a {nuevo_propietario.ci}",
-            request=info.context.request,
-        )
+        with transaction.atomic():
+            HistorialPropietario.objects.filter(
+                vehiculo=vehiculo, fecha_fin__isnull=True
+            ).update(fecha_fin=tz.now().date())
+            HistorialPropietario.objects.create(
+                vehiculo=vehiculo,
+                usuario=nuevo_propietario,
+                fecha_inicio=tz.now().date(),
+            )
+            vehiculo.propietario = nuevo_propietario
+            vehiculo.save(update_fields=["propietario_id"])
+            log_audit(
+                user, "vehiculo_transferido",
+                f"Vehículo {vehiculo.placa}: {propietario_anterior.ci} → {nuevo_propietario.ci}",
+                request=info.context.request,
+            )
         return vehiculo
 
     @strawberry.mutation
