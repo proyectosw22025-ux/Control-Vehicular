@@ -352,7 +352,7 @@ class ParqueosMutation:
         with transaction.atomic():
             espacio = (
                 EspacioParqueo.objects
-                .select_for_update(nowait=True)
+                .select_for_update()
                 .select_related("zona")
                 .filter(pk=input.espacio_id)
                 .first()
@@ -432,9 +432,17 @@ class ParqueosMutation:
         if not tiene_rol(user, "Administrador") and vehiculo.propietario_id != user.pk:
             raise Exception("Solo puedes reservar espacios para tus propios vehículos")
 
+        from django.utils.timezone import make_aware, is_aware
         tz = timezone.get_current_timezone()
-        fecha_inicio = dt.fromisoformat(input.fecha_inicio).replace(tzinfo=tz)
-        fecha_fin    = dt.fromisoformat(input.fecha_fin).replace(tzinfo=tz)
+
+        def _parsear_fecha(valor: str):
+            parsed = dt.fromisoformat(valor)
+            # Si ya tiene tz info (viene de cliente con +00:00), usarla tal cual.
+            # Si es naive (sin tz), asumir zona horaria de Bolivia.
+            return parsed if is_aware(parsed) else make_aware(parsed, tz)
+
+        fecha_inicio = _parsear_fecha(input.fecha_inicio)
+        fecha_fin    = _parsear_fecha(input.fecha_fin)
 
         if fecha_fin <= fecha_inicio:
             raise Exception("La fecha de fin debe ser posterior a la de inicio")
@@ -444,7 +452,7 @@ class ParqueosMutation:
         with transaction.atomic():
             espacio = (
                 EspacioParqueo.objects
-                .select_for_update(nowait=True)
+                .select_for_update()
                 .select_related("zona")
                 .filter(pk=input.espacio_id)
                 .first()

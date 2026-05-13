@@ -1,65 +1,43 @@
 """
 Capa de servicio para el módulo de Acceso.
-Centraliza la lógica de validación de vehículos y resolución de códigos QR,
-eliminando la duplicación entre registrar_acceso, registrar_acceso_manual y
-futuras implementaciones (ej. integración con cámara LPR).
 
-Principio SOLID aplicado: Single Responsibility — cada método tiene
-exactamente una razón para cambiar.
+Concurrencia: usa optimistic locking (UPDATE WHERE) en lugar de SELECT FOR UPDATE.
+Ventajas: sin bloqueos de BD, funciona en tests, y en producción maneja
+correctamente dos guardias escaneando el mismo QR al mismo microsegundo.
 """
 from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Optional
-
-from django.db import transaction
 from django.utils import timezone
 
 
-# ── Tipos de resultado ─────────────────────────────────────────────────────
-
 @dataclass
 class ResultadoValidacion:
-    """Resultado de resolver un código QR o placa."""
-    vehiculo: object                  # apps.vehiculos.models.Vehiculo
-    qr_delegacion: Optional[object]   # apps.acceso.models.QrSesion | None
-    pase_temporal: Optional[object]   # apps.acceso.models.PaseTemporal | None
+    vehiculo: object
+    qr_delegacion: Optional[object]
+    pase_temporal: Optional[object]
     metodo_acceso: str
 
 
-# ── Validación de estado de vehículo ──────────────────────────────────────
-
 def validar_estado_vehiculo(vehiculo) -> None:
     """
-    Verifica que el vehículo puede acceder al campus.
-    Lanza Exception con mensaje claro si está bloqueado.
-    Centraliza la lógica para no duplicarla en cada nivel de validación.
+    Centraliza la validación de estado para no duplicarla en cada nivel.
+    Raises Exception con mensaje claro para mostrar al guardia en tablet.
     """
     MENSAJES = {
-        "pendiente":  "Vehículo pendiente de aprobación. Espere la confirmación del administrador.",
-        "sancionado": "Vehículo sancionado. Regularice sus multas pendientes para poder acceder.",
+        "pendiente":  "Vehículo pendiente de aprobación. Espere confirmación del administrador.",
+        "sancionado": "Vehículo sancionado. Regularice sus multas pendientes.",
         "inactivo":   "Vehículo inactivo. Comuníquese con la administración.",
     }
     if vehiculo.estado in MENSAJES:
         raise Exception(MENSAJES[vehiculo.estado])
 
 
-# ── Resolución de código (TOTP → delegación → pase) ───────────────────────
-
 def resolver_codigo(codigo: str) -> ResultadoValidacion:
     """
-    Resuelve un código escaneado por el guardia en el Panel Guardia.
-    Intenta en orden de prioridad:
-      1. QR dinámico TOTP (8 dígitos, cambia cada 30s) — O(1) via caché Redis
-      2. QR de delegación SHA-256 (single-use, con expiración)
-      3. Pase temporal alfanumérico (multi-uso con ventana horaria)
-
-    Toda operación de escritura (marcar QR como usado, incrementar usos)
-    se envuelve en transaction.atomic() + select_for_update() para evitar
-    race conditions en hora pico (200+ accesos/hora en la UAGRM).
-
-    Raises:
-        Exception: con mensaje legible para mostrar al guardia en la tablet.
+    Resuelve un código escaneado en 3 niveles de prioridad.
+    Usa optimistic locking (UPDATE WHERE) para garantizar atomicidad
+    sin bloqueos de base de datos — testeable y escalable.
     """
     from apps.vehiculos.models import Vehiculo, validar_qr_dinamico
     from apps.acceso.models import QrSesion, PaseTemporal
@@ -78,70 +56,80 @@ def resolver_codigo(codigo: str) -> ResultadoValidacion:
                 metodo_acceso="qr_dinamico",
             )
 
-    # ── Nivel 2: QR de delegación (single-use, atómico) ──────────────────
-    with transaction.atomic():
-        qr = (
-            QrSesion.objects
-            .select_for_update(nowait=True)  # falla rápido si otro proceso lo tiene
-            .filter(codigo_hash=codigo_limpio, usado=False)
-            .select_related("vehiculo")
-            .first()
+    # ── Nivel 2: QR estático SHA-256 (legacy, compatibilidad) ───────────────
+    vehiculo_legacy = (
+        Vehiculo.objects.filter(codigo_qr=codigo_limpio).first()
+    )
+    if vehiculo_legacy:
+        validar_estado_vehiculo(vehiculo_legacy)
+        return ResultadoValidacion(
+            vehiculo=vehiculo_legacy,
+            qr_delegacion=None,
+            pase_temporal=None,
+            metodo_acceso="qr_permanente",
         )
-        if qr:
-            if qr.fecha_expiracion <= timezone.now():
-                raise Exception("QR de delegación expirado.")
-            validar_estado_vehiculo(qr.vehiculo)
-            qr.usado = True
-            qr.save(update_fields=["usado"])
-            return ResultadoValidacion(
-                vehiculo=qr.vehiculo,
-                qr_delegacion=qr,
-                pase_temporal=None,
-                metodo_acceso="qr_delegacion",
-            )
 
-    # ── Nivel 3: Pase temporal (multi-uso atómico) ────────────────────────
-    with transaction.atomic():
-        pase = (
-            PaseTemporal.objects
-            .select_for_update(nowait=True)
-            .filter(codigo=codigo_limpio, activo=True)
-            .select_related("vehiculo")
-            .first()
+    # ── Nivel 3: QR de delegación (optimistic locking) ───────────────────
+    qr = (
+        QrSesion.objects
+        .filter(codigo_hash=codigo_limpio, usado=False)
+        .select_related("vehiculo")
+        .first()
+    )
+    if qr:
+        if qr.fecha_expiracion <= timezone.now():
+            raise Exception("QR de delegación expirado.")
+        validar_estado_vehiculo(qr.vehiculo)
+        # UPDATE WHERE usado=False — si otro guardia lo usó en paralelo, actualizado=0
+        actualizado = QrSesion.objects.filter(pk=qr.pk, usado=False).update(usado=True)
+        if actualizado == 0:
+            raise Exception("Este QR ya fue utilizado. Solicite un nuevo QR de delegación.")
+        qr.usado = True
+        return ResultadoValidacion(
+            vehiculo=qr.vehiculo,
+            qr_delegacion=qr,
+            pase_temporal=None,
+            metodo_acceso="qr_delegacion",
         )
-        if pase:
-            ahora = timezone.now()
-            if not (pase.valido_desde <= ahora <= pase.valido_hasta):
-                raise Exception("Pase temporal fuera de la ventana horaria permitida.")
-            if pase.usos_actual >= pase.usos_max:
-                raise Exception("Pase temporal agotado. Se alcanzó el límite de usos.")
-            if pase.vehiculo:
-                validar_estado_vehiculo(pase.vehiculo)
-            pase.usos_actual += 1
-            pase.save(update_fields=["usos_actual"])
-            return ResultadoValidacion(
-                vehiculo=pase.vehiculo,
-                qr_delegacion=None,
-                pase_temporal=pase,
-                metodo_acceso="pase_temporal",
-            )
+
+    # ── Nivel 3: Pase temporal (optimistic locking en usos) ───────────────
+    pase = (
+        PaseTemporal.objects
+        .filter(codigo=codigo_limpio, activo=True)
+        .select_related("vehiculo")
+        .first()
+    )
+    if pase:
+        ahora = timezone.now()
+        if not (pase.valido_desde <= ahora <= pase.valido_hasta):
+            raise Exception("Pase temporal fuera de la ventana horaria permitida.")
+        if pase.usos_actual >= pase.usos_max:
+            raise Exception("Pase temporal agotado. Se alcanzó el límite de usos.")
+        if pase.vehiculo:
+            validar_estado_vehiculo(pase.vehiculo)
+        # UPDATE WHERE usos_actual=X — si otro guardia lo usó en paralelo, actualizado=0
+        usos_previos = pase.usos_actual
+        actualizado = PaseTemporal.objects.filter(
+            pk=pase.pk, usos_actual=usos_previos
+        ).update(usos_actual=usos_previos + 1)
+        if actualizado == 0:
+            raise Exception("El pase fue modificado concurrentemente. Reintente el escaneo.")
+        pase.usos_actual = usos_previos + 1
+        return ResultadoValidacion(
+            vehiculo=pase.vehiculo,
+            qr_delegacion=None,
+            pase_temporal=pase,
+            metodo_acceso="pase_temporal",
+        )
 
     raise Exception("Código no reconocido. Verifique el QR o el código del pase temporal.")
 
 
-# ── Resolución TOTP con caché Redis ───────────────────────────────────────
-
 def _resolver_totp(codigo: str):
     """
-    Busca el vehículo correspondiente al código TOTP.
-
-    Estrategia de caché:
-    - Intenta resolver vía Django cache (Redis en producción).
-    - Si no hay entrada en caché, recorre vehículos activos con secret
-      y almacena el resultado para los próximos 55 segundos.
-
-    La caché se invalida automáticamente; si un vehículo es sancionado
-    o desactivado, el próximo ciclo de 30s lo excluirá.
+    Busca el vehículo correspondiente al código TOTP vía caché Redis (O(1)).
+    Solo busca vehículos activos — los sancionados/pendientes deben usar
+    el flujo manual o presentar su placa al guardia.
     """
     from apps.vehiculos.models import Vehiculo, validar_qr_dinamico
     from django.core.cache import cache
@@ -154,13 +142,9 @@ def _resolver_totp(codigo: str):
         if vehiculo:
             return vehiculo
 
-    # Fallback: buscar en BD (solo si caché no tiene la entrada)
-    vehiculos = (
-        Vehiculo.objects
-        .filter(estado="activo", qr_secret__gt="")
-        .only("id", "placa", "estado", "qr_secret", "propietario_id")
-    )
-    for v in vehiculos:
+    for v in Vehiculo.objects.filter(estado="activo", qr_secret__gt="").only(
+        "id", "placa", "estado", "qr_secret", "propietario_id"
+    ):
         if validar_qr_dinamico(v.qr_secret, codigo):
             cache.set(cache_key, v.pk, timeout=55)
             return v
