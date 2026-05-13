@@ -438,85 +438,8 @@ export default function Parqueos() {
 
       {/* Mapa visual */}
       {tab === 'mapa' && (
-        <div className="space-y-6">
-          {/* Leyenda */}
-          <div className="flex flex-wrap gap-3 bg-white rounded-xl p-4 shadow-sm">
-            <span className="text-xs font-semibold text-slate-500 mr-2">Estado:</span>
-            {[
-              { color: 'bg-green-400', label: 'Disponible' },
-              { color: 'bg-red-400', label: 'Ocupado' },
-              { color: 'bg-blue-400', label: 'Reservado' },
-              { color: 'bg-slate-300', label: 'Mantenimiento' },
-            ].map(({ color, label }) => (
-              <span key={label} className="flex items-center gap-1.5 text-xs text-slate-600">
-                <span className={`inline-block w-3 h-3 rounded ${color}`} />
-                {label}
-              </span>
-            ))}
-            <span className="ml-auto text-xs text-slate-400 italic">Actualiza cada 15 s</span>
-          </div>
-
-          {zonasMapa.length === 0 ? (
-            <div className="text-center py-12 text-slate-400 text-sm">No hay zonas de parqueo activas</div>
-          ) : (
-            zonasMapa.map((zona: any) => {
-              const esps: any[] = zona.espacios
-              const cDisp = esps.filter((e: any) => e.estado === 'disponible').length
-              const cOcup = esps.filter((e: any) => e.estado === 'ocupado').length
-              const cRes  = esps.filter((e: any) => e.estado === 'reservado').length
-              const cMant = esps.filter((e: any) => e.estado === 'mantenimiento').length
-
-              const estadoColor: Record<string, string> = {
-                disponible:    'bg-green-100 border-green-400 text-green-800 hover:bg-green-200',
-                ocupado:       'bg-red-100 border-red-400 text-red-800 hover:bg-red-200',
-                reservado:     'bg-blue-100 border-blue-400 text-blue-800 hover:bg-blue-200',
-                mantenimiento: 'bg-slate-100 border-slate-300 text-slate-500 hover:bg-slate-200',
-              }
-
-              return (
-                <div key={zona.id} className="bg-white rounded-xl shadow-sm p-5">
-                  {/* Encabezado zona */}
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <h3 className="font-semibold text-slate-800">{zona.nombre}</h3>
-                      {zona.ubicacion && <p className="text-xs text-slate-400">{zona.ubicacion}</p>}
-                    </div>
-                    <div className="flex gap-2 text-xs font-medium shrink-0 ml-4">
-                      <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{cDisp} libres</span>
-                      {cOcup > 0 && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded-full">{cOcup} ocupados</span>}
-                      {cRes  > 0 && <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{cRes} reservados</span>}
-                      {cMant > 0 && <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{cMant} mantenim.</span>}
-                      <span className="text-slate-400 px-2 py-0.5">{esps.length} total</span>
-                    </div>
-                  </div>
-
-                  {esps.length === 0 ? (
-                    <p className="text-xs text-slate-400 italic">Sin espacios registrados en esta zona</p>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {esps.map((esp: any) => {
-                        const cls = estadoColor[esp.estado] ?? 'bg-slate-100 border-slate-300 text-slate-500'
-                        return (
-                          <div
-                            key={esp.id}
-                            title={`#${esp.numero} · ${esp.categoria.nombre} · ${esp.estado}${esp.ubicacionReferencia ? ' · ' + esp.ubicacionReferencia : ''}`}
-                            className={`w-14 h-14 rounded-lg border-2 flex flex-col items-center justify-center cursor-default transition-colors ${cls}`}
-                            style={{ borderColor: esp.estado === 'disponible' ? esp.categoria.color : undefined }}
-                          >
-                            <span className="text-xs font-bold leading-tight">{esp.numero}</span>
-                            <span className="text-[10px] leading-tight opacity-70 text-center px-0.5 truncate max-w-full">
-                              {esp.categoria.nombre.slice(0, 4)}
-                            </span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )
-            })
-          )}
-        </div>
+        <MapaParqueoLive zonas={zonasMapa} esPersonal={esPersonal}
+          onCerrarSesion={(sesionId) => cerrarSesion({ variables: { sesionId } })} />
       )}
 
       {/* Modal Crear Zona */}
@@ -588,6 +511,167 @@ export default function Parqueos() {
       )}
 
       <ToastContainer toasts={toast.toasts} onClose={toast.cerrar} />
+    </div>
+  )
+}
+
+// ── Mapa visual mejorado ───────────────────────────────────────────────────
+
+const ESTADO_MAPA: Record<string, { bg: string; border: string; text: string; symbol: string }> = {
+  disponible:    { bg: 'bg-green-50',  border: 'border-green-400', text: 'text-green-800', symbol: '✓' },
+  ocupado:       { bg: 'bg-red-50',    border: 'border-red-400',   text: 'text-red-800',   symbol: '●' },
+  reservado:     { bg: 'bg-blue-50',   border: 'border-blue-400',  text: 'text-blue-800',  symbol: '⏱' },
+  mantenimiento: { bg: 'bg-slate-100', border: 'border-slate-300', text: 'text-slate-500', symbol: '⚙' },
+}
+
+function EspacioBtn({ esp, onCerrar, esPersonal }: {
+  esp: any
+  onCerrar: (sesionId?: number) => void
+  esPersonal: boolean
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const cfg = ESTADO_MAPA[esp.estado] ?? ESTADO_MAPA.mantenimiento
+  const esDisc = esp.categoria?.esDiscapacidad
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setExpanded(v => !v)}
+        aria-label={`Espacio ${esp.numero} — ${esp.estado}${esp.placaVehiculoActivo ? ` — ${esp.placaVehiculoActivo}` : ''}`}
+        className={`
+          min-w-[56px] min-h-[52px] w-full rounded-xl border-2 flex flex-col items-center justify-center
+          gap-0.5 px-1 py-2 transition-all cursor-pointer select-none
+          ${cfg.bg} ${cfg.border} ${cfg.text}
+          hover:brightness-95 active:scale-95
+        `}
+      >
+        {/* Número */}
+        <span className="font-bold text-xs leading-none">
+          {esDisc ? '♿' : cfg.symbol} {esp.numero}
+        </span>
+
+        {/* Placa del vehículo en espacios ocupados */}
+        {esp.placaVehiculoActivo ? (
+          <span className="font-mono text-[9px] leading-none opacity-90 tracking-tight">
+            {esp.placaVehiculoActivo}
+          </span>
+        ) : (
+          <span className="text-[9px] leading-none opacity-60 truncate max-w-[52px]">
+            {esp.categoria?.nombre?.slice(0, 5)}
+          </span>
+        )}
+      </button>
+
+      {/* Tooltip expandido al hacer clic — friendly para tablet */}
+      {expanded && (
+        <div
+          className="absolute z-20 bottom-full left-1/2 -translate-x-1/2 mb-2 w-44 bg-slate-800 text-white text-xs rounded-xl p-3 shadow-xl space-y-1"
+          onClick={() => setExpanded(false)}
+        >
+          <p className="font-bold">#{esp.numero}</p>
+          <p className="opacity-80">{esp.categoria?.nombre}</p>
+          <p className="capitalize font-medium">{esp.estado}</p>
+          {esp.placaVehiculoActivo && (
+            <p className="font-mono bg-white/20 rounded px-1 py-0.5 text-center">
+              {esp.placaVehiculoActivo}
+            </p>
+          )}
+          {esp.ubicacionReferencia && (
+            <p className="opacity-60 text-[10px]">{esp.ubicacionReferencia}</p>
+          )}
+          {/* Botón cerrar sesión para guardia/admin */}
+          {esPersonal && esp.estado === 'ocupado' && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onCerrar(); setExpanded(false) }}
+              className="w-full mt-1 bg-orange-500 hover:bg-orange-600 text-white rounded-lg py-1.5 font-medium text-[10px] transition-colors"
+            >
+              Registrar salida
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MapaParqueoLive({ zonas, esPersonal, onCerrarSesion }: {
+  zonas: any[]
+  esPersonal: boolean
+  onCerrarSesion: (sesionId: number) => void
+}) {
+  return (
+    <div className="space-y-6">
+      {/* Leyenda — con símbolo + color para daltonismo/luz solar */}
+      <div className="flex flex-wrap items-center gap-4 bg-white rounded-xl p-4 shadow-sm">
+        <span className="text-xs font-semibold text-slate-500">Estado:</span>
+        {Object.entries(ESTADO_MAPA).map(([key, cfg]) => (
+          <span key={key} className={`flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-lg border ${cfg.bg} ${cfg.border} ${cfg.text}`}>
+            {cfg.symbol} {key.charAt(0).toUpperCase() + key.slice(1)}
+          </span>
+        ))}
+        <span className="ml-auto text-[10px] text-slate-400 italic">Actualiza cada 15 s · toca para detalles</span>
+      </div>
+
+      {zonas.length === 0 ? (
+        <div className="text-center py-12 text-slate-400 text-sm">No hay zonas de parqueo activas</div>
+      ) : zonas.map((zona: any) => {
+        const esps: any[] = zona.espacios ?? []
+        const cDisp = esps.filter((e: any) => e.estado === 'disponible').length
+        const cOcup = esps.filter((e: any) => e.estado === 'ocupado').length
+        const pct   = esps.length > 0 ? Math.round((cOcup / esps.length) * 100) : 0
+
+        return (
+          <div key={zona.id} className="bg-white rounded-xl shadow-sm p-5">
+            {/* Cabecera zona */}
+            <div className="flex flex-wrap items-start justify-between gap-2 mb-4">
+              <div>
+                <h3 className="font-semibold text-slate-800">{zona.nombre}</h3>
+                {zona.ubicacion && <p className="text-xs text-slate-400 mt-0.5">{zona.ubicacion}</p>}
+              </div>
+              <div className="flex items-center gap-2 text-xs">
+                <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
+                  {cDisp} libre{cDisp !== 1 ? 's' : ''}
+                </span>
+                {cOcup > 0 && (
+                  <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">
+                    {cOcup} ocupado{cOcup !== 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Barra de ocupación */}
+            <div className="mb-4">
+              <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                <span>Ocupación</span>
+                <span>{pct}%</span>
+              </div>
+              <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${pct > 80 ? 'bg-red-400' : pct > 50 ? 'bg-orange-400' : 'bg-green-400'}`}
+                  style={{ width: `${Math.max(pct, 2)}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Grid de espacios — mínimo 52px para tablet */}
+            {esps.length === 0 ? (
+              <p className="text-xs text-slate-400 italic">Sin espacios registrados</p>
+            ) : (
+              <div className="grid gap-1.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(56px, 1fr))' }}>
+                {esps.map((esp: any) => (
+                  <EspacioBtn
+                    key={esp.id}
+                    esp={esp}
+                    esPersonal={esPersonal}
+                    onCerrar={() => onCerrarSesion(esp.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }

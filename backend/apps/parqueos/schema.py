@@ -70,6 +70,11 @@ class ZonaParqueoType:
 
     @strawberry.field
     def espacios(self) -> List["EspacioParqueoType"]:
+        # Si hay prefetch en caché (llamado desde mapa_parqueo), reutilizarlo
+        # para evitar N+1 — la placa_vehiculo_activo ya estará anotada.
+        cache = getattr(self, "_prefetched_objects_cache", {})
+        if "espacios" in cache:
+            return sorted(self.espacios.all(), key=lambda e: e.numero)
         return list(
             EspacioParqueo.objects.filter(zona_id=self.id)
             .select_related("categoria")
@@ -91,6 +96,15 @@ class EspacioParqueoType:
     @strawberry.field
     def categoria(self) -> CategoriaEspacioType:
         return self.categoria
+
+    @strawberry.field
+    def placa_vehiculo_activo(self) -> Optional[str]:
+        """
+        Placa del vehículo que ocupa este espacio ahora mismo.
+        Evita N+1: el valor es anotado por mapa_parqueo() en un solo query
+        de sesiones activas y guardado como atributo transitorio _placa_activa.
+        """
+        return getattr(self, "_placa_activa", None)
 
 
 @strawberry.type
@@ -256,14 +270,32 @@ class ParqueosQuery:
     @strawberry.field
     def mapa_parqueo(self, info: Info) -> List[ZonaParqueoType]:
         """
-        Mapa en vivo: zonas con conteos anotados + espacios prefetcheados.
-        Resulta en 2 queries totales en lugar de 3N+1.
+        Mapa en vivo: 3 queries totales independientemente del número de zonas/espacios.
+          Q1: zonas con conteos anotados (COUNT en SQL)
+          Q2: prefetch de espacios + categorías
+          Q3: placas de sesiones activas (dict espacio_id → placa)
+        La placa se anota como atributo transitorio (_placa_activa) en cada espacio
+        para que EspacioParqueoType.placa_vehiculo_activo() la devuelva sin queries extra.
         """
-        return list(
+        # Q3: una sola query para todas las placas activas
+        placas_activas: dict[int, str] = {
+            row["espacio_id"]: row["vehiculo__placa"]
+            for row in SesionParqueo.objects.filter(estado="activa")
+            .values("espacio_id", "vehiculo__placa")
+        }
+
+        zonas = list(
             _zonas_con_conteos(solo_activas=True)
             .prefetch_related("espacios__categoria")
             .order_by("nombre")
         )
+
+        # Anotar cada espacio prefetcheado con su placa activa (O(1) lookup)
+        for zona in zonas:
+            for espacio in zona.espacios.all():
+                espacio._placa_activa = placas_activas.get(espacio.id)
+
+        return zonas
 
 
 # ── Mutations ──────────────────────────────────────────────────────────────

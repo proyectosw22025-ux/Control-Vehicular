@@ -3,10 +3,12 @@ import { Link } from 'react-router-dom'
 import {
   Car, ParkingSquare, AlertTriangle, UserCheck,
   Users, DoorOpen, Bell, TrendingUp, ShieldAlert,
-  LayoutDashboard, Clock,
+  LayoutDashboard, Clock, ShieldCheck, ArrowRight,
+  CheckCircle2, XCircle, AlertCircle, QrCode,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import Onboarding from '../components/Onboarding'
+import { VEHICULOS_QUERY } from '../graphql/queries/vehiculos'
 
 const DASHBOARD_QUERY = gql`
   query DashboardStats {
@@ -113,6 +115,36 @@ const MODULOS_RESIDENTE = [
   { label: 'Notificaciones',icon: Bell,          color: 'bg-slate-500',   href: '/notificaciones' },
 ]
 
+// ── Tarjeta de vehículo para residentes ───────────────────
+const ESTADO_CONFIG: Record<string, { label: string; icon: React.ElementType; cls: string }> = {
+  activo:     { label: 'Activo — puede ingresar', icon: CheckCircle2, cls: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
+  sancionado: { label: 'Sancionado — acceso bloqueado', icon: XCircle, cls: 'text-red-600 bg-red-50 border-red-200' },
+  pendiente:  { label: 'Pendiente de aprobación', icon: AlertCircle, cls: 'text-amber-600 bg-amber-50 border-amber-200' },
+  inactivo:   { label: 'Inactivo', icon: XCircle, cls: 'text-slate-500 bg-slate-50 border-slate-200' },
+}
+
+function VehiculoCard({ v }: { v: any }) {
+  const cfg = ESTADO_CONFIG[v.estado] ?? ESTADO_CONFIG.inactivo
+  const Icon = cfg.icon
+  return (
+    <div className={`rounded-xl border p-4 flex items-center gap-3 ${cfg.cls}`}>
+      <div className="shrink-0">
+        <Car size={22} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="font-bold text-sm font-mono tracking-wide">{v.placa}</p>
+        <p className="text-xs opacity-80 truncate">{v.marca} {v.modelo} · {v.anio}</p>
+        <p className="text-xs font-medium mt-0.5 flex items-center gap-1">
+          <Icon size={11} /> {cfg.label}
+        </p>
+      </div>
+      <Link to="/vehiculos" className="shrink-0 p-2 rounded-lg hover:bg-white/60 transition-colors" title="Ver QR y detalles">
+        <QrCode size={18} />
+      </Link>
+    </div>
+  )
+}
+
 // ── Componente principal ──────────────────────────────────
 export default function Dashboard() {
   const { usuario, esAdmin, esGuardia, tieneRol } = useAuth()
@@ -120,10 +152,19 @@ export default function Dashboard() {
   const mostrarStats = esAdmin || esGuardia
   const { data, loading } = useQuery(DASHBOARD_QUERY, { skip: !mostrarStats })
 
+  const esResidente = tieneRol('Estudiante', 'Docente', 'Personal Administrativo')
+
+  // Query de vehículos propios — solo para residentes
+  const { data: misVehiculosData } = useQuery(VEHICULOS_QUERY, {
+    variables: { propietarioId: usuario.id, porPagina: 5 },
+    skip: !esResidente || !usuario.id,
+    fetchPolicy: 'cache-and-network',
+  })
+  const misVehiculos: any[] = misVehiculosData?.vehiculos?.items ?? []
+
   const stats = data?.dashboardStats
   const semana: DiaStat[] = data?.accesosUltimaSemana ?? []
 
-  const esResidente = tieneRol('Estudiante', 'Docente', 'Personal Administrativo')
   const modulos = esAdmin ? MODULOS_ADMIN : esGuardia ? MODULOS_GUARDIA : MODULOS_RESIDENTE
 
   const fechaHoy = new Date().toLocaleDateString('es-BO', {
@@ -281,13 +322,47 @@ export default function Dashboard() {
         </>
       )}
 
-      {/* ── Banner residente ── */}
+      {/* ── Banner de turno para guardia ── */}
+      {esGuardia && !esAdmin && (
+        <Link
+          to="/guardia"
+          className="flex items-center justify-between bg-orange-500 hover:bg-orange-600 text-white rounded-xl p-4 shadow-md transition-colors group"
+        >
+          <div className="flex items-center gap-3">
+            <ShieldCheck size={24} className="shrink-0" />
+            <div>
+              <p className="font-bold text-sm">Panel de Guardia</p>
+              <p className="text-xs opacity-80">Registrar entradas, salidas y visitantes</p>
+            </div>
+          </div>
+          <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
+        </Link>
+      )}
+
+      {/* ── Vehículos propios del residente ── */}
       {esResidente && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 text-sm text-blue-700">
-          <strong>¿Primera vez?</strong>{' '}
-          Registra tu vehículo en <Link to="/vehiculos" className="underline font-medium">Mis Vehículos</Link>{' '}
-          para poder acceder al estacionamiento de la UAGRM con tu QR personal.
-        </div>
+        misVehiculos.length === 0 ? (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 text-sm text-blue-700">
+            <strong>¿Primera vez?</strong>{' '}
+            Registra tu vehículo en{' '}
+            <Link to="/vehiculos" className="underline font-medium">Mis Vehículos</Link>{' '}
+            para acceder al estacionamiento de la UAGRM con QR personal.
+          </div>
+        ) : (
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-slate-600 uppercase tracking-wide">
+                Mis vehículos
+              </h2>
+              <Link to="/vehiculos" className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                Ver todos <ArrowRight size={12} />
+              </Link>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {misVehiculos.map((v: any) => <VehiculoCard key={v.id} v={v} />)}
+            </div>
+          </div>
+        )
       )}
 
       {/* ── Acceso rápido a módulos ── */}
