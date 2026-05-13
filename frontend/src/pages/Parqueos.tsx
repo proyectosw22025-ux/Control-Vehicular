@@ -1,6 +1,8 @@
 import { useState, FormEvent } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import { ParkingSquare, Plus, MapPin, Car, Clock, X, FileDown } from 'lucide-react'
+import { useToast } from '../hooks/useToast'
+import { ToastContainer } from '../components/ToastContainer'
 import {
   ZONAS_QUERY,
   ESPACIOS_POR_ZONA_QUERY,
@@ -29,6 +31,7 @@ type Tab = 'zonas' | 'espacios' | 'activas' | 'historial' | 'mapa'
 
 export default function Parqueos() {
   const { esAdmin, esGuardia } = useAuth()
+  const toast = useToast()
   const esPersonal = esAdmin || esGuardia
   const [tab, setTab] = useState<Tab>('zonas')
   const [zonaSelId, setZonaSelId] = useState<number | null>(null)
@@ -45,7 +48,10 @@ export default function Parqueos() {
     skip: !zonaSelId,
   })
   const { data: categoriasData } = useQuery(CATEGORIAS_ESPACIO_QUERY)
-  const { data: vehiculosData } = useQuery(VEHICULOS_QUERY, { variables: { porPagina: 500 } })
+  // Carga solo vehículos activos para el selector de sesión — no 500
+  const { data: vehiculosData } = useQuery(VEHICULOS_QUERY, {
+    variables: { estado: 'activo', porPagina: 100 },
+  })
   const { data: historialData } = useQuery(HISTORIAL_SESIONES_QUERY, {
     variables: { vehiculoId: vehiculoHistId, limite: 15 },
     skip: !vehiculoHistId,
@@ -74,12 +80,14 @@ export default function Parqueos() {
     onError(e) { setError(e.message) },
   })
   const [cerrarSesion, { loading: loadingCerrar }] = useMutation(CERRAR_SESION_MUTATION, {
-    onCompleted() {
+    onCompleted(d) {
+      const s = d.cerrarSesionParqueo
+      toast.exito('Sesión cerrada', `${s.placaVehiculo} salió del parqueo (${s.duracionMinutos} min)`)
       if (zonaSelId) refetchEspacios()
       refetchZonas()
       refetchActivas()
     },
-    onError(e) { alert(e.message) },
+    onError(e) { toast.error('Error al cerrar sesión', e.message) },
   })
 
   const zonas = zonasData?.zonas ?? []
@@ -135,11 +143,14 @@ export default function Parqueos() {
 
   async function descargarPDF(tipo: string) {
     const t = localStorage.getItem('access_token') || ''
+    const base = import.meta.env.VITE_GRAPHQL_URI
+      ? import.meta.env.VITE_GRAPHQL_URI.replace('/graphql/', '')
+      : 'http://localhost:8000'
     try {
-      const resp = await fetch(`http://localhost:8000/api/pdf/${tipo}/`, {
+      const resp = await fetch(`${base}/api/pdf/${tipo}/`, {
         headers: { Authorization: `Bearer ${t}` },
       })
-      if (!resp.ok) throw new Error('Sin acceso')
+      if (!resp.ok) throw new Error('Sin acceso al PDF')
       const blob = await resp.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -147,8 +158,8 @@ export default function Parqueos() {
       a.download = `${tipo}_${new Date().toISOString().slice(0, 10)}.pdf`
       a.click()
       URL.revokeObjectURL(url)
-    } catch {
-      alert('No se pudo generar el PDF')
+    } catch (e) {
+      toast.error('No se pudo generar el PDF', e instanceof Error ? e.message : undefined)
     }
   }
 
@@ -575,6 +586,8 @@ export default function Parqueos() {
           </form>
         </ModalWrap>
       )}
+
+      <ToastContainer toasts={toast.toasts} onClose={toast.cerrar} />
     </div>
   )
 }
