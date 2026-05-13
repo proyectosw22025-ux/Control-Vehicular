@@ -11,6 +11,7 @@ import { QrDinamico } from '../components/QrDinamico'
 import { useToast } from '../hooks/useToast'
 import { ToastContainer } from '../components/ToastContainer'
 import { VEHICULOS_QUERY, VEHICULOS_PENDIENTES_QUERY, TIPOS_VEHICULO_QUERY } from '../graphql/queries/vehiculos'
+import { SESIONES_ACTIVAS_QUERY } from '../graphql/queries/parqueos'
 import {
   REGISTRAR_VEHICULO_MUTATION,
   ACTUALIZAR_VEHICULO_MUTATION,
@@ -86,6 +87,17 @@ export default function Vehiculos() {
   })
   const { data: tiposData }    = useQuery(TIPOS_VEHICULO_QUERY)
   const { data: usuariosData } = useQuery(USUARIOS_QUERY, { skip: !esAdmin })
+  // Mapa placa → "Zona · #Espacio" para indicar si el vehículo está en parqueo ahora
+  const { data: sesionesData } = useQuery(SESIONES_ACTIVAS_QUERY, {
+    fetchPolicy: 'cache-and-network',
+    pollInterval: 30_000,
+  })
+  const enParqueo = new Map<string, string>(
+    (sesionesData?.sesionesActivas ?? []).map((s: any) => [
+      s.placaVehiculo,
+      `${s.espacio?.zona?.nombre ?? 'Zona'} · #${s.espacio?.numero ?? '?'}`,
+    ])
+  )
 
   const [registrarVehiculo, { loading: loadingRegistrar }] = useMutation(REGISTRAR_VEHICULO_MUTATION, {
     onCompleted(d) {
@@ -310,7 +322,15 @@ export default function Vehiculos() {
                   <div key={v.id} className="bg-white rounded-xl shadow-sm p-4">
                     <div className="flex items-start justify-between gap-2 mb-2">
                       <div>
-                        <span className="font-mono font-bold text-slate-800 text-base">{v.placa}</span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono font-bold text-slate-800 text-base">{v.placa}</span>
+                          {enParqueo.has(v.placa) && (
+                            <span className="flex items-center gap-1 text-[10px] font-medium bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full border border-violet-200"
+                              title={`En parqueo: ${enParqueo.get(v.placa)}`}>
+                              🅿 {enParqueo.get(v.placa)}
+                            </span>
+                          )}
+                        </div>
                         <p className="text-sm text-slate-600 mt-0.5">{v.marca} {v.modelo} · {v.anio}</p>
                         <p className="text-xs text-slate-400">{v.tipo?.nombre} · <span className="capitalize">{v.color}</span></p>
                         {esAdmin && <p className="text-xs text-slate-500 mt-0.5">{v.propietarioNombre}</p>}
@@ -359,7 +379,17 @@ export default function Vehiculos() {
                   <tbody className="divide-y divide-slate-100">
                     {vehiculos.map(v => (
                       <tr key={v.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-4 py-3 font-mono font-bold text-slate-800">{v.placa}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono font-bold text-slate-800">{v.placa}</span>
+                            {enParqueo.has(v.placa) && (
+                              <span className="text-[10px] font-medium bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full border border-violet-200 whitespace-nowrap"
+                                title={`En parqueo: ${enParqueo.get(v.placa)}`}>
+                                🅿 {enParqueo.get(v.placa)}
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="px-4 py-3 text-slate-600">{v.tipo?.nombre}</td>
                         <td className="px-4 py-3 text-slate-700">{v.marca} {v.modelo}</td>
                         <td className="px-4 py-3 text-slate-600">{v.anio}</td>

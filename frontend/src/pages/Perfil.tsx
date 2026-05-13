@@ -148,7 +148,9 @@ export default function Perfil() {
         nombreCompleto: u.nombreCompleto,
         email: u.email,
       }))
-      setPerfilMsg({ tipo: 'ok', msg: 'Perfil actualizado. Los cambios se reflejarán en el sidebar al recargar.' })
+      setPerfilMsg({ tipo: 'ok', msg: 'Perfil actualizado. Actualizando la sesión...' })
+      // Recargar tras 1.5s para que el sidebar y el header reflejen el nuevo nombre
+      setTimeout(() => window.location.reload(), 1500)
     },
     onError(e) { setPerfilMsg({ tipo: 'err', msg: e.message }) },
   })
