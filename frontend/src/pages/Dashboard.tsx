@@ -131,18 +131,18 @@ export default function Dashboard() {
   })
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="p-4 sm:p-8 space-y-4 sm:space-y-6">
       <Onboarding />
 
       {/* ── Encabezado ── */}
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">
-            Bienvenido, {usuario.nombreCompleto || 'Usuario'}
+          <h1 className="text-lg sm:text-2xl font-bold text-slate-800">
+            Bienvenido, {usuario.nombreCompleto?.split(' ')[0] || 'Usuario'}
           </h1>
-          <p className="text-slate-400 text-sm mt-1 capitalize">{fechaHoy}</p>
+          <p className="text-slate-400 text-xs sm:text-sm mt-1 capitalize">{fechaHoy}</p>
         </div>
-        <div className="flex items-center gap-2 text-xs text-slate-400 bg-white rounded-lg px-3 py-2 shadow-sm border border-slate-100">
+        <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400 bg-white rounded-lg px-3 py-2 shadow-sm border border-slate-100 shrink-0">
           <LayoutDashboard size={14} />
           Sistema Vehicular UAGRM
         </div>

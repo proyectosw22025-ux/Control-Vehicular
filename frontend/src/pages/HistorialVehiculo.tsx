@@ -100,7 +100,7 @@ export default function HistorialVehiculo() {
 
   if (vLoad) {
     return (
-      <div className="p-8">
+      <div className="p-4 sm:p-8">
         <div className="space-y-3">
           {[...Array(6)].map((_, i) => (
             <div key={i} className="bg-white rounded-xl h-12 animate-pulse" />
@@ -123,7 +123,7 @@ export default function HistorialVehiculo() {
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-8">
       {/* Botón volver */}
       <button
         onClick={() => navigate(-1)}
@@ -179,7 +179,7 @@ export default function HistorialVehiculo() {
         accesos.length === 0 ? (
           <EmptyState icon={DoorOpen} text="Sin registros de acceso" />
         ) : (
-          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
                 <tr>
@@ -216,7 +216,7 @@ export default function HistorialVehiculo() {
         multas.length === 0 ? (
           <EmptyState icon={AlertTriangle} text="Sin multas registradas" />
         ) : (
-          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
                 <tr>
@@ -255,7 +255,7 @@ export default function HistorialVehiculo() {
         sesiones.length === 0 ? (
           <EmptyState icon={ParkingSquare} text="Sin sesiones de parqueo" />
         ) : (
-          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
                 <tr>

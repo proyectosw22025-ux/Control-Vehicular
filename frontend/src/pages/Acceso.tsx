@@ -128,7 +128,7 @@ export default function Acceso() {
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-8">
       <div className="flex items-center gap-3 mb-6">
         <div className="bg-orange-500 text-white p-2 rounded-xl"><DoorOpen size={20} /></div>
         <div>
@@ -338,7 +338,7 @@ export default function Acceso() {
             <p>Sin registros de acceso</p>
           </div>
         ) : (
-          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
                 <tr>

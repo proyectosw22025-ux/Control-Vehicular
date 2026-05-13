@@ -153,7 +153,7 @@ export default function Parqueos() {
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-8">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <div className="bg-violet-500 text-white p-2 rounded-xl"><ParkingSquare size={20} /></div>
@@ -316,7 +316,7 @@ export default function Parqueos() {
               <p>No hay vehículos en el parqueo en este momento</p>
             </div>
           ) : (
-            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
                   <tr>
@@ -382,7 +382,7 @@ export default function Parqueos() {
           ) : historial.length === 0 ? (
             <div className="text-center py-10 text-slate-400 text-sm">Sin sesiones registradas</div>
           ) : (
-            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
                   <tr>

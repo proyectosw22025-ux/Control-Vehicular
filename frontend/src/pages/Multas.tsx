@@ -121,9 +121,8 @@ export default function Multas() {
     apelarMulta({
       variables: {
         input: {
-          multaId:   seleccionada!.id,
-          usuarioId: usuario.id,
-          motivo:    (f.get('motivo') as string).trim(),
+          multaId: seleccionada!.id,
+          motivo:  (f.get('motivo') as string).trim(),
         },
       },
     })
@@ -137,7 +136,7 @@ export default function Multas() {
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-8">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <div className="bg-red-500 text-white p-2 rounded-xl"><AlertTriangle size={20} /></div>
@@ -355,7 +354,7 @@ function TablaMultas({ multas, esPersonal, onPagar, onApelar }: {
   if (multas.length === 0)
     return <div className="text-center py-10 text-slate-400 text-sm">No hay multas registradas</div>
   return (
-    <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+    <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
       <table className="w-full text-sm">
         <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
           <tr>

@@ -183,7 +183,7 @@ export default function Vehiculos() {
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-8">
       {/* Encabezado */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
@@ -277,7 +277,45 @@ export default function Vehiculos() {
             </div>
           ) : (
             <>
-              <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+              {/* ── Vista mobile: cards ── */}
+              <div className="sm:hidden space-y-3">
+                {vehiculos.map(v => (
+                  <div key={v.id} className="bg-white rounded-xl shadow-sm p-4">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div>
+                        <span className="font-mono font-bold text-slate-800 text-base">{v.placa}</span>
+                        <p className="text-sm text-slate-600 mt-0.5">{v.marca} {v.modelo} · {v.anio}</p>
+                        <p className="text-xs text-slate-400">{v.tipo?.nombre} · <span className="capitalize">{v.color}</span></p>
+                        {esAdmin && <p className="text-xs text-slate-500 mt-0.5">{v.propietarioNombre}</p>}
+                      </div>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${ESTADO_BADGE[v.estado] ?? 'bg-slate-100 text-slate-600'}`}>
+                        {v.estado}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                      <button onClick={() => abrirQr(v)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs text-emerald-700 bg-emerald-50 rounded-lg">
+                        <QrCode size={13} /> QR
+                      </button>
+                      <button onClick={() => navigate(`/vehiculos/${v.id}/historial`)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs text-indigo-700 bg-indigo-50 rounded-lg">
+                        <History size={13} /> Historial
+                      </button>
+                      {esAdmin && (
+                        <button onClick={() => abrirEditar(v)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs text-blue-700 bg-blue-50 rounded-lg">
+                          <Edit size={13} /> Editar
+                        </button>
+                      )}
+                      {(esAdmin || !esAdmin) && (
+                        <button onClick={() => abrirDocumento(v)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs text-violet-700 bg-violet-50 rounded-lg">
+                          <FileText size={13} /> Docs
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* ── Vista desktop: tabla ── */}
+              <div className="hidden sm:block bg-white rounded-xl shadow-sm overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
                     <tr>
@@ -321,13 +359,12 @@ export default function Vehiculos() {
                                   className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
                                   <Edit size={15} />
                                 </button>
-                                    <button onClick={() => abrirDocumento(v)} title="Documentos"
+                                <button onClick={() => abrirDocumento(v)} title="Documentos"
                                   className="p-1.5 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-colors">
                                   <FileText size={15} />
                                 </button>
                               </>
                             )}
-                            {/* Propietario también puede subir sus documentos */}
                             {!esAdmin && v.propietarioNombre && (
                               <button onClick={() => abrirDocumento(v)} title="Mis documentos"
                                 className="p-1.5 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-colors">
@@ -463,7 +500,7 @@ export default function Vehiculos() {
             El vehículo quedará en estado <strong>Pendiente</strong> hasta que sea aprobado.
           </p>
           <form onSubmit={handleRegistrar} className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Campo label="Placa *" name="placa" placeholder="ABC-123" />
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Tipo *</label>
@@ -488,11 +525,11 @@ export default function Vehiculos() {
                 Propietario: <strong>{usuario.nombreCompleto}</strong> (tú)
               </div>
             )}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Campo label="Marca *" name="marca" placeholder="Toyota" />
               <Campo label="Modelo *" name="modelo" placeholder="Corolla" />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Campo label="Año *" name="anio" type="number" placeholder="2020" />
               <Campo label="Color *" name="color" placeholder="Blanco" />
             </div>
@@ -535,11 +572,11 @@ export default function Vehiculos() {
       {modal === 'editar' && seleccionado && (
         <ModalWrapper titulo={`Editar — ${seleccionado.placa}`} onClose={cerrarModal}>
           <form onSubmit={handleActualizar} className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Campo label="Marca" name="marca" defaultValue={seleccionado.marca} />
               <Campo label="Modelo" name="modelo" defaultValue={seleccionado.modelo} />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Campo label="Año" name="anio" type="number" defaultValue={String(seleccionado.anio)} />
               <Campo label="Color" name="color" defaultValue={seleccionado.color} />
             </div>

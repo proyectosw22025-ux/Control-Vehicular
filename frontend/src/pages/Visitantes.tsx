@@ -120,7 +120,7 @@ export default function Visitantes() {
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-8">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <div className="bg-cyan-500 text-white p-2 rounded-xl"><UserCheck size={20} /></div>
