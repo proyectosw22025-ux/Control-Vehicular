@@ -7,6 +7,14 @@ import {
 import { FileDown, Printer, BarChart2, AlertTriangle, ParkingSquare, Car, TrendingUp } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
+// ── Helper PDF ─────────────────────────────────────────────
+const API_BASE = (import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/').replace(/\/graphql\/?$/, '')
+
+function descargarPDF(path: string) {
+  const token = localStorage.getItem('access_token') ?? ''
+  window.open(`${API_BASE}${path}?token=${encodeURIComponent(token)}`, '_blank')
+}
+
 // ── Queries ────────────────────────────────────────────────
 
 const REPORTE_ACCESOS_QUERY = gql`
@@ -120,9 +128,14 @@ function TabAccesos() {
             </button>
           ))}
         </div>
-        <button onClick={exportar} className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm px-4 py-2 rounded-xl transition-colors">
-          <FileDown size={15} /> Exportar Excel
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => descargarPDF('/api/pdf/sesiones/')} className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white text-sm px-4 py-2 rounded-xl transition-colors">
+            <FileDown size={15} /> Descargar PDF
+          </button>
+          <button onClick={exportar} className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm px-4 py-2 rounded-xl transition-colors">
+            <FileDown size={15} /> Exportar Excel
+          </button>
+        </div>
       </div>
 
       {loading ? <Skeleton /> : (
@@ -204,7 +217,10 @@ function TabMultas() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        <button onClick={() => descargarPDF('/api/pdf/multas/')} className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white text-sm px-4 py-2 rounded-xl transition-colors">
+          <FileDown size={15} /> Descargar PDF
+        </button>
         <button onClick={exportar} className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm px-4 py-2 rounded-xl transition-colors">
           <FileDown size={15} /> Exportar Excel
         </button>
@@ -300,7 +316,10 @@ function TabParqueos() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        <button onClick={() => descargarPDF('/api/pdf/sesiones/')} className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white text-sm px-4 py-2 rounded-xl transition-colors">
+          <FileDown size={15} /> Descargar PDF
+        </button>
         <button onClick={exportar} className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm px-4 py-2 rounded-xl transition-colors">
           <FileDown size={15} /> Exportar Excel
         </button>
@@ -392,7 +411,10 @@ function TabVehiculos() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        <button onClick={() => descargarPDF('/api/pdf/vehiculos/')} className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white text-sm px-4 py-2 rounded-xl transition-colors">
+          <FileDown size={15} /> Descargar PDF
+        </button>
         <button onClick={exportar} className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm px-4 py-2 rounded-xl transition-colors">
           <FileDown size={15} /> Exportar Excel
         </button>

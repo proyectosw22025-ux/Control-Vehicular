@@ -174,7 +174,8 @@ export default function Multas() {
           <div className="flex gap-2">
             <button onClick={async () => {
               const t = localStorage.getItem('access_token') || ''
-              const resp = await fetch('http://localhost:8000/api/pdf/multas/', { headers: { Authorization: `Bearer ${t}` } })
+              const base = (import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/').replace(/\/graphql\/?$/, '')
+              const resp = await fetch(`${base}/api/pdf/multas/`, { headers: { Authorization: `Bearer ${t}` } })
               if (!resp.ok) { alert(`Error al generar PDF (${resp.status})`); return }
               const blob = await resp.blob()
               const url = URL.createObjectURL(blob)

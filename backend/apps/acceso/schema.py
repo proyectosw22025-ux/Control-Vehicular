@@ -226,6 +226,21 @@ class AccesoMutation:
         # Resolver código — maneja TOTP, delegación y pase temporal de forma atómica
         resultado = resolver_codigo(input.codigo)
 
+        # Evitar entradas duplicadas: bloquear si el último registro es también "entrada"
+        if resultado.vehiculo and input.tipo == "entrada":
+            ultimo = (
+                RegistroAcceso.objects
+                .filter(vehiculo=resultado.vehiculo)
+                .order_by("-timestamp")
+                .values("tipo")
+                .first()
+            )
+            if ultimo and ultimo["tipo"] == "entrada":
+                raise Exception(
+                    f"El vehículo {resultado.vehiculo.placa} ya está dentro del campus. "
+                    "Registre la salida primero."
+                )
+
         registrado_por = info.context.request.user if info.context.request.user.is_authenticated else None
 
         registro = RegistroAcceso.objects.create(
@@ -275,6 +290,22 @@ class AccesoMutation:
             raise Exception("Vehículo sancionado. No puede ingresar hasta regularizar sus multas.")
         if vehiculo.estado == "inactivo":
             raise Exception("Vehículo inactivo. Contacte a la administración.")
+
+        # Evitar entradas duplicadas en acceso manual
+        if input.tipo == "entrada":
+            ultimo_manual = (
+                RegistroAcceso.objects
+                .filter(vehiculo=vehiculo)
+                .order_by("-timestamp")
+                .values("tipo")
+                .first()
+            )
+            if ultimo_manual and ultimo_manual["tipo"] == "entrada":
+                raise Exception(
+                    f"El vehículo {vehiculo.placa} ya está dentro del campus. "
+                    "Registre la salida primero."
+                )
+
         registrado_por = info.context.request.user if info.context.request.user.is_authenticated else None
         registro = RegistroAcceso.objects.create(
             punto_acceso=punto,
