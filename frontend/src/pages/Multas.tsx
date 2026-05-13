@@ -2,6 +2,8 @@ import { useState, FormEvent } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import { AlertTriangle, Plus, CreditCard, MessageSquare, CheckCircle, X, FileDown } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
+import { useToast } from '../hooks/useToast'
+import { ToastContainer } from '../components/ToastContainer'
 import {
   MULTAS_PENDIENTES_QUERY,
   MULTAS_VEHICULO_QUERY,
@@ -36,6 +38,7 @@ type Modal = 'registrar' | 'pagar' | 'apelar' | 'resolver' | null
 
 export default function Multas() {
   const { usuario, esAdmin, esGuardia } = useAuth()
+  const toast = useToast()
   const esPersonal = esAdmin || esGuardia
   const [tab, setTab] = useState<Tab>(esPersonal ? 'pendientes' : 'todas')
   const [modal, setModal] = useState<Modal>(null)
@@ -47,8 +50,13 @@ export default function Multas() {
   const { data: pendientesData, refetch: refetchPendientes } = useQuery(MULTAS_PENDIENTES_QUERY, {
     skip: !esPersonal,
   })
+  // Solo vehículos activos — no 500 vehículos de toda la BD
   const { data: misVehiculosData } = useQuery(VEHICULOS_QUERY, {
-    variables: { propietarioId: esPersonal ? undefined : usuario.id, porPagina: 500 },
+    variables: {
+      propietarioId: esPersonal ? undefined : usuario.id,
+      estado: 'activo',
+      porPagina: 100,
+    },
     fetchPolicy: 'cache-and-network',
   })
   const { data: multasVehData, refetch: refetchVeh } = useQuery(MULTAS_VEHICULO_QUERY, {
@@ -61,20 +69,35 @@ export default function Multas() {
   })
 
   const [registrarMulta, { loading: loadingRegistrar }] = useMutation(REGISTRAR_MULTA_MUTATION, {
-    onCompleted() { cerrarModal(); refetchPendientes() },
-    onError(e) { setError(e.message) },
+    onCompleted(d) {
+      cerrarModal(); refetchPendientes()
+      toast.exito('Multa registrada', `${d.registrarMulta.placaVehiculo} sancionado`)
+    },
+    onError(e) { setError(e.message); toast.error('Error al registrar multa', e.message) },
   })
   const [pagarMulta, { loading: loadingPagar }] = useMutation(PAGAR_MULTA_MUTATION, {
-    onCompleted() { cerrarModal(); refetchPendientes(); if (vehiculoFiltro) refetchVeh() },
-    onError(e) { setError(e.message) },
+    onCompleted() {
+      cerrarModal(); refetchPendientes(); if (vehiculoFiltro) refetchVeh()
+      toast.exito('Pago registrado', 'El vehículo ha sido rehabilitado si no tiene más multas')
+    },
+    onError(e) { setError(e.message); toast.error('Error al registrar pago', e.message) },
   })
   const [apelarMulta, { loading: loadingApelar }] = useMutation(APELAR_MULTA_MUTATION, {
-    onCompleted() { cerrarModal(); refetchPendientes(); if (vehiculoFiltro) refetchVeh() },
-    onError(e) { setError(e.message) },
+    onCompleted() {
+      cerrarModal(); refetchPendientes(); if (vehiculoFiltro) refetchVeh()
+      toast.info('Apelación enviada', 'Un administrador revisará tu caso')
+    },
+    onError(e) { setError(e.message); toast.error('Error al apelar', e.message) },
   })
   const [resolverApelacion, { loading: loadingResolver }] = useMutation(RESOLVER_APELACION_MUTATION, {
-    onCompleted() { cerrarModal(); refetchApelaciones() },
-    onError(e) { setError(e.message) },
+    onCompleted(d) {
+      cerrarModal(); refetchApelaciones()
+      const aprobada = d.resolverApelacion.estado === 'aprobada'
+      aprobada
+        ? toast.exito('Apelación aprobada', 'La multa fue cancelada')
+        : toast.alerta('Apelación rechazada', 'La multa vuelve a estado pendiente')
+    },
+    onError(e) { setError(e.message); toast.error('Error al resolver apelación', e.message) },
   })
 
   const misVehiculos = misVehiculosData?.vehiculos?.items ?? []
@@ -343,6 +366,8 @@ export default function Multas() {
           </div>
         </ModalWrap>
       )}
+
+      <ToastContainer toasts={toast.toasts} onClose={toast.cerrar} />
     </div>
   )
 }
