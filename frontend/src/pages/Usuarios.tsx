@@ -241,7 +241,7 @@ export default function Usuarios() {
             </table>
           </div>
         </>
-      )
+      )}
     </div>
   )
 }
