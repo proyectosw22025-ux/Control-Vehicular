@@ -1,3 +1,12 @@
+"""
+Módulo Notificaciones — Strawberry GraphQL Schema
+
+Correcciones aplicadas:
+  - marcar_leida usa update_fields para no sobreescribir campos innecesariamente.
+  - eliminar_notificacion: usuario solo puede eliminar sus propias notificaciones.
+  - eliminar_todas_leidas: limpieza masiva de notificaciones ya leídas.
+  - Auth verificada en todas las mutations y queries de datos personales.
+"""
 import strawberry
 from strawberry.types import Info
 from typing import List, Optional
@@ -86,11 +95,14 @@ class NotificacionesMutation:
         user = info.context.request.user
         if not user.is_authenticated:
             raise Exception("Autenticación requerida")
-        notif = Notificacion.objects.filter(pk=notificacion_id, usuario=user).first()
+        notif = Notificacion.objects.select_related("tipo").filter(
+            pk=notificacion_id, usuario=user
+        ).first()
         if not notif:
             raise Exception("Notificación no encontrada")
-        notif.leido = True
-        notif.save()
+        if not notif.leido:
+            notif.leido = True
+            notif.save(update_fields=["leido"])
         return notif
 
     @strawberry.mutation
@@ -99,6 +111,26 @@ class NotificacionesMutation:
         if not user.is_authenticated:
             raise Exception("Autenticación requerida")
         return Notificacion.objects.filter(usuario=user, leido=False).update(leido=True)
+
+    @strawberry.mutation
+    def eliminar_notificacion(self, info: Info, notificacion_id: int) -> bool:
+        """Elimina una notificación propia — solo puede borrar las suyas."""
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        eliminadas, _ = Notificacion.objects.filter(pk=notificacion_id, usuario=user).delete()
+        if eliminadas == 0:
+            raise Exception("Notificación no encontrada")
+        return True
+
+    @strawberry.mutation
+    def eliminar_todas_leidas(self, info: Info) -> int:
+        """Elimina todas las notificaciones ya leídas del usuario. Limpieza masiva."""
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        eliminadas, _ = Notificacion.objects.filter(usuario=user, leido=True).delete()
+        return eliminadas
 
     @strawberry.mutation
     def actualizar_preferencia(

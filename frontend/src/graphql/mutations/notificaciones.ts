@@ -13,3 +13,15 @@ export const MARCAR_TODAS_LEIDAS_MUTATION = gql`
     marcarTodasLeidas
   }
 `
+
+export const ELIMINAR_NOTIFICACION_MUTATION = gql`
+  mutation EliminarNotificacion($notificacionId: Int!) {
+    eliminarNotificacion(notificacionId: $notificacionId)
+  }
+`
+
+export const ELIMINAR_TODAS_LEIDAS_MUTATION = gql`
+  mutation EliminarTodasLeidas {
+    eliminarTodasLeidas
+  }
+`

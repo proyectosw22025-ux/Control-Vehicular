@@ -20,6 +20,7 @@ class Command(BaseCommand):
             self._seed_zonas_y_espacios()
             self._seed_puntos_acceso()
             self._seed_tipos_multa()
+            self._seed_tipos_notificacion()
             self._seed_usuarios_demo()
             self._seed_vehiculos_demo()
             self._asignar_admin_a_superusers()
@@ -251,6 +252,40 @@ class Command(BaseCommand):
                 defaults={"fecha_inicio": timezone.now().date()},
             )
             self.stdout.write(self.style.SUCCESS(f"  CREADO   → {placa} {marca} {modelo} [{estado}]"))
+
+    # ── TIPOS DE NOTIFICACIÓN ──────────────────────────────────
+    def _seed_tipos_notificacion(self):
+        from apps.notificaciones.models import TipoNotificacion
+        self.stdout.write(self.style.HTTP_INFO("\n[Extra] Tipos de notificación..."))
+        tipos = [
+            ("acceso_vehiculo",    "Acceso vehicular",         "Tu vehículo fue registrado en un punto de acceso",
+             "Movimiento de {placa}",           "Tu vehículo {placa} registró {tipo} en {punto}."),
+            ("multa_registrada",   "Multa registrada",         "Se registró una infracción en tu vehículo",
+             "Multa en {placa}",                "Tu vehículo {placa} tiene una multa de Bs {monto}. {descripcion}"),
+            ("multa_pagada",       "Multa pagada",             "Confirmación de pago de multa",
+             "Pago confirmado",                 "Tu multa de Bs {monto} fue registrada como pagada vía {metodo}."),
+            ("apelacion_resuelta", "Apelación resuelta",       "Resultado de tu apelación de multa",
+             "Resolución de apelación",         "Tu apelación fue {resultado}. {respuesta}"),
+            ("visita_registrada",  "Visita registrada",        "Un visitante solicita verte en la UAGRM",
+             "Visita de {visitante}",            "{visitante} (CI: {ci}) desea verte. Motivo: {motivo}"),
+            ("vehiculo_aprobado",  "Vehículo aprobado",        "Tu vehículo fue aprobado y está activo",
+             "Vehículo aprobado",               "Tu vehículo {placa} fue aprobado y puede ingresar al campus."),
+            ("vehiculo_rechazado", "Vehículo rechazado",       "Tu solicitud de registro fue rechazada",
+             "Vehículo rechazado",              "Tu vehículo {placa} no fue aprobado. Contacta administración."),
+            ("reserva_proxima",    "Reserva próxima a vencer", "Tu reserva de espacio de parqueo está por vencer",
+             "Reserva por vencer",              "Tu reserva en {espacio} vence a las {fecha}."),
+        ]
+        for codigo, nombre, descripcion, tpl_titulo, tpl_cuerpo in tipos:
+            _, created = TipoNotificacion.objects.get_or_create(
+                codigo=codigo,
+                defaults={
+                    "nombre": nombre,
+                    "descripcion": descripcion,
+                    "plantilla_titulo": tpl_titulo,
+                    "plantilla_cuerpo": tpl_cuerpo,
+                },
+            )
+            self.stdout.write(f"  {'CREADO' if created else 'existe'}  → {codigo}")
 
     # ── ASIGNAR ROL ADMIN A SUPERUSERS ────────────────────────
     def _asignar_admin_a_superusers(self):
