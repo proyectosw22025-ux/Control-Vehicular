@@ -57,7 +57,7 @@ def test_vehiculo_no_puede_tener_dos_sesiones_activas(
     r = graphql(gql_admin, INICIAR, {"espacioId": e2.id, "vehiculoId": vehiculo_activo.id})
 
     assert "errors" in r
-    assert "sesión activa" in r["errors"][0]["message"]
+    assert "sesión de parqueo activa" in r["errors"][0]["message"]
 
 
 @pytest.mark.django_db
