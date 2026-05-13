@@ -209,102 +209,50 @@ class AccesoMutation:
 
     @strawberry.mutation
     def registrar_acceso(self, info: Info, input: ValidarAccesoInput) -> RegistroAccesoType:
-        from apps.vehiculos.models import Vehiculo
+        """
+        Registra la entrada o salida de un vehículo mediante QR.
+        Delega la validación del código al servicio AccesoService,
+        que maneja concurrencia con select_for_update y caché Redis.
+        """
+        from .services import resolver_codigo
+
         if input.tipo not in ["entrada", "salida"]:
             raise Exception("Tipo inválido. Opciones: entrada, salida")
+
         punto = PuntoAcceso.objects.filter(pk=input.punto_acceso_id, activo=True).first()
         if not punto:
             raise Exception("Punto de acceso no encontrado o inactivo")
 
-        from apps.vehiculos.models import validar_qr_dinamico
-        qr_delegacion = pase_temporal = vehiculo = None
-        metodo_acceso = None
-
-        # Nivel 1: QR dinámico TOTP (cambia cada 30 segundos — no se puede copiar/imprimir)
-        # Buscamos todos los vehículos activos y validamos el TOTP contra su secret.
-        # Optimización: si el código tiene exactamente 8 dígitos numéricos → TOTP candidato.
-        codigo_limpio = input.codigo.strip()
-        if codigo_limpio.isdigit() and len(codigo_limpio) == 8:
-            for v in Vehiculo.objects.filter(estado="activo").only("id", "placa", "estado", "qr_secret", "propietario_id"):
-                if v.qr_secret and validar_qr_dinamico(v.qr_secret, codigo_limpio):
-                    vehiculo = v
-                    metodo_acceso = "qr_dinamico"
-                    break
-
-        if vehiculo is None:
-            # Nivel 2: QR estático legacy (codigo_qr SHA-256) — solo para compatibilidad
-            vehiculo = Vehiculo.objects.filter(codigo_qr=codigo_limpio).first()
-            if vehiculo:
-                if vehiculo.estado == "pendiente":
-                    raise Exception("Vehículo pendiente de aprobación. Espere la confirmación del administrador.")
-                if vehiculo.estado == "sancionado":
-                    raise Exception("Vehículo sancionado. Regularice sus multas para acceder.")
-                if vehiculo.estado == "inactivo":
-                    raise Exception("Vehículo inactivo. Contacte a la administración.")
-                metodo_acceso = "qr_permanente"
-
-        if vehiculo and metodo_acceso == "qr_dinamico":
-            if vehiculo.estado == "pendiente":
-                raise Exception("Vehículo pendiente de aprobación. Espere la confirmación del administrador.")
-            if vehiculo.estado == "sancionado":
-                raise Exception("Vehículo sancionado. Regularice sus multas para acceder.")
-
-        if vehiculo is None:
-            # Nivel 2: QR de delegación
-            qr = QrSesion.objects.filter(codigo_hash=input.codigo, usado=False).select_related("vehiculo").first()
-            if qr:
-                if qr.fecha_expiracion <= timezone.now():
-                    raise Exception("QR de delegación expirado")
-                if qr.vehiculo.estado in ("pendiente", "inactivo"):
-                    raise Exception(f"Vehículo no habilitado para acceso (estado: {qr.vehiculo.estado}).")
-                if qr.vehiculo.estado == "sancionado":
-                    raise Exception("Vehículo sancionado. No puede ingresar.")
-                qr.usado = True
-                qr.save()
-                qr_delegacion = qr
-                vehiculo = qr.vehiculo
-                metodo_acceso = "qr_delegacion"
-            else:
-                # Nivel 3: Pase temporal para visitantes
-                pase = PaseTemporal.objects.filter(codigo=input.codigo).first()
-                if pase:
-                    ahora = timezone.now()
-                    if not (pase.activo and pase.valido_desde <= ahora <= pase.valido_hasta and pase.usos_actual < pase.usos_max):
-                        raise Exception("Pase temporal inválido o expirado")
-                    pase.usos_actual += 1
-                    pase.save()
-                    pase_temporal = pase
-                    vehiculo = pase.vehiculo
-                    metodo_acceso = "pase_temporal"
-                else:
-                    raise Exception("Código no reconocido. Verifique el QR o pase temporal.")
+        # Resolver código — maneja TOTP, delegación y pase temporal de forma atómica
+        resultado = resolver_codigo(input.codigo)
 
         registrado_por = info.context.request.user if info.context.request.user.is_authenticated else None
+
         registro = RegistroAcceso.objects.create(
             punto_acceso=punto,
-            vehiculo=vehiculo,
-            qr_delegacion=qr_delegacion,
-            pase_temporal=pase_temporal,
+            vehiculo=resultado.vehiculo,
+            qr_delegacion=resultado.qr_delegacion,
+            pase_temporal=resultado.pase_temporal,
             tipo=input.tipo,
-            metodo_acceso=metodo_acceso,
+            metodo_acceso=resultado.metodo_acceso,
             registrado_por=registrado_por,
         )
+
         log_audit(
             registrado_por,
             "registrar_acceso",
-            f"{input.tipo.capitalize()} de {vehiculo.placa if vehiculo else '?'} en {punto.nombre} vía {metodo_acceso}",
+            f"{input.tipo.capitalize()} de {resultado.vehiculo.placa} en {punto.nombre} vía {resultado.metodo_acceso}",
             request=info.context.request,
         )
 
-        # Notificar al propietario del vehículo
-        propietario = getattr(vehiculo, "propietario", None)
+        propietario = getattr(resultado.vehiculo, "propietario", None)
         if propietario:
             from apps.notificaciones.utils import enviar_notificacion
             accion = "entró a" if input.tipo == "entrada" else "salió de"
             enviar_notificacion(
                 usuario=propietario,
                 titulo=f"Vehículo {accion} la universidad",
-                mensaje=f"{vehiculo.placa} registró {input.tipo} en {punto.nombre}.",
+                mensaje=f"{resultado.vehiculo.placa} registró {input.tipo} en {punto.nombre}.",
                 tipo_codigo="acceso_vehiculo",
             )
 
