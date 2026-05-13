@@ -15,6 +15,7 @@ import {
 } from '../graphql/mutations/acceso'
 
 const METODO_BADGE: Record<string, string> = {
+  qr_dinamico:   'bg-teal-100 text-teal-700',
   qr_permanente: 'bg-emerald-100 text-emerald-700',
   qr_delegacion: 'bg-blue-100 text-blue-700',
   pase_temporal: 'bg-violet-100 text-violet-700',
@@ -22,6 +23,7 @@ const METODO_BADGE: Record<string, string> = {
 }
 
 const METODO_LABEL: Record<string, string> = {
+  qr_dinamico:   'QR Dinámico',
   qr_permanente: 'QR Permanente',
   qr_delegacion: 'QR Delegación',
   pase_temporal:  'Pase Temporal',
