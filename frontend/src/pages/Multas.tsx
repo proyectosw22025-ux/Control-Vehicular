@@ -1,4 +1,4 @@
-import { useState, FormEvent } from 'react'
+import { useState, FormEvent, useEffect } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import { AlertTriangle, Plus, CreditCard, MessageSquare, CheckCircle, X, FileDown } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
@@ -102,6 +102,13 @@ export default function Multas() {
 
   const misVehiculos = misVehiculosData?.vehiculos?.items ?? []
   const tipos = tiposData?.tiposMulta ?? []
+
+  // Auto-seleccionar si el residente solo tiene 1 vehículo — elimina el paso del dropdown
+  useEffect(() => {
+    if (!esPersonal && misVehiculos.length === 1 && vehiculoFiltro === null) {
+      setVehiculoFiltro(misVehiculos[0].id)
+    }
+  }, [misVehiculos, esPersonal, vehiculoFiltro])
   const multasPendientes: Multa[] = pendientesData?.multasPendientes ?? []
   const multasVehiculo: Multa[] = multasVehData?.multasVehiculo ?? []
   const apelaciones: Apelacion[] = apelacionesData?.apelacionesPendientes ?? []

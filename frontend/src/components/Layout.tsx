@@ -55,8 +55,28 @@ export default function Layout() {
   const navigate  = useNavigate()
   const location  = useLocation()
 
-  // Cerrar sidebar mobile al cambiar de ruta
-  useEffect(() => { setMobileOpen(false) }, [location.pathname])
+  // Cerrar sidebar mobile al cambiar de ruta + actualizar document.title
+  const PAGE_TITLES: Record<string, string> = {
+    '/':               'Dashboard',
+    '/guardia':        'Panel Guardia',
+    '/usuarios':       'Usuarios',
+    '/vehiculos':      'Vehículos',
+    '/parqueos':       'Parqueos',
+    '/acceso':         'Control de Acceso',
+    '/visitantes':     'Visitantes',
+    '/multas':         'Multas',
+    '/notificaciones': 'Notificaciones',
+    '/reportes':       'Reportes',
+    '/auditoria':      'Auditoría',
+    '/perfil':         'Mi Perfil',
+  }
+  useEffect(() => {
+    setMobileOpen(false)
+    const ruta = Object.keys(PAGE_TITLES).find(k => location.pathname === k || location.pathname.startsWith(k + '/'))
+    const titulo = ruta ? PAGE_TITLES[ruta] : 'Sistema Vehicular'
+    document.title = `${titulo} · Control Vehicular UAGRM`
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname])
 
   // Inicializar colapsado en pantallas pequeñas
   useEffect(() => {

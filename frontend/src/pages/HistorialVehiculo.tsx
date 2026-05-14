@@ -24,6 +24,7 @@ const MULTA_BADGE: Record<string, string> = {
   cancelada: 'bg-slate-100 text-slate-500',
 }
 const METODO_LABEL: Record<string, string> = {
+  qr_dinamico:   'QR Dinámico',
   qr_permanente: 'QR Permanente',
   qr_delegacion: 'QR Delegación',
   pase_temporal:  'Pase Temporal',
@@ -70,19 +71,21 @@ export default function HistorialVehiculo() {
     variables: { id },
     skip: !id,
   })
+  // Cargar las 3 queries simultáneamente para obtener counts inmediatos en tabs
+  // (no lazy-by-tab: el historial es una página de consulta, no de escritura)
   const { data: acData, loading: acLoad, refetch: refetchAc } = useQuery(REGISTROS_ACCESO_QUERY, {
     variables: { vehiculoId: id, limite: 100 },
-    skip: !id || tab !== 'accesos',
+    skip: !id,
     fetchPolicy: 'cache-and-network',
   })
   const { data: muData, loading: muLoad, refetch: refetchMu } = useQuery(MULTAS_VEHICULO_QUERY, {
     variables: { vehiculoId: id },
-    skip: !id || tab !== 'multas',
+    skip: !id,
     fetchPolicy: 'cache-and-network',
   })
   const { data: seData, loading: seLoad, refetch: refetchSe } = useQuery(HISTORIAL_SESIONES_QUERY, {
     variables: { vehiculoId: id, limite: 100 },
-    skip: !id || tab !== 'sesiones',
+    skip: !id,
     fetchPolicy: 'cache-and-network',
   })
 
@@ -91,12 +94,16 @@ export default function HistorialVehiculo() {
   const multas   = muData?.multasVehiculo ?? []
   const sesiones = seData?.historialSesiones ?? []
 
+  // Resumen estadístico — disponible en cuanto lleguen los datos
+  const multasPendientesTotal = multas
+    .filter((m: any) => m.estado === 'pendiente')
+    .reduce((s: number, m: any) => s + Number(m.monto), 0)
+  const minutosParqueo = sesiones
+    .filter((s: any) => s.duracionMinutos != null)
+    .reduce((s: number, se: any) => s + se.duracionMinutos, 0)
+
   const tabLoad = tab === 'accesos' ? acLoad : tab === 'multas' ? muLoad : seLoad
-  function refetchTab() {
-    if (tab === 'accesos') refetchAc()
-    else if (tab === 'multas') refetchMu()
-    else refetchSe()
-  }
+  function refetchTab() { refetchAc(); refetchMu(); refetchSe() }
 
   if (vLoad) {
     return (
@@ -160,16 +167,46 @@ export default function HistorialVehiculo() {
         </button>
       </div>
 
+      {/* Resumen estadístico — se muestra cuando al menos uno de los datos llegó */}
+      {(accesos.length > 0 || multas.length > 0 || sesiones.length > 0) && (
+        <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="bg-white rounded-xl p-3 text-center border border-slate-100 shadow-sm">
+            <p className="text-lg font-bold text-slate-800">{accesos.length}</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">Accesos registrados</p>
+          </div>
+          <div className={`bg-white rounded-xl p-3 text-center border shadow-sm ${multasPendientesTotal > 0 ? 'border-red-200' : 'border-slate-100'}`}>
+            <p className={`text-lg font-bold ${multasPendientesTotal > 0 ? 'text-red-600' : 'text-slate-800'}`}>
+              {multasPendientesTotal > 0 ? `Bs ${multasPendientesTotal.toFixed(0)}` : multas.length}
+            </p>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              {multasPendientesTotal > 0 ? 'Multas pendientes' : 'Sin multas pendientes'}
+            </p>
+          </div>
+          <div className="bg-white rounded-xl p-3 text-center border border-slate-100 shadow-sm">
+            <p className="text-lg font-bold text-slate-800">
+              {minutosParqueo >= 60 ? `${Math.round(minutosParqueo / 60)}h` : `${minutosParqueo}m`}
+            </p>
+            <p className="text-[11px] text-slate-400 mt-0.5">Tiempo en parqueo</p>
+          </div>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="flex gap-0 mb-4 border-b border-slate-200">
         <TabBtn active={tab === 'accesos'} onClick={() => setTab('accesos')}>
           <DoorOpen size={14} /> Accesos ({acLoad ? '…' : accesos.length})
         </TabBtn>
         <TabBtn active={tab === 'multas'} onClick={() => setTab('multas')}>
-          <AlertTriangle size={14} /> Multas ({muLoad ? '…' : multas.length})
+          <AlertTriangle size={14} />
+          Multas ({muLoad ? '…' : multas.length})
+          {multas.filter((m: any) => m.estado === 'pendiente').length > 0 && (
+            <span className="ml-1 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+              {multas.filter((m: any) => m.estado === 'pendiente').length}
+            </span>
+          )}
         </TabBtn>
         <TabBtn active={tab === 'sesiones'} onClick={() => setTab('sesiones')}>
-          <ParkingSquare size={14} /> Sesiones de parqueo ({seLoad ? '…' : sesiones.length})
+          <ParkingSquare size={14} /> Sesiones ({seLoad ? '…' : sesiones.length})
         </TabBtn>
       </div>
 

@@ -32,6 +32,14 @@ function fmt(iso: string) {
   return new Date(iso).toLocaleString('es-BO', { dateStyle: 'medium', timeStyle: 'short' })
 }
 
+function tiempoRelativo(iso: string): string {
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
+  if (diff < 60)   return `hace ${diff}s`
+  if (diff < 3600) return `hace ${Math.floor(diff / 60)}min`
+  if (diff < 86400)return `hace ${Math.floor(diff / 3600)}h`
+  return fmt(iso)
+}
+
 export default function Auditoria() {
   const [busqueda, setBusqueda] = useState('')
   const [limite, setLimite] = useState(200)
@@ -151,7 +159,10 @@ export default function Auditoria() {
                   <td className="px-4 py-3 text-slate-700 text-xs max-w-xs">{l.descripcion}</td>
                   <td className="px-4 py-3 text-slate-600 text-xs">{l.usuarioNombre ?? '—'}</td>
                   <td className="px-4 py-3 text-slate-400 text-xs font-mono">{l.ip ?? '—'}</td>
-                  <td className="px-4 py-3 text-slate-400 text-xs">{fmt(l.createdAt)}</td>
+                  <td className="px-4 py-3 text-xs" title={fmt(l.createdAt)}>
+                    <span className="text-slate-700 font-medium">{tiempoRelativo(l.createdAt)}</span>
+                    <span className="text-slate-400 block text-[10px]">{fmt(l.createdAt)}</span>
+                  </td>
                 </tr>
               ))}
             </tbody>
