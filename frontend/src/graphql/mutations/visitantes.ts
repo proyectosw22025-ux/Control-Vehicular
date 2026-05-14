@@ -1,5 +1,16 @@
 import { gql } from '@apollo/client'
 
+// Pública — no requiere auth. Permite a visitantes externos pre-registrar su CI.
+export const PRE_REGISTRAR_VISITANTE_MUTATION = gql`
+  mutation PreRegistrarVisitante($input: CrearVisitanteInput!) {
+    preRegistrarVisitante(input: $input) {
+      id
+      ci
+      nombreCompleto
+    }
+  }
+`
+
 export const REGISTRAR_VISITANTE_MUTATION = gql`
   mutation RegistrarVisitante($input: CrearVisitanteInput!) {
     registrarVisitante(input: $input) {

@@ -127,6 +127,7 @@ export default function Usuarios() {
   const [confirm, setConfirm] = useState<Usuario | null>(null)
   const [formError, setFormError] = useState('')
   const [busqueda, setBusqueda] = useState('')
+  const [filtroRol, setFiltroRol] = useState<string>('')
   const [rolSeleccionado, setRolSeleccionado] = useState<Record<number, string>>({})
   const [form, setForm] = useState({
     ci: '', email: '', nombre: '', apellido: '',
@@ -136,17 +137,26 @@ export default function Usuarios() {
   const todos: Usuario[] = data?.usuarios ?? []
   const roles: Rol[] = rolesData?.roles ?? []
 
-  // Filtro client-side — todos los usuarios ya están en memoria
+  // Filtro client-side — texto + rol (O(n) en memoria, sin queries extras)
   const filtrados = useMemo(() => {
-    if (!busqueda.trim()) return todos
-    const q = busqueda.toLowerCase()
-    return todos.filter(u =>
-      u.nombreCompleto.toLowerCase().includes(q) ||
-      u.ci.toLowerCase().includes(q) ||
-      u.email.toLowerCase().includes(q) ||
-      u.roles.some(r => r.nombre.toLowerCase().includes(q))
-    )
-  }, [todos, busqueda])
+    return todos.filter(u => {
+      const q = busqueda.toLowerCase()
+      const pasaBusqueda = !busqueda.trim() ||
+        u.nombreCompleto.toLowerCase().includes(q) ||
+        u.ci.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q) ||
+        u.roles.some(r => r.nombre.toLowerCase().includes(q))
+      const pasaRol = !filtroRol || u.roles.some(r => r.nombre === filtroRol)
+      return pasaBusqueda && pasaRol
+    })
+  }, [todos, busqueda, filtroRol])
+
+  // Conteos por rol para los badges de filtro rápido
+  const conteosPorRol = useMemo(() => {
+    const m: Record<string, number> = {}
+    todos.forEach(u => u.roles.forEach(r => { m[r.nombre] = (m[r.nombre] ?? 0) + 1 }))
+    return m
+  }, [todos])
 
   function resetForm() {
     setForm({ ci: '', email: '', nombre: '', apellido: '', password: '', telefono: '', tipoUsuario: 'estudiante' })
@@ -191,20 +201,50 @@ export default function Usuarios() {
         </button>
       </div>
 
-      {/* Barra de búsqueda */}
-      <div className="relative mb-4 max-w-sm">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input
-          type="text"
-          placeholder="Buscar por nombre, CI, email o rol..."
-          value={busqueda}
-          onChange={e => setBusqueda(e.target.value)}
-          className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-        />
-        {busqueda && (
-          <button onClick={() => setBusqueda('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-            <X size={14} />
-          </button>
+      {/* Barra de búsqueda + filtros rápidos por rol */}
+      <div className="mb-4 space-y-3">
+        <div className="relative max-w-sm">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Buscar por nombre, CI, email o rol..."
+            value={busqueda}
+            onChange={e => setBusqueda(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+          {busqueda && (
+            <button onClick={() => setBusqueda('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        {/* Filtros rápidos por rol — un click para ver solo guardias, solo estudiantes, etc. */}
+        {Object.keys(conteosPorRol).length > 0 && (
+          <div className="flex flex-wrap gap-2 items-center">
+            <span className="text-xs text-slate-400 font-medium">Filtrar por rol:</span>
+            <button
+              onClick={() => setFiltroRol('')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                !filtroRol ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'
+              }`}
+            >
+              Todos ({todos.length})
+            </button>
+            {Object.entries(conteosPorRol).sort((a,b) => b[1]-a[1]).map(([rol, cnt]) => {
+              const cls = ROL_BADGE[rol] ?? 'bg-slate-100 text-slate-600 border-slate-200'
+              const activo = filtroRol === rol
+              return (
+                <button key={rol} onClick={() => setFiltroRol(activo ? '' : rol)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${
+                    activo ? `${cls} ring-2 ring-offset-1 ring-current` : `${cls} opacity-70 hover:opacity-100`
+                  }`}
+                >
+                  {rol} ({cnt})
+                </button>
+              )
+            })}
+          </div>
         )}
       </div>
 
@@ -360,12 +400,18 @@ export default function Usuarios() {
               <input type="tel" className={inputCls} placeholder="70000000" value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Tipo de usuario</label>
+              <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Rol del usuario</label>
               <select className={inputCls} value={form.tipoUsuario} onChange={e => setForm({ ...form, tipoUsuario: e.target.value })}>
                 <option value="estudiante">Estudiante</option>
                 <option value="docente">Docente</option>
                 <option value="personal">Personal Administrativo</option>
+                <option value="guardia">Guardia de seguridad</option>
               </select>
+              {form.tipoUsuario === 'guardia' && (
+                <p className="text-xs text-amber-600 mt-1.5 flex items-center gap-1">
+                  <AlertTriangle size={11} /> El guardia tendrá acceso a registrar accesos, multas y visitantes.
+                </p>
+              )}
             </div>
           </div>
 

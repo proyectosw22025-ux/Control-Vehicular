@@ -84,6 +84,7 @@ TIPOS_USUARIO = {
     "estudiante":  "Estudiante",
     "docente":     "Docente",
     "personal":    "Personal Administrativo",
+    "guardia":     "Guardia",
 }
 
 
@@ -191,6 +192,13 @@ class UsuariosMutation:
         tipo = (input.tipo_usuario or "estudiante").lower()
         if tipo not in TIPOS_USUARIO:
             raise Exception(f"Tipo de usuario inválido. Opciones: {', '.join(TIPOS_USUARIO)}")
+
+        # Los guardias solo pueden ser creados por administradores — no por auto-registro
+        if tipo == "guardia":
+            solicitante = info.context.request.user
+            if not getattr(solicitante, "is_authenticated", False) or not tiene_rol(solicitante, "Administrador"):
+                raise Exception("Solo administradores pueden crear cuentas de guardia")
+
         if Usuario.objects.filter(ci=input.ci).exists():
             raise Exception(f"Ya existe un usuario con CI {input.ci}")
         if Usuario.objects.filter(email=input.email).exists():
@@ -219,9 +227,10 @@ class UsuariosMutation:
             pass
         nombre_rol = TIPOS_USUARIO[tipo]
         descripcion_rol = {
-            "Estudiante":             "Estudiante universitario — gestiona sus vehículos",
-            "Docente":                "Docente universitario — gestiona sus vehículos",
-            "Personal Administrativo":"Personal administrativo — gestiona sus vehículos",
+            "Estudiante":              "Estudiante universitario — gestiona sus vehículos",
+            "Docente":                 "Docente universitario — gestiona sus vehículos",
+            "Personal Administrativo": "Personal administrativo — gestiona sus vehículos",
+            "Guardia":                 "Guardia de seguridad — registra accesos, multas y visitantes",
         }.get(nombre_rol, "")
         rol, _ = Rol.objects.get_or_create(
             nombre=nombre_rol,

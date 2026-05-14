@@ -218,6 +218,31 @@ class VisitantesQuery:
 class VisitantesMutation:
 
     @strawberry.mutation
+    def pre_registrar_visitante(self, info: Info, input: CrearVisitanteInput) -> VisitanteType:
+        """
+        Permite a visitantes externos pre-registrar sus datos SIN autenticación.
+        El guardia los encontrará por CI al llegar — no tiene que escribir nada.
+        Si el CI ya está en el sistema, retorna el registro existente (visitante frecuente).
+        """
+        ci_limpio = input.ci.strip()
+        if not ci_limpio:
+            raise Exception("El CI es obligatorio para el pre-registro")
+        if not input.nombre.strip() or not input.apellido.strip():
+            raise Exception("Nombre y apellido son obligatorios")
+
+        existente = Visitante.objects.filter(ci=ci_limpio).first()
+        if existente:
+            return existente  # Visitante frecuente — el guardia lo encontrará por CI
+
+        return Visitante.objects.create(
+            nombre=input.nombre.strip(),
+            apellido=input.apellido.strip(),
+            ci=ci_limpio,
+            telefono=input.telefono.strip() if input.telefono else "",
+            email=input.email.strip() if input.email else "",
+        )
+
+    @strawberry.mutation
     def registrar_visitante(self, info: Info, input: CrearVisitanteInput) -> VisitanteType:
         from apps.usuarios.utils import tiene_rol
         from apps.acceso.utils import log_audit
