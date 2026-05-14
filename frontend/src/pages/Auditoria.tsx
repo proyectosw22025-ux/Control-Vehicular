@@ -17,15 +17,38 @@ const AUDIT_LOG_QUERY = gql`
 `
 
 const ACCION_BADGE: Record<string, string> = {
-  registrar_acceso:    'bg-green-100 text-green-700',
-  acceso_manual:       'bg-teal-100 text-teal-700',
-  registrar_multa:     'bg-red-100 text-red-700',
-  pagar_multa:         'bg-emerald-100 text-emerald-700',
-  aprobar_vehiculo:    'bg-blue-100 text-blue-700',
-  rechazar_vehiculo:   'bg-orange-100 text-orange-700',
-  crear_zona:          'bg-violet-100 text-violet-700',
-  crear_espacio:       'bg-purple-100 text-purple-700',
-  login:               'bg-slate-100 text-slate-600',
+  // Acceso vehicular
+  registrar_acceso:      'bg-green-100 text-green-700',
+  acceso_manual:         'bg-teal-100 text-teal-700',
+  // Multas
+  registrar_multa:       'bg-red-100 text-red-700',
+  multa_registrada:      'bg-red-100 text-red-700',
+  pagar_multa:           'bg-emerald-100 text-emerald-700',
+  multa_pagada:          'bg-emerald-100 text-emerald-700',
+  multa_apelada:         'bg-blue-100 text-blue-700',
+  apelacion_resuelta:    'bg-blue-100 text-blue-700',
+  // Vehículos
+  aprobar_vehiculo:      'bg-blue-100 text-blue-700',
+  rechazar_vehiculo:     'bg-orange-100 text-orange-700',
+  vehiculo_registrado:   'bg-slate-100 text-slate-600',
+  // Parqueos
+  crear_zona:            'bg-violet-100 text-violet-700',
+  crear_espacio:         'bg-purple-100 text-purple-700',
+  sesion_iniciada:       'bg-violet-100 text-violet-700',
+  sesion_cerrada:        'bg-violet-100 text-violet-700',
+  // Visitantes — cyan (alineado con el color del módulo)
+  visitante_registrado:  'bg-cyan-100 text-cyan-700',
+  visita_registrada:     'bg-cyan-100 text-cyan-700',
+  visita_iniciada:       'bg-teal-100 text-teal-700',
+  visita_finalizada:     'bg-slate-100 text-slate-600',
+  visita_cancelada:      'bg-orange-100 text-orange-700',
+  // Sesión
+  login:                 'bg-slate-100 text-slate-600',
+  login_exitoso:         'bg-slate-100 text-slate-600',
+  login_fallido:         'bg-red-100 text-red-700',
+  usuario_creado:        'bg-blue-100 text-blue-700',
+  usuario_desactivado:   'bg-orange-100 text-orange-700',
+  rol_asignado:          'bg-blue-100 text-blue-700',
 }
 
 function fmt(iso: string) {
@@ -40,24 +63,37 @@ function tiempoRelativo(iso: string): string {
   return fmt(iso)
 }
 
+const CATEGORIAS_FILTRO = [
+  { label: 'Todo', prefijos: [] },
+  { label: 'Visitantes', prefijos: ['visita', 'visitante'] },
+  { label: 'Acceso',     prefijos: ['registrar_acceso', 'acceso_manual'] },
+  { label: 'Multas',     prefijos: ['multa', 'apelacion'] },
+  { label: 'Vehículos',  prefijos: ['vehiculo', 'sesion'] },
+  { label: 'Usuarios',   prefijos: ['login', 'usuario', 'rol'] },
+]
+
 export default function Auditoria() {
   const [busqueda, setBusqueda] = useState('')
   const [limite, setLimite] = useState(200)
+  const [categoria, setCategoria] = useState(0)
 
   const { data, loading, refetch } = useQuery(AUDIT_LOG_QUERY, {
     variables: { limite },
     fetchPolicy: 'cache-and-network',
   })
 
+  const filtroCategoria = CATEGORIAS_FILTRO[categoria]
   const logs: any[] = (data?.auditLog ?? []).filter((l: any) => {
-    if (!busqueda) return true
+    const pasaCategoria = filtroCategoria.prefijos.length === 0 ||
+      filtroCategoria.prefijos.some(p => l.accion.startsWith(p))
+    if (!busqueda) return pasaCategoria
     const q = busqueda.toLowerCase()
-    return (
+    const pasaBusqueda =
       l.accion.includes(q) ||
       l.descripcion.toLowerCase().includes(q) ||
       (l.usuarioNombre || '').toLowerCase().includes(q) ||
       (l.ip || '').includes(q)
-    )
+    return pasaCategoria && pasaBusqueda
   })
 
   return (
@@ -91,6 +127,20 @@ export default function Auditoria() {
             Actualizar
           </button>
         </div>
+      </div>
+
+      {/* Filtros por categoría */}
+      <div className="flex flex-wrap gap-2 mb-3">
+        {CATEGORIAS_FILTRO.map((cat, i) => (
+          <button key={cat.label} onClick={() => setCategoria(i)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+              categoria === i
+                ? 'bg-slate-800 text-white border-slate-800'
+                : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'
+            }`}>
+            {cat.label}
+          </button>
+        ))}
       </div>
 
       {/* Buscador */}

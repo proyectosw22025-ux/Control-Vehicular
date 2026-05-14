@@ -52,3 +52,11 @@ export const FINALIZAR_VISITA_MUTATION = gql`
     }
   }
 `
+
+export const CANCELAR_VISITA_MUTATION = gql`
+  mutation CancelarVisita($visitaId: Int!, $motivoCancelacion: String) {
+    cancelarVisita(visitaId: $visitaId, motivoCancelacion: $motivoCancelacion) {
+      id estado
+    }
+  }
+`
