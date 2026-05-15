@@ -29,6 +29,11 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     date_joined = models.DateTimeField(default=timezone.now)
+    # ── Autenticación de doble factor (TOTP / Google Authenticator) ──────────
+    totp_secret = models.CharField(max_length=64, blank=True, default="",
+                                   help_text="Secreto TOTP base32 para Google Authenticator")
+    totp_activo = models.BooleanField(default=False,
+                                      help_text="True si el usuario tiene 2FA activado")
 
     USERNAME_FIELD = "ci"
     REQUIRED_FIELDS = ["email", "nombre", "apellido"]

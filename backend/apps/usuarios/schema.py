@@ -47,6 +47,7 @@ class UsuarioType:
     is_active: bool
     is_superuser: bool
     date_joined: datetime
+    totp_activo: bool
 
     @strawberry.field
     def nombre_completo(self) -> str:
@@ -78,6 +79,19 @@ class MensajeType:
 class LoginInput:
     ci: str
     password: str
+    codigo_totp: Optional[str] = None   # segundo factor si el usuario tiene 2FA activo
+
+
+@strawberry.type
+class ConfiguracionTotpType:
+    """Retornado al iniciar la configuración de 2FA — la URL se muestra como QR."""
+    otpauth_url: str   # URL para escanear con Google Authenticator
+    secret_base32: str # Backup manual (para el usuario que no puede escanear)
+
+
+@strawberry.type
+class EstadoTotpType:
+    activo: bool
 
 
 TIPOS_USUARIO = {
@@ -182,9 +196,24 @@ class UsuariosMutation:
         if not user.is_active:
             log_audit(user, "login_inactivo", f"Intento de acceso de usuario inactivo: {user.ci}", request=req)
             raise Exception("Usuario inactivo. Contacte a la administración.")
+        # ── Verificación 2FA (si el usuario lo tiene activado) ──────────────
+        if user.totp_activo:
+            if not input.codigo_totp:
+                # Señal al frontend para mostrar el segundo paso
+                raise Exception("2FA_REQUIRED")
+            import pyotp
+            totp = pyotp.TOTP(user.totp_secret)
+            # valid_window=1 → acepta el código del período anterior/siguiente (±30s)
+            if not totp.verify(input.codigo_totp.strip(), valid_window=1):
+                cache.set(rate_key, attempts + 1, timeout=60)
+                log_audit(None, "login_2fa_fallido",
+                          f"Código 2FA incorrecto para {user.ci}", request=req)
+                raise Exception("Código de doble factor incorrecto. Verifica tu app de autenticación.")
+
         cache.delete(rate_key)
         tokens = RefreshToken.for_user(user)
-        log_audit(user, "login_exitoso", f"Sesión iniciada por {user.ci}", request=req)
+        metodo = "login_exitoso_2fa" if user.totp_activo else "login_exitoso"
+        log_audit(user, metodo, f"Sesión iniciada por {user.ci}", request=req)
         return AuthPayload(
             access=str(tokens.access_token),
             refresh=str(tokens),
@@ -337,6 +366,91 @@ class UsuariosMutation:
         if Rol.objects.filter(nombre=nombre).exists():
             raise Exception(f"Ya existe el rol '{nombre}'")
         return Rol.objects.create(nombre=nombre, descripcion=descripcion or "")
+
+    # ── Autenticación de doble factor ─────────────────────────────────────────
+
+    @strawberry.mutation
+    def iniciar_configuracion_2fa(self, info: Info) -> ConfiguracionTotpType:
+        """
+        Genera un nuevo secreto TOTP y retorna la URL otpauth:// para escanear
+        con Google Authenticator. El 2FA queda pendiente hasta que el usuario
+        confirme con verificar_configuracion_2fa().
+        """
+        import pyotp
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+
+        # Generar secreto aleatorio compatible con Google Authenticator
+        secret = pyotp.random_base32()
+        # Guardarlo temporalmente (no activado aún)
+        user.totp_secret = secret
+        user.totp_activo = False
+        user.save(update_fields=["totp_secret", "totp_activo"])
+
+        totp = pyotp.TOTP(secret)
+        url = totp.provisioning_uri(
+            name=user.ci,
+            issuer_name="UAGRM Control Vehicular",
+        )
+        return ConfiguracionTotpType(otpauth_url=url, secret_base32=secret)
+
+    @strawberry.mutation
+    def verificar_configuracion_2fa(self, info: Info, codigo: str) -> MensajeType:
+        """
+        Verifica el primer código TOTP del usuario para confirmar que Google
+        Authenticator está correctamente configurado. Solo entonces activa el 2FA.
+        """
+        import pyotp
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not user.totp_secret:
+            raise Exception("Primero inicia la configuración del doble factor")
+
+        totp = pyotp.TOTP(user.totp_secret)
+        if not totp.verify(codigo.strip(), valid_window=1):
+            raise Exception(
+                "Código incorrecto. Asegúrate de haber escaneado el QR correctamente."
+            )
+
+        user.totp_activo = True
+        user.save(update_fields=["totp_activo"])
+        from apps.acceso.utils import log_audit
+        log_audit(user, "2fa_activado", f"2FA activado para {user.ci}", request=info.context.request)
+        return MensajeType(ok=True, mensaje="Autenticación de doble factor activada correctamente.")
+
+    @strawberry.mutation
+    def desactivar_2fa(self, info: Info, codigo: str) -> MensajeType:
+        """
+        Desactiva el 2FA del usuario. Requiere el código actual como confirmación
+        para evitar que alguien con acceso físico al PC desactive el 2FA.
+        """
+        import pyotp
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not user.totp_activo:
+            raise Exception("El doble factor no está activado")
+
+        totp = pyotp.TOTP(user.totp_secret)
+        if not totp.verify(codigo.strip(), valid_window=1):
+            raise Exception("Código incorrecto. Ingresa el código de tu app de autenticación.")
+
+        user.totp_activo = False
+        user.totp_secret = ""
+        user.save(update_fields=["totp_activo", "totp_secret"])
+        from apps.acceso.utils import log_audit
+        log_audit(user, "2fa_desactivado", f"2FA desactivado para {user.ci}", request=info.context.request)
+        return MensajeType(ok=True, mensaje="Doble factor desactivado.")
+
+    @strawberry.mutation
+    def estado_2fa(self, info: Info) -> EstadoTotpType:
+        """Retorna si el usuario actual tiene 2FA activo."""
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        return EstadoTotpType(activo=user.totp_activo)
 
     @strawberry.mutation
     def crear_permiso(
