@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { QrScanner } from '../components/QrScanner'
 import { PUNTOS_ACCESO_QUERY, REGISTROS_ACCESO_QUERY } from '../graphql/queries/acceso'
+import { VISITAS_ACTIVAS_QUERY } from '../graphql/queries/visitantes'
 import { useAccesoGuardia, type TipoAcceso } from '../hooks/useAccesoGuardia'
 
 const GUARDIA_STATS_QUERY = gql`
@@ -65,10 +66,17 @@ export default function GuardiaDashboard() {
     pollInterval: 15_000,
     fetchPolicy: 'cache-and-network',
   })
+  const { data: visitasData } = useQuery(VISITAS_ACTIVAS_QUERY, {
+    pollInterval: 30_000,
+    fetchPolicy: 'cache-and-network',
+  })
 
   const stats    = statsData?.dashboardStats
   const puntos   = puntosData?.puntosAcceso ?? []
   const registros = registrosData?.registrosAcceso ?? []
+  const todasVisitas   = visitasData?.visitasActivas ?? []
+  const visitasPendientes = todasVisitas.filter((v: any) => v.estado === 'pendiente')
+  const visitasActivas    = todasVisitas.filter((v: any) => v.estado === 'activa')
 
   // Callback de escaneo QR — cierra cámara y registra
   const handleQrScan = useCallback(async (codigo: string) => {
@@ -285,6 +293,43 @@ export default function GuardiaDashboard() {
           )}
         </div>
       </div>
+
+      {/* ── Panel de visitantes en espera — contexto del turno ── */}
+      {(visitasPendientes.length > 0 || visitasActivas.length > 0) && (
+        <div className="mt-4 bg-white rounded-xl border border-slate-200 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <UserCheck size={15} className="text-cyan-500" />
+            <h2 className="text-sm font-semibold text-slate-700">Visitantes en el campus</h2>
+            <div className="ml-auto flex gap-2">
+              {visitasPendientes.length > 0 && (
+                <span className="text-[10px] font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                  {visitasPendientes.length} esperando
+                </span>
+              )}
+              {visitasActivas.length > 0 && (
+                <span className="text-[10px] font-semibold bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                  {visitasActivas.length} dentro
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="space-y-1.5 max-h-32 overflow-y-auto">
+            {[...visitasPendientes, ...visitasActivas].map((v: any) => (
+              <div key={v.id} className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs ${
+                v.estado === 'pendiente' ? 'bg-amber-50' : 'bg-green-50'
+              }`}>
+                <span className={`font-bold w-14 shrink-0 ${v.estado === 'pendiente' ? 'text-amber-700' : 'text-green-700'}`}>
+                  {v.estado === 'pendiente' ? '⏳ ESP' : '✓ DEN'}
+                </span>
+                <span className="font-semibold text-slate-800 flex-1 truncate">
+                  {v.visitante?.nombreCompleto ?? '—'}
+                </span>
+                <span className="text-slate-400 truncate">→ {v.anfitrionNombre}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

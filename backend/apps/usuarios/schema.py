@@ -125,10 +125,22 @@ class UsuariosQuery:
         return user if user.is_authenticated else None
 
     @strawberry.field
-    def usuarios(self, info: Info) -> List[UsuarioType]:
+    def usuarios(self, info: Info, buscar: Optional[str] = None) -> List[UsuarioType]:
+        """
+        Devuelve usuarios activos. Acepta `buscar` para filtrar por CI/nombre/email.
+        Limitado a 200 resultados para no transferir toda la BD en cada request.
+        """
         if not info.context.request.user.is_authenticated:
             raise Exception("Autenticación requerida")
-        return list(Usuario.objects.filter(is_active=True).order_by("apellido", "nombre"))
+        qs = Usuario.objects.filter(is_active=True)
+        if buscar:
+            from django.db.models import Q as DQ
+            q = buscar.strip()
+            qs = qs.filter(
+                DQ(ci__icontains=q) | DQ(nombre__icontains=q) |
+                DQ(apellido__icontains=q) | DQ(email__icontains=q)
+            )
+        return list(qs.order_by("apellido", "nombre")[:200])
 
     @strawberry.field
     def usuario(self, info: Info, id: int) -> Optional[UsuarioType]:
