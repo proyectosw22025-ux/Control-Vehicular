@@ -320,6 +320,22 @@ class VisitantesMutation:
                 raise Exception("Vehículo no encontrado")
 
         with transaction.atomic():
+            # Guard anti-duplicado: mismo patrón que el QR dinámico.
+            # Dentro del atomic evita race condition entre dos guardias simultáneos.
+            en_curso = (
+                Visita.objects
+                .filter(visitante=visitante, estado__in=["pendiente", "activa"])
+                .select_related("anfitrion")
+                .first()
+            )
+            if en_curso:
+                anf = f"{en_curso.anfitrion.nombre} {en_curso.anfitrion.apellido}"
+                raise Exception(
+                    f"{visitante.nombre} {visitante.apellido} ya tiene una visita "
+                    f"en estado '{en_curso.estado}' con {anf}. "
+                    f"Finaliza o cancela esa visita antes de registrar una nueva."
+                )
+
             visita = Visita.objects.create(
                 visitante=visitante, anfitrion=anfitrion,
                 tipo_visita=tipo_visita, vehiculo=vehiculo,

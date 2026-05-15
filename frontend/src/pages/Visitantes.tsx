@@ -112,6 +112,14 @@ export default function Visitantes() {
   const usuarios       = usuariosData?.usuarios ?? []
   const visitantesResultado = visitantesData?.visitantes ?? []
 
+  // Map visitanteId → visita activa/pendiente para O(1) lookup
+  // Mismo patrón que el mapa placa→sesion en Vehiculos.tsx
+  const visitaActivaPorVisitanteId = new Map<number, any>(
+    todasVisitas
+      .filter((v: any) => v.visitante?.id != null)
+      .map((v: any) => [v.visitante.id, v])
+  )
+
   function seleccionarVisitante(vt: any) {
     setVisitanteEncontrado(vt)
     setBusqueda('')
@@ -324,16 +332,41 @@ export default function Visitantes() {
                 </button>
               </div>
 
-              <div className="bg-cyan-50 border border-cyan-200 rounded-xl p-3 mb-4 flex items-center gap-3">
-                <div className="bg-cyan-100 p-2 rounded-xl shrink-0">
-                  <UserCheck size={18} className="text-cyan-600" />
-                </div>
-                <div>
-                  <p className="font-bold text-cyan-800 text-sm">{visitanteEncontrado.nombreCompleto}</p>
-                  <p className="text-xs text-cyan-600">CI: {visitanteEncontrado.ci}</p>
-                </div>
-                <CheckCircle2 size={18} className="text-cyan-500 ml-auto shrink-0" />
-              </div>
+              {/* Tarjeta del visitante + alerta si ya tiene visita activa */}
+              {(() => {
+                const visitaActual = visitaActivaPorVisitanteId.get(visitanteEncontrado.id)
+                return visitaActual ? (
+                  <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 mb-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-amber-600 font-bold text-sm">⚠ Visitante ya en campus</span>
+                    </div>
+                    <p className="text-sm font-bold text-slate-800">{visitanteEncontrado.nombreCompleto}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">CI: {visitanteEncontrado.ci}</p>
+                    <div className="mt-2 text-xs text-amber-700 space-y-0.5">
+                      <p>Estado actual: <strong>{visitaActual.estado}</strong></p>
+                      <p>Visita con: <strong>{visitaActual.anfitrionNombre}</strong></p>
+                      <p>Motivo: {visitaActual.motivo}</p>
+                    </div>
+                    <button
+                      onClick={() => { setVisitanteEncontrado(null); setTab('activas') }}
+                      className="mt-3 w-full bg-amber-500 hover:bg-amber-600 text-white py-2 rounded-xl text-xs font-semibold transition-colors"
+                    >
+                      Ver visita activa → Gestionar desde "En campus"
+                    </button>
+                  </div>
+                ) : (
+                  <div className="bg-cyan-50 border border-cyan-200 rounded-xl p-3 mb-4 flex items-center gap-3">
+                    <div className="bg-cyan-100 p-2 rounded-xl shrink-0">
+                      <UserCheck size={18} className="text-cyan-600" />
+                    </div>
+                    <div>
+                      <p className="font-bold text-cyan-800 text-sm">{visitanteEncontrado.nombreCompleto}</p>
+                      <p className="text-xs text-cyan-600">CI: {visitanteEncontrado.ci}</p>
+                    </div>
+                    <CheckCircle2 size={18} className="text-cyan-500 ml-auto shrink-0" />
+                  </div>
+                )
+              })()}
 
               <form onSubmit={handleRegistrarVisita} className="space-y-3">
                 <div>
@@ -372,16 +405,19 @@ export default function Visitantes() {
                 </div>
                 {error && <Err t={error} />}
 
-                {/* Explicación del flujo */}
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-500 space-y-1">
-                  <p className="font-medium text-slate-600">¿Qué pasa al registrar?</p>
-                  <p>1. La visita queda en estado <strong>pendiente</strong> (visitante en la garita)</p>
-                  <p>2. En la pestaña "En campus", haz clic en <strong>Iniciar</strong> cuando el visitante entre</p>
-                  <p>3. Cuando salga, haz clic en <strong>Finalizar</strong></p>
-                  <p className="text-slate-400">Todas las acciones quedan registradas en Auditoría.</p>
-                </div>
-
-                <Btn loading={loadingVisita} label="Registrar visita →" color="bg-cyan-500 hover:bg-cyan-600" />
+                {/* Explicación del flujo — solo si no hay visita activa */}
+                {!visitaActivaPorVisitanteId.has(visitanteEncontrado.id) && (
+                  <>
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-500 space-y-1">
+                      <p className="font-medium text-slate-600">¿Qué pasa al registrar?</p>
+                      <p>1. La visita queda en estado <strong>pendiente</strong> (visitante en la garita)</p>
+                      <p>2. En la pestaña "En campus", haz clic en <strong>Iniciar</strong> cuando el visitante entre</p>
+                      <p>3. Cuando salga, haz clic en <strong>Finalizar</strong></p>
+                      <p className="text-slate-400">Todas las acciones quedan registradas en Auditoría.</p>
+                    </div>
+                    <Btn loading={loadingVisita} label="Registrar visita →" color="bg-cyan-500 hover:bg-cyan-600" />
+                  </>
+                )}
               </form>
             </div>
           )}
@@ -421,29 +457,70 @@ export default function Visitantes() {
             </div>
           )}
 
-          {/* Resultados con CTA de acción */}
+          {/* Resultados con estado de visita activa */}
           <div className="space-y-2">
-            {visitantesResultado.map((vt: any) => (
-              <div key={vt.id} className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-slate-800">{vt.nombreCompleto}</p>
-                    <div className="flex flex-wrap gap-3 mt-1 text-xs text-slate-500">
-                      <span>CI: <span className="font-mono font-medium">{vt.ci}</span></span>
-                      {vt.telefono && <span>Tel: {vt.telefono}</span>}
-                      {vt.email && <span>{vt.email}</span>}
+            {visitantesResultado.map((vt: any) => {
+              const visitaActual = visitaActivaPorVisitanteId.get(vt.id)
+              const enCampus = !!visitaActual
+
+              return (
+                <div key={vt.id}
+                  className={`bg-white rounded-xl shadow-sm border p-4 ${
+                    enCampus ? 'border-amber-300' : 'border-slate-100'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <p className="font-semibold text-slate-800">{vt.nombreCompleto}</p>
+                        {/* Badge de estado — visible sin leer */}
+                        {enCampus && (
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                            visitaActual.estado === 'activa'
+                              ? 'bg-green-100 text-green-700 border-green-300'
+                              : 'bg-amber-100 text-amber-700 border-amber-300'
+                          }`}>
+                            {visitaActual.estado === 'activa' ? '✓ Dentro del campus' : '⏳ Esperando ingreso'}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-3 text-xs text-slate-500">
+                        <span>CI: <span className="font-mono font-medium">{vt.ci}</span></span>
+                        {vt.telefono && <span>Tel: {vt.telefono}</span>}
+                        {vt.email && <span>{vt.email}</span>}
+                      </div>
+                      {/* Info de la visita activa — ahorrar navegación al guardia */}
+                      {enCampus && (
+                        <div className="mt-2 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 space-y-0.5">
+                          <p><span className="font-medium">Visita con:</span> {visitaActual.anfitrionNombre}</p>
+                          <p><span className="font-medium">Motivo:</span> {visitaActual.motivo}</p>
+                          {visitaActual.fechaEntrada && (
+                            <p>En campus hace {tiempoDesde(visitaActual.fechaEntrada)}</p>
+                          )}
+                        </div>
+                      )}
                     </div>
+
+                    {/* CTA adaptativo según estado */}
+                    {enCampus ? (
+                      <button
+                        onClick={() => setTab('activas')}
+                        className="shrink-0 flex items-center gap-1.5 bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 px-3 py-2 rounded-xl text-xs font-semibold transition-colors whitespace-nowrap"
+                      >
+                        Ver visita activa <ArrowRight size={13} />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => seleccionarVisitante(vt)}
+                        className="shrink-0 flex items-center gap-1.5 bg-cyan-500 hover:bg-cyan-600 text-white px-3 py-2 rounded-xl text-xs font-semibold transition-colors whitespace-nowrap"
+                      >
+                        Registrar visita <ArrowRight size={13} />
+                      </button>
+                    )}
                   </div>
-                  {/* CTA — este era el gap crítico */}
-                  <button
-                    onClick={() => seleccionarVisitante(vt)}
-                    className="shrink-0 flex items-center gap-1.5 bg-cyan-500 hover:bg-cyan-600 text-white px-3 py-2 rounded-xl text-xs font-semibold transition-colors whitespace-nowrap"
-                  >
-                    Registrar visita <ArrowRight size={13} />
-                  </button>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
 
           {!busqueda && (

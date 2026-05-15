@@ -283,3 +283,70 @@ def test_cancelar_visita_completada_falla(db, gql_guardia, visita_pendiente):
     r = graphql(gql_guardia, CANCELAR_VISITA, {"id": visita_id, "motivo": "tarde"})
     assert "errors" in r
     assert "cancelar" in r["errors"][0]["message"].lower()
+
+
+# ── Guard anti-duplicado de visitas ──────────────────────────────────────────
+
+@pytest.mark.django_db
+def test_visitante_no_puede_tener_dos_visitas_pendientes(db, gql_guardia, visitante_registrado, admin, tipo_reunion):
+    """Un visitante con visita pendiente no puede registrar otra simultáneamente."""
+    payload = {
+        "input": {
+            "visitanteId": visitante_registrado["id"],
+            "anfitrionId": admin.id,
+            "motivo": "Primera visita",
+            "tipoVisitaId": tipo_reunion.id,
+        }
+    }
+    # Primera visita — debe funcionar
+    r1 = graphql(gql_guardia, REGISTRAR_VISITA, payload)
+    assert "errors" not in r1
+
+    # Segunda visita con el mismo visitante — debe bloquearse
+    r2 = graphql(gql_guardia, REGISTRAR_VISITA, {
+        "input": {
+            "visitanteId": visitante_registrado["id"],
+            "anfitrionId": admin.id,
+            "motivo": "Intento de segunda visita simultánea",
+            "tipoVisitaId": tipo_reunion.id,
+        }
+    })
+    assert "errors" in r2
+    assert "visita" in r2["errors"][0]["message"].lower()
+
+
+@pytest.mark.django_db
+def test_visitante_con_visita_activa_no_puede_registrar_otra(db, gql_guardia, visita_pendiente, visitante_registrado, admin, tipo_reunion):
+    """Si el visitante ya inició su visita (activa), tampoco puede registrar otra."""
+    graphql(gql_guardia, INICIAR_VISITA, {"id": visita_pendiente["id"]})
+
+    r = graphql(gql_guardia, REGISTRAR_VISITA, {
+        "input": {
+            "visitanteId": visitante_registrado["id"],
+            "anfitrionId": admin.id,
+            "motivo": "Segunda visita mientras está activa",
+            "tipoVisitaId": tipo_reunion.id,
+        }
+    })
+    assert "errors" in r
+    assert "activa" in r["errors"][0]["message"].lower()
+
+
+@pytest.mark.django_db
+def test_visitante_puede_registrar_visita_tras_finalizar(db, gql_guardia, visita_pendiente, visitante_registrado, admin, tipo_reunion):
+    """Después de finalizar, el mismo visitante puede volver a registrar una visita."""
+    visita_id = visita_pendiente["id"]
+    graphql(gql_guardia, INICIAR_VISITA, {"id": visita_id})
+    graphql(gql_guardia, FINALIZAR_VISITA, {"id": visita_id, "obs": "Primera visita completada"})
+
+    # Ahora sí puede registrar una nueva visita
+    r = graphql(gql_guardia, REGISTRAR_VISITA, {
+        "input": {
+            "visitanteId": visitante_registrado["id"],
+            "anfitrionId": admin.id,
+            "motivo": "Segunda visita en día diferente",
+            "tipoVisitaId": tipo_reunion.id,
+        }
+    })
+    assert "errors" not in r
+    assert r["data"]["registrarVisita"]["estado"] == "pendiente"
