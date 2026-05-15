@@ -9,7 +9,7 @@ import { REGISTROS_ACCESO_QUERY } from '../graphql/queries/acceso'
 import { MULTAS_VEHICULO_QUERY } from '../graphql/queries/multas'
 import { HISTORIAL_SESIONES_QUERY } from '../graphql/queries/parqueos'
 
-type Tab = 'accesos' | 'multas' | 'sesiones'
+type Tab = 'accesos' | 'multas' | 'sesiones' | 'documentos'
 
 const ESTADO_BADGE: Record<string, string> = {
   pendiente:  'bg-amber-100 text-amber-700',
@@ -17,6 +17,20 @@ const ESTADO_BADGE: Record<string, string> = {
   inactivo:   'bg-slate-100 text-slate-600',
   sancionado: 'bg-red-100 text-red-700',
 }
+// Semáforo de documentos
+const DOC_SEMAFORO: Record<string, { bg: string; text: string; label: string }> = {
+  valido:     { bg: 'bg-emerald-50', text: 'text-emerald-700', label: '✓ Vigente' },
+  por_vencer: { bg: 'bg-amber-50',   text: 'text-amber-700',   label: '⚠ Por vencer' },
+  vencido:    { bg: 'bg-red-50',     text: 'text-red-700',     label: '🚨 Vencido' },
+}
+
+const DOC_NOMBRES: Record<string, string> = {
+  soat:        'SOAT',
+  tecnica:     'Revisión Técnica',
+  circulacion: 'Permiso de Circulación',
+  otro:        'Otro',
+}
+
 const MULTA_BADGE: Record<string, string> = {
   pendiente: 'bg-amber-100 text-amber-700',
   pagada:    'bg-green-100 text-green-700',
@@ -192,7 +206,7 @@ export default function HistorialVehiculo() {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-0 mb-4 border-b border-slate-200">
+      <div className="flex gap-0 mb-4 border-b border-slate-200 flex-wrap">
         <TabBtn active={tab === 'accesos'} onClick={() => setTab('accesos')}>
           <DoorOpen size={14} /> Accesos ({acLoad ? '…' : accesos.length})
         </TabBtn>
@@ -207,6 +221,12 @@ export default function HistorialVehiculo() {
         </TabBtn>
         <TabBtn active={tab === 'sesiones'} onClick={() => setTab('sesiones')}>
           <ParkingSquare size={14} /> Sesiones ({seLoad ? '…' : sesiones.length})
+        </TabBtn>
+        <TabBtn active={tab === 'documentos'} onClick={() => setTab('documentos')}>
+          <AlertTriangle size={14} /> Documentos
+          {vehiculo?.documentos?.some((d: any) => d.estado === 'vencido') && (
+            <span className="ml-1 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">!</span>
+          )}
         </TabBtn>
       </div>
 
@@ -330,6 +350,77 @@ export default function HistorialVehiculo() {
             </table>
           </div>
         )
+      )}
+
+      {/* ── Documentos con semáforo ── */}
+      {tab === 'documentos' && (
+        <div>
+          {(!vehiculo?.documentos || vehiculo.documentos.length === 0) ? (
+            <EmptyState icon={AlertTriangle} text="No hay documentos registrados para este vehículo" />
+          ) : (
+            <div className="space-y-3">
+              {/* Alerta si hay documentos críticos */}
+              {vehiculo.documentos.some((d: any) => d.estado === 'vencido' && ['soat', 'tecnica'].includes(d.tipoDoc)) && (
+                <div className="bg-red-50 border border-red-300 rounded-xl p-4 flex items-start gap-3">
+                  <span className="text-2xl shrink-0">🚨</span>
+                  <div>
+                    <p className="font-bold text-red-700 text-sm">Documentos críticos vencidos</p>
+                    <p className="text-xs text-red-600 mt-0.5">
+                      El SOAT o la Revisión Técnica están vencidos. Este vehículo no debería circular.
+                      El guardia recibirá una advertencia al escanear el QR.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Tarjetas de documentos */}
+              {vehiculo.documentos.map((doc: any) => {
+                const sem = DOC_SEMAFORO[doc.estado] ?? DOC_SEMAFORO.valido
+                const esCritico = ['soat', 'tecnica'].includes(doc.tipoDoc)
+                return (
+                  <div key={doc.id} className={`rounded-xl border p-4 ${sem.bg}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <p className="font-bold text-slate-800 text-sm">
+                            {DOC_NOMBRES[doc.tipoDoc] ?? doc.tipoDoc}
+                          </p>
+                          {esCritico && (
+                            <span className="text-[10px] bg-slate-700 text-white px-1.5 py-0.5 rounded font-semibold">
+                              OBLIGATORIO
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500">N° {doc.numero}</p>
+                        <p className="text-xs text-slate-600 mt-0.5">
+                          Vence: <strong>{new Date(doc.fechaVencimiento).toLocaleDateString('es-BO')}</strong>
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold ${sem.text} ${sem.bg} border`}
+                          style={{ borderColor: 'currentColor', borderWidth: 1 }}>
+                          {sem.label}
+                        </span>
+                        <p className={`text-xs mt-1.5 font-semibold ${sem.text}`}>
+                          {doc.diasParaVencer > 0
+                            ? `${doc.diasParaVencer} días restantes`
+                            : `Venció hace ${Math.abs(doc.diasParaVencer)} días`}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+
+              {/* Leyenda de alertas */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-500 space-y-1">
+                <p className="font-semibold text-slate-600">Sistema de alertas automáticas</p>
+                <p>✉ El sistema envía notificaciones automáticas con <strong>30, 15 y 5 días de anticipación</strong> al vencimiento del SOAT y la Revisión Técnica.</p>
+                <p>📱 Las notificaciones llegan por email y en el panel de notificaciones del sistema.</p>
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   )

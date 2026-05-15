@@ -29,6 +29,14 @@ const ESTADO_BADGE: Record<string, string> = {
   sancionado: 'bg-red-100 text-red-700',
 }
 
+// Semáforo de documentación
+const DOC_BADGE: Record<string, { cls: string; label: string; icon: string }> = {
+  critico:        { cls: 'bg-red-100 text-red-700 border-red-300',     label: 'Docs vencidos', icon: '🚨' },
+  advertencia:    { cls: 'bg-amber-100 text-amber-700 border-amber-300', label: 'Docs por vencer', icon: '⚠' },
+  al_dia:         { cls: 'bg-emerald-100 text-emerald-700 border-emerald-300', label: 'Docs al día', icon: '✓' },
+  sin_documentos: { cls: 'bg-slate-100 text-slate-500 border-slate-200', label: 'Sin documentos', icon: '📄' },
+}
+
 const TIPO_DOC_LABELS: Record<string, string> = {
   soat:        'SOAT',
   tecnica:     'Técnica',
@@ -324,6 +332,15 @@ export default function Vehiculos() {
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-mono font-bold text-slate-800 text-base">{v.placa}</span>
+                          {/* Badge semáforo de documentación */}
+                          {v.estadoDocumentacion && v.estadoDocumentacion !== 'al_dia' && (() => {
+                            const d = DOC_BADGE[v.estadoDocumentacion]
+                            return d ? (
+                              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${d.cls}`}>
+                                {d.icon} {d.label}
+                              </span>
+                            ) : null
+                          })()}
                           {enParqueo.has(v.placa) && (
                             <span className="flex items-center gap-1 text-[10px] font-medium bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full border border-violet-200"
                               title={`En parqueo: ${enParqueo.get(v.placa)}`}>

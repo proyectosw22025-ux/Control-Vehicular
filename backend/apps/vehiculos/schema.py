@@ -63,6 +63,28 @@ class DocumentoVehiculoType:
     fecha_vencimiento: date
     created_at: datetime
 
+    @strawberry.field
+    def estado(self) -> str:
+        """
+        Semáforo del documento basado en días hasta el vencimiento:
+          vencido     → ya pasó la fecha
+          por_vencer  → quedan ≤ 30 días (urgente si ≤ 15)
+          valido      → más de 30 días de vigencia
+        """
+        from django.utils import timezone
+        hoy = timezone.now().date()
+        if self.fecha_vencimiento < hoy:
+            return "vencido"
+        if (self.fecha_vencimiento - hoy).days <= 30:
+            return "por_vencer"
+        return "valido"
+
+    @strawberry.field
+    def dias_para_vencer(self) -> int:
+        """Días restantes. Negativo si ya venció."""
+        from django.utils import timezone
+        return (self.fecha_vencimiento - timezone.now().date()).days
+
 
 @strawberry.type
 class VehiculoType:
@@ -87,6 +109,29 @@ class VehiculoType:
     @strawberry.field
     def documentos(self) -> List[DocumentoVehiculoType]:
         return list(self.documentos.all())
+
+    @strawberry.field
+    def estado_documentacion(self) -> str:
+        """
+        Resumen del peor estado de los documentos del vehículo:
+          critico        → SOAT o Revisión Técnica vencidos (riesgo legal)
+          advertencia    → algún documento vence en ≤ 30 días
+          al_dia         → todos los documentos vigentes (> 30 días)
+          sin_documentos → no se han cargado documentos aún
+        """
+        from django.utils import timezone
+        hoy = timezone.now().date()
+        docs = list(self.documentos.all())
+        if not docs:
+            return "sin_documentos"
+        CRITICOS = {"soat", "tecnica"}
+        for doc in docs:
+            if doc.tipo_doc in CRITICOS and doc.fecha_vencimiento < hoy:
+                return "critico"
+        for doc in docs:
+            if (doc.fecha_vencimiento - hoy).days <= 30:
+                return "advertencia"
+        return "al_dia"
 
 
 @strawberry.type

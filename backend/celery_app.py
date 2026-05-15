@@ -29,9 +29,10 @@ app.conf.beat_schedule = {
         "task": "acceso.alertar_sesiones_largas",
         "schedule": 14400.0,
     },
-    # Diariamente a las 8:00 AM — alertas de documentos por vencer
+    # Diariamente a las 7:00 AM — alertas de SOAT, técnica y circulación próximos a vencer
+    # Detecta documentos que vencen en exactamente 30, 15 o 5 días
     "alertar-documentos-diario": {
-        "task": "vehiculos.alertar_documentos",
-        "schedule": crontab(hour=8, minute=0),
+        "task": "vehiculos.alertar_documentos_por_vencer",
+        "schedule": crontab(hour=7, minute=0),
     },
 }
