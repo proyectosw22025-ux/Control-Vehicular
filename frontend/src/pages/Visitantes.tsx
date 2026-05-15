@@ -155,16 +155,18 @@ export default function Visitantes() {
   function handleRegistrarVisita(e: FormEvent<HTMLFormElement>) {
     e.preventDefault(); setError('')
     const f = new FormData(e.currentTarget)
-    const vehId = f.get('vehiculoId') as string
+    const vehId  = f.get('vehiculoId') as string
     const tipoId = f.get('tipoVisitaId') as string
+    const placa  = ((f.get('placaVehiculoVisitante') as string) || '').trim().toUpperCase()
     registrarVisita({
       variables: {
         input: {
-          visitanteId: visitanteEncontrado.id,
-          anfitrionId: parseInt(f.get('anfitrionId') as string),
-          motivo:      (f.get('motivo') as string).trim(),
-          tipoVisitaId: tipoId ? parseInt(tipoId) : null,
-          vehiculoId:   vehId  ? parseInt(vehId)  : null,
+          visitanteId:           visitanteEncontrado.id,
+          anfitrionId:           parseInt(f.get('anfitrionId') as string),
+          motivo:                (f.get('motivo') as string).trim(),
+          tipoVisitaId:          tipoId ? parseInt(tipoId) : null,
+          vehiculoId:            vehId  ? parseInt(vehId)  : null,
+          placaVehiculoVisitante: placa || null,
         },
       },
     })
@@ -394,10 +396,33 @@ export default function Visitantes() {
                     ))}
                   </select>
                 </div>
+                {/* Placa del vehículo propio del visitante — texto libre */}
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Vehículo (si ingresa con vehículo)</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Placa del vehículo del visitante
+                    <span className="ml-1 text-slate-400 font-normal">(opcional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="placaVehiculoVisitante"
+                    placeholder="Ej: ABC-123 · TAXI · A PIE"
+                    maxLength={20}
+                    className={`${cls} uppercase`}
+                    style={{ textTransform: 'uppercase' }}
+                  />
+                  <p className="text-xs text-slate-400 mt-1">
+                    Se verifica al momento de la salida. Escribe la placa, TAXI, BUS, o deja vacío si viene a pie.
+                  </p>
+                </div>
+
+                {/* Vehículo universitario registrado (caso especial: proveedor con camión UAGRM) */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Vehículo UAGRM asociado
+                    <span className="ml-1 text-slate-400 font-normal">(solo si usa un vehículo registrado en el sistema)</span>
+                  </label>
                   <select name="vehiculoId" className={cls}>
-                    <option value="">Sin vehículo</option>
+                    <option value="">No aplica</option>
                     {vehiculos.map((v: any) => (
                       <option key={v.id} value={v.id}>{v.placa} — {v.marca} {v.modelo}</option>
                     ))}
@@ -569,9 +594,28 @@ function VisitaCard({ visita: v, onIniciar, onFinalizar, onCancelar, loadingInic
             <p><span className="font-medium text-slate-700">Visita a:</span> {v.anfitrionNombre}</p>
             <p><span className="font-medium text-slate-700">Motivo:</span> {v.motivo}</p>
             {v.tipoVisita && <p>Tipo: {v.tipoVisita.nombre}</p>}
-            {v.placaVehiculo && <p>Vehículo: <span className="font-mono">{v.placaVehiculo}</span></p>}
+
+            {/* Vehículo del visitante — prominente para verificación a la salida */}
+            {v.placaVehiculoVisitante ? (
+              <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg font-mono font-bold text-xs mt-1 ${
+                esActiva
+                  ? 'bg-violet-100 text-violet-800 border border-violet-300'
+                  : 'bg-slate-100 text-slate-600 border border-slate-200'
+              }`}>
+                <span className="text-[10px] font-sans font-medium opacity-70">Vehículo:</span>
+                {v.placaVehiculoVisitante}
+              </div>
+            ) : (
+              <p className="text-slate-300 italic text-[10px]">Sin vehículo registrado</p>
+            )}
+
+            {v.placaVehiculo && (
+              <p className="text-[10px] text-slate-400">
+                Vehículo UAGRM: <span className="font-mono">{v.placaVehiculo}</span>
+              </p>
+            )}
             {esActiva && v.fechaEntrada && (
-              <p className="flex items-center gap-1 text-green-600 font-medium">
+              <p className="flex items-center gap-1 text-green-600 font-medium mt-0.5">
                 <Clock size={11} /> En campus hace {tiempoDesde(v.fechaEntrada)}
               </p>
             )}

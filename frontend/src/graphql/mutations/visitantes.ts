@@ -31,6 +31,7 @@ export const REGISTRAR_VISITA_MUTATION = gql`
       id
       motivo
       estado
+      placaVehiculoVisitante
       visitante { nombreCompleto ci }
       anfitrionNombre
     }

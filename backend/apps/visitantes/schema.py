@@ -53,6 +53,7 @@ class VisitaType:
     fecha_entrada: Optional[datetime]
     fecha_salida: Optional[datetime]
     observaciones: str
+    placa_vehiculo_visitante: str
     created_at: datetime
 
     @strawberry.field
@@ -101,6 +102,7 @@ class RegistrarVisitaInput:
     motivo: str
     tipo_visita_id: Optional[int] = None
     vehiculo_id: Optional[int] = None
+    placa_vehiculo_visitante: Optional[str] = ""   # placa del vehículo externo del visitante
 
 
 # ── Notificación al anfitrión (async — no bloquea al guardia) ──────────────
@@ -319,9 +321,11 @@ class VisitantesMutation:
             if not vehiculo:
                 raise Exception("Vehículo no encontrado")
 
+        # Normalizar placa del visitante a mayúsculas (TAXI, ABC-123, etc.)
+        placa_externa = (input.placa_vehiculo_visitante or "").strip().upper()
+
         with transaction.atomic():
             # Guard anti-duplicado: mismo patrón que el QR dinámico.
-            # Dentro del atomic evita race condition entre dos guardias simultáneos.
             en_curso = (
                 Visita.objects
                 .filter(visitante=visitante, estado__in=["pendiente", "activa"])
@@ -340,10 +344,12 @@ class VisitantesMutation:
                 visitante=visitante, anfitrion=anfitrion,
                 tipo_visita=tipo_visita, vehiculo=vehiculo,
                 motivo=motivo,
+                placa_vehiculo_visitante=placa_externa,
             )
+            detalle_vehiculo = f" · vehículo: {placa_externa}" if placa_externa else ""
             log_audit(
                 user, "visita_registrada",
-                f"Visita de {visitante.nombre} {visitante.apellido} → {anfitrion.nombre} {anfitrion.apellido}",
+                f"Visita de {visitante.nombre} {visitante.apellido} → {anfitrion.nombre} {anfitrion.apellido}{detalle_vehiculo}",
                 request=info.context.request,
             )
 

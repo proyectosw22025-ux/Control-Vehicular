@@ -69,6 +69,12 @@ class Visita(models.Model):
     fecha_entrada = models.DateTimeField(null=True, blank=True)
     fecha_salida = models.DateTimeField(null=True, blank=True)
     observaciones = models.TextField(blank=True)
+    # Placa del vehículo propio del visitante (texto libre — puede ser placa, TAXI, A PIE, etc.)
+    # Distinto del FK vehiculo, que es para vehículos registrados en el sistema UAGRM
+    placa_vehiculo_visitante = models.CharField(
+        max_length=20, blank=True, default="",
+        help_text="Placa, TAXI, BUS o vacío si vino a pie. Solo para vehículos externos."
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

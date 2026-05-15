@@ -22,6 +22,7 @@ export const VISITAS_ACTIVAS_QUERY = gql`
       estado
       fechaEntrada
       observaciones
+      placaVehiculoVisitante
       visitante { id nombreCompleto ci telefono }
       anfitrionNombre
       tipoVisita { nombre }

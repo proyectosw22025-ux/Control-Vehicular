@@ -66,7 +66,7 @@ export default function GuardiaDashboard() {
     pollInterval: 15_000,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: visitasData } = useQuery(VISITAS_ACTIVAS_QUERY, {
+  const { data: visitasData, refetch: refetchVisitas } = useQuery(VISITAS_ACTIVAS_QUERY, {
     pollInterval: 30_000,
     fetchPolicy: 'cache-and-network',
   })
@@ -324,7 +324,12 @@ export default function GuardiaDashboard() {
                 <span className="font-semibold text-slate-800 flex-1 truncate">
                   {v.visitante?.nombreCompleto ?? '—'}
                 </span>
-                <span className="text-slate-400 truncate">→ {v.anfitrionNombre}</span>
+                {v.placaVehiculoVisitante && (
+                  <span className="font-mono text-[10px] bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded border border-violet-200 shrink-0">
+                    {v.placaVehiculoVisitante}
+                  </span>
+                )}
+                <span className="text-slate-400 truncate hidden sm:block">→ {v.anfitrionNombre}</span>
               </div>
             ))}
           </div>
