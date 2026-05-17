@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import { Bell, CheckCheck, Check, AlertCircle, Info, Car, Shield, Wifi, WifiOff, Trash2 } from 'lucide-react'
+import { EmptyState } from '../components/EmptyState'
 import { MIS_NOTIFICACIONES_QUERY, CONTEO_NO_LEIDAS_QUERY } from '../graphql/queries/notificaciones'
 import {
   MARCAR_LEIDA_MUTATION,
@@ -181,13 +182,11 @@ export default function Notificaciones() {
             ))}
           </div>
         ) : notificaciones.length === 0 ? (
-          <div className="text-center py-20 text-slate-400">
-            <Bell size={48} className="mx-auto mb-3 opacity-20" />
-            <p className="font-medium text-slate-600">Sin notificaciones</p>
-            <p className="text-xs mt-1">
-              {soloNoLeidas ? 'No tienes mensajes sin leer' : 'No hay notificaciones aún'}
-            </p>
-          </div>
+          <EmptyState
+            tipo="notificaciones"
+            titulo={soloNoLeidas ? 'Todo al día' : 'Sin notificaciones aún'}
+            sub={soloNoLeidas ? 'No tienes mensajes sin leer — ¡bien hecho!' : 'Aquí aparecerán alertas de multas, accesos y visitas'}
+          />
         ) : (
           <div className="space-y-2">
             {notificaciones.map((n: any) => (

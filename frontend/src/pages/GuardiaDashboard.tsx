@@ -188,17 +188,21 @@ export default function GuardiaDashboard() {
             </div>
           )}
 
-          {/* ── Resultado grande — visible desde lejos ─────────── */}
+          {/* ── Resultado grande — microanimación 150ms scale-in ── */}
           {resultado && (
-            <div className={`rounded-2xl p-5 flex items-center gap-4 border-2 transition-all ${
+            <div style={{ animation: 'resultadoEntrar 0.15s cubic-bezier(0.34,1.56,0.64,1) both' }}
+              className={`rounded-2xl p-5 flex items-center gap-4 border-2 ${
               resultado.ok
-                ? 'bg-green-50 border-green-400 text-green-800'
-                : 'bg-red-50 border-red-400 text-red-800'
+                ? 'bg-green-50 border-green-400 text-green-800 shadow-lg shadow-green-100'
+                : 'bg-red-50 border-red-400 text-red-800 shadow-lg shadow-red-100'
             }`}>
-              {resultado.ok
-                ? <CheckCircle2 size={40} className="text-green-500 shrink-0" />
-                : <XCircle     size={40} className="text-red-500 shrink-0" />
-              }
+              {/* Ícono con pulso suave en éxito */}
+              <div className={resultado.ok ? 'animate-[ping_0.4s_ease-out_1]' : ''}>
+                {resultado.ok
+                  ? <CheckCircle2 size={44} className="text-green-500 shrink-0" />
+                  : <XCircle     size={44} className="text-red-500 shrink-0" />
+                }
+              </div>
               <div className="flex-1 min-w-0">
                 {resultado.placa && (
                   <p className="font-black text-2xl font-mono tracking-widest leading-tight">
