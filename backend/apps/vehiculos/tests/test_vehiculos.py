@@ -1,8 +1,27 @@
 """Tests de vehículos: aprobación, rechazo, visibilidad de pendientes y audit log."""
 import pytest
-from apps.vehiculos.models import Vehiculo
+from apps.vehiculos.models import Vehiculo, DocumentoVehiculo
 from apps.acceso.models import AuditLog
 from conftest import graphql
+
+AGREGAR_DOCUMENTO = """
+mutation AgregarDoc($input: AgregarDocumentoInput!) {
+  agregarDocumento(input: $input) {
+    id tipoDoc numero fechaVencimiento estado diasParaVencer archivoUrl
+  }
+}
+"""
+
+VEHICULOS_CON_DOCS = """
+query VehiculosConDocs($propietarioId: Int) {
+  vehiculos(propietarioId: $propietarioId) {
+    items {
+      id placa estadoDocumentacion
+      documentos { id tipoDoc numero fechaVencimiento estado diasParaVencer archivoUrl }
+    }
+  }
+}
+"""
 
 APROBAR = """
 mutation Aprobar($id: Int!) {
@@ -100,3 +119,85 @@ def test_no_admin_no_ve_pendientes_ajenos(gql_guardia, vehiculo_pendiente, usuar
     # Otro usuario no debe ver el pendiente de usuario_normal
     placas = [v["placa"] for v in r["data"]["vehiculos"]["items"]]
     assert vehiculo_pendiente.placa not in placas
+
+
+# ── Tests de documentos (semáforo + Cloudinary) ─────────────────────────────
+
+@pytest.mark.django_db
+def test_agregar_documento_exitoso(db, gql_admin, vehiculo_activo):
+    """El propietario/admin puede agregar un documento con los nuevos campos."""
+    from datetime import date, timedelta
+    fecha_futura = (date.today() + timedelta(days=60)).isoformat()
+    r = graphql(gql_admin, AGREGAR_DOCUMENTO, {
+        "input": {
+            "vehiculoId": vehiculo_activo.id,
+            "tipoDoc": "soat",
+            "numero": "TEST-001",
+            "fechaVencimiento": fecha_futura,
+        }
+    })
+    assert "errors" not in r, r.get("errors")
+    doc = r["data"]["agregarDocumento"]
+    assert doc["tipoDoc"] == "soat"
+    assert doc["numero"] == "TEST-001"
+    assert doc["estado"] == "valido"          # 60 días → válido
+    assert doc["diasParaVencer"] == 60
+    assert doc["archivoUrl"] is None          # sin archivo → None
+
+
+@pytest.mark.django_db
+def test_documento_estado_por_vencer(db, gql_admin, vehiculo_activo):
+    """Documento con ≤30 días → estado 'por_vencer'."""
+    from datetime import date, timedelta
+    fecha_proxima = (date.today() + timedelta(days=10)).isoformat()
+    r = graphql(gql_admin, AGREGAR_DOCUMENTO, {
+        "input": {
+            "vehiculoId": vehiculo_activo.id,
+            "tipoDoc": "tecnica",
+            "numero": "TEC-001",
+            "fechaVencimiento": fecha_proxima,
+        }
+    })
+    assert "errors" not in r
+    doc = r["data"]["agregarDocumento"]
+    assert doc["estado"] == "por_vencer"   # 10 días ≤ 30 → por_vencer
+    assert 0 < doc["diasParaVencer"] <= 10
+
+
+@pytest.mark.django_db
+def test_documento_vencido_estado(db, gql_admin, vehiculo_activo):
+    """Documento con fecha pasada → estado 'vencido' y diasParaVencer negativo."""
+    r = graphql(gql_admin, AGREGAR_DOCUMENTO, {
+        "input": {
+            "vehiculoId": vehiculo_activo.id,
+            "tipoDoc": "soat",
+            "numero": "VENC-001",
+            "fechaVencimiento": "2020-01-01",
+        }
+    })
+    assert "errors" not in r
+    doc = r["data"]["agregarDocumento"]
+    assert doc["estado"] == "vencido"
+    assert doc["diasParaVencer"] < 0
+
+
+@pytest.mark.django_db
+def test_estado_documentacion_vehiculo_critico(db, gql_admin, vehiculo_activo):
+    """Vehículo con SOAT vencido → estadoDocumentacion='critico'."""
+    DocumentoVehiculo.objects.create(
+        vehiculo=vehiculo_activo,
+        tipo_doc="soat",
+        numero="VENC-SOAT",
+        fecha_vencimiento=__import__('datetime').date(2020, 1, 1),
+    )
+    from django.test import Client
+    from rest_framework_simplejwt.tokens import RefreshToken
+    from apps.usuarios.models import Usuario
+    admin = Usuario.objects.filter(is_superuser=True).first()
+    c = Client()
+    c.defaults["HTTP_AUTHORIZATION"] = f"Bearer {str(RefreshToken.for_user(admin).access_token)}"
+    r = graphql(c, VEHICULOS_CON_DOCS, {"propietarioId": vehiculo_activo.propietario_id})
+    assert "errors" not in r
+    items = r["data"]["vehiculos"]["items"]
+    v = next(i for i in items if i["id"] == vehiculo_activo.id)
+    assert v["estadoDocumentacion"] == "critico"

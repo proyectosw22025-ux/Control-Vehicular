@@ -46,6 +46,7 @@ export const AGREGAR_DOCUMENTO_MUTATION = gql`
   mutation AgregarDocumento($input: AgregarDocumentoInput!) {
     agregarDocumento(input: $input) {
       id tipoDoc numero fechaVencimiento
+      estado diasParaVencer archivoUrl
     }
   }
 `
