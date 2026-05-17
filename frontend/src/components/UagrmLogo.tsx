@@ -49,32 +49,41 @@ function EscudoFallback({ size }: { size: number }) {
 
 // ── Imagen oficial con fallback ────────────────────────────────
 function EscudoImg({ size, className = '' }: { size: number; className?: string }) {
+  // Contenedor con fondo del mismo color que el login — recorta las
+  // esquinas blancas del PNG sin necesitar un PNG con transparencia.
+  // La forma oval del escudo llena el círculo, ocultando el fondo blanco.
   return (
-    <img
-      src={ESCUDO_URL}
-      alt="Escudo UAGRM"
-      width={size}
-      height={size}
-      className={`object-contain ${className}`}
+    <div
+      className={className}
       style={{
-        // mix-blend-mode: multiply → el blanco del PNG se fusiona con
-        // el fondo oscuro y desaparece, dejando solo los colores del escudo.
-        // Funciona en cualquier fondo oscuro (navy, verde, negro).
-        mixBlendMode: 'multiply',
-        filter: 'drop-shadow(0 2px 8px rgba(232, 149, 26, 0.4))',
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        background: 'linear-gradient(160deg, #061840 0%, #0a2a6e 100%)',
+        overflow: 'hidden',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+        filter: 'drop-shadow(0 4px 12px rgba(232, 149, 26, 0.45))',
       }}
-      onError={(e) => {
-        // Si la imagen falla, mostrar el SVG fallback
-        const parent = (e.target as HTMLImageElement).parentElement
-        if (parent) {
-          parent.innerHTML = `<svg width="${size}" height="${size}" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-            <ellipse cx="50" cy="50" rx="46" ry="46" fill="#0a2a6e" stroke="#e8951a" stroke-width="3"/>
-            <text x="50" y="45" text-anchor="middle" fill="#e8951a" font-size="14" font-weight="bold">UAGRM</text>
-            <text x="50" y="62" text-anchor="middle" fill="white" font-size="7">Ctrl. Vehicular</text>
-          </svg>`
-        }
-      }}
-    />
+    >
+      <img
+        src={ESCUDO_URL}
+        alt="Escudo UAGRM"
+        style={{ width: '92%', height: '92%', objectFit: 'contain', display: 'block' }}
+        onError={(e) => {
+          const parent = (e.target as HTMLImageElement).parentElement
+          if (parent) {
+            parent.innerHTML = `<svg width="${size * 0.92}" height="${size * 0.92}" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+              <ellipse cx="50" cy="50" rx="44" ry="44" fill="#0f3a8c" stroke="#e8951a" stroke-width="3"/>
+              <text x="50" y="45" text-anchor="middle" fill="#e8951a" font-size="14" font-weight="bold" font-family="serif">UAGRM</text>
+              <text x="50" y="62" text-anchor="middle" fill="white" font-size="7">Ctrl. Vehicular</text>
+            </svg>`
+          }
+        }}
+      />
+    </div>
   )
 }
 
