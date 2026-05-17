@@ -29,6 +29,30 @@ const ESTADO_BADGE: Record<string, string> = {
   sancionado: 'bg-red-100 text-red-700',
 }
 
+// ── Semáforo modal — calcula estado en cliente con la fecha de vencimiento ─
+function semDocModal(fechaStr: string): { cls: string; icono: string; label: string } {
+  const hoy  = new Date(); hoy.setHours(0, 0, 0, 0)
+  const fecha = new Date(fechaStr)
+  const dias  = Math.floor((fecha.getTime() - hoy.getTime()) / 86400000)
+  if (dias < 0)   return { cls: 'bg-red-50 border-red-300 text-red-700',     icono: '🚨', label: `Vencido · hace ${Math.abs(dias)}d` }
+  if (dias <= 30) return { cls: 'bg-amber-50 border-amber-300 text-amber-700', icono: '⚠',  label: `Vence en ${dias}d` }
+  return               { cls: 'bg-emerald-50 border-emerald-300 text-emerald-700', icono: '✅', label: `Vigente · ${dias}d` }
+}
+
+// ── Validación de fecha de vencimiento al agregar documento ───────────────
+function validarFechaDoc(fechaStr: string): { tipo: 'warn' | 'error'; msg: string } | null {
+  if (!fechaStr) return null
+  const hoy  = new Date(); hoy.setHours(0, 0, 0, 0)
+  const venc = new Date(fechaStr)
+  const dias = Math.floor((venc.getTime() - hoy.getTime()) / 86400000)
+  if (dias < -365 * 5) return { tipo: 'error', msg: '¿Verificaste el año? La fecha parece incorrecta.' }
+  if (dias < 0)        return { tipo: 'warn',  msg: `Este documento venció hace ${Math.abs(dias)} día(s). Se guardará como "vencido".` }
+  if (dias === 0)      return { tipo: 'warn',  msg: 'El documento vence hoy.' }
+  if (dias > 365 * 10) return { tipo: 'error', msg: '¿Verificaste el año? La fecha es demasiado lejana.' }
+  if (dias <= 30)      return { tipo: 'warn',  msg: `Atención: vence en ${dias} día(s) — próximamente.` }
+  return null
+}
+
 // Semáforo de documentación
 const DOC_BADGE: Record<string, { cls: string; label: string; icon: string }> = {
   critico:        { cls: 'bg-red-100 text-red-700 border-red-300',     label: 'Docs vencidos', icon: '🚨' },
@@ -77,6 +101,7 @@ export default function Vehiculos() {
   const [busquedaInput, setBusquedaInput]   = useState('')
   const [pagina, setPagina]                 = useState(1)
   const [motivoRechazo, setMotivoRechazo]   = useState('')
+  const [fechaDoc, setFechaDoc]             = useState('')    // fecha de vencimiento del doc a agregar
 
   // Debounce 300ms — useRef evita acumulación de timeouts (memory leak)
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -161,7 +186,7 @@ export default function Vehiculos() {
   const pendientes: Vehiculo[] = pendientesData?.vehiculosPendientes ?? []
 
   function cerrarModal() {
-    setModal(null); setSeleccionado(null); setError(''); setConfirmarRegen(false); setMotivoRechazo('')
+    setModal(null); setSeleccionado(null); setError(''); setConfirmarRegen(false); setMotivoRechazo(''); setFechaDoc('')
   }
   function abrirQr(v: Vehiculo)       { setSeleccionado(v); setModal('qr') }
   function abrirEditar(v: Vehiculo)   { setSeleccionado(v); setModal('editar') }
@@ -674,25 +699,42 @@ export default function Vehiculos() {
         </ModalWrapper>
       )}
 
-      {/* Modal Documento */}
+      {/* Modal Documento — con semáforo + validación de fecha */}
       {modal === 'documento' && seleccionado && (
         <ModalWrapper titulo={`Documentos — ${seleccionado.placa}`} onClose={cerrarModal}>
+
+          {/* Lista de documentos con semáforo visual */}
           {seleccionado.documentos.length > 0 && (
             <div className="mb-4">
-              <p className="text-xs font-medium text-slate-500 mb-2">Documentos registrados</p>
-              <div className="space-y-1">
-                {seleccionado.documentos.map(d => (
-                  <div key={d.id} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 text-sm">
-                    <span className="font-medium text-slate-700">{TIPO_DOC_LABELS[d.tipoDoc] ?? d.tipoDoc}</span>
-                    <span className="text-slate-500">{d.numero}</span>
-                    <span className="text-slate-400 text-xs">Vence: {d.fechaVencimiento}</span>
-                  </div>
-                ))}
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                Documentos registrados
+              </p>
+              <div className="space-y-1.5">
+                {seleccionado.documentos.map(d => {
+                  const sem = semDocModal(d.fechaVencimiento)
+                  return (
+                    <div key={d.id}
+                      className={`flex items-center justify-between rounded-xl px-3 py-2.5 border ${sem.cls}`}>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-sm">{sem.icono}</span>
+                        <span className="font-semibold text-sm truncate">
+                          {TIPO_DOC_LABELS[d.tipoDoc] ?? d.tipoDoc}
+                        </span>
+                        <span className="text-xs opacity-70">N° {d.numero}</span>
+                      </div>
+                      <span className="text-xs font-medium shrink-0 ml-2">{sem.label}</span>
+                    </div>
+                  )
+                })}
               </div>
               <div className="border-t border-slate-200 my-4" />
             </div>
           )}
-          <p className="text-xs font-medium text-slate-500 mb-3">Agregar documento</p>
+
+          {/* Formulario con validación de fecha */}
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">
+            Agregar documento
+          </p>
           <form onSubmit={handleDocumento} className="space-y-3">
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Tipo *</label>
@@ -703,8 +745,45 @@ export default function Vehiculos() {
                 <option value="otro">Otro</option>
               </select>
             </div>
+
             <Campo label="Número de documento *" name="numero" placeholder="P-12345" />
-            <Campo label="Fecha de vencimiento *" name="fechaVencimiento" type="date" />
+
+            {/* Campo de fecha con validación en tiempo real */}
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Fecha de vencimiento *
+              </label>
+              <input
+                type="date"
+                name="fechaVencimiento"
+                required
+                value={fechaDoc}
+                onChange={e => setFechaDoc(e.target.value)}
+                className={`${inputCls} ${
+                  fechaDoc && validarFechaDoc(fechaDoc)?.tipo === 'error'
+                    ? 'border-red-400 bg-red-50'
+                    : fechaDoc && validarFechaDoc(fechaDoc)?.tipo === 'warn'
+                    ? 'border-amber-400 bg-amber-50'
+                    : ''
+                }`}
+              />
+              {/* Feedback contextual bajo el campo */}
+              {fechaDoc && (() => {
+                const v = validarFechaDoc(fechaDoc)
+                if (!v) return null
+                const styles = {
+                  error: 'text-red-600 bg-red-50 border-red-200',
+                  warn:  'text-amber-700 bg-amber-50 border-amber-200',
+                }
+                return (
+                  <div className={`mt-1.5 text-xs px-3 py-2 rounded-lg border flex items-start gap-1.5 ${styles[v.tipo]}`}>
+                    <span className="shrink-0">{v.tipo === 'error' ? '🚫' : '⚠'}</span>
+                    <span>{v.msg}</span>
+                  </div>
+                )
+              })()}
+            </div>
+
             {error && <MsgError texto={error} />}
             <BtnSubmit loading={loadingDoc} label="Agregar documento" />
           </form>
