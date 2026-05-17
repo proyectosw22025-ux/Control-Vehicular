@@ -64,6 +64,16 @@ class DocumentoVehiculoType:
     created_at: datetime
 
     @strawberry.field
+    def archivo_url(self) -> Optional[str]:
+        """URL pública del archivo subido a Cloudinary (o local en desarrollo)."""
+        if not self.archivo:
+            return None
+        try:
+            return self.archivo.url
+        except Exception:
+            return None
+
+    @strawberry.field
     def estado(self) -> str:
         """
         Semáforo del documento basado en días hasta el vencimiento:

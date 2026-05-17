@@ -21,6 +21,8 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework_simplejwt",
     "channels",
+    "cloudinary_storage",
+    "cloudinary",
     # Apps del proyecto
     "apps.usuarios",
     "apps.vehiculos",
@@ -92,6 +94,23 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# ── Cloudinary — almacenamiento de documentos en la nube ──────────────────
+# Las credenciales vienen de variables de entorno (Railway/local .env)
+# Si no están configuradas, Django usa el almacenamiento local (desarrollo)
+CLOUDINARY_STORAGE = {
+    "CLOUD_NAME": config("CLOUDINARY_CLOUD_NAME", default=""),
+    "API_KEY":    config("CLOUDINARY_API_KEY",    default=""),
+    "API_SECRET": config("CLOUDINARY_API_SECRET", default=""),
+}
+# Activar Cloudinary solo si las credenciales están presentes
+_cloudinary_configurado = all([
+    CLOUDINARY_STORAGE["CLOUD_NAME"],
+    CLOUDINARY_STORAGE["API_KEY"],
+    CLOUDINARY_STORAGE["API_SECRET"],
+])
+if _cloudinary_configurado:
+    DEFAULT_FILE_STORAGE = "cloudinary_storage.storage.MediaCloudinaryStorage"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

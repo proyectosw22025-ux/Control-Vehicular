@@ -28,7 +28,7 @@ export const VEHICULOS_QUERY = gql`
         tipo { id nombre }
         propietarioNombre
         estadoDocumentacion
-        documentos { id tipoDoc numero fechaVencimiento estado diasParaVencer }
+        documentos { id tipoDoc numero fechaVencimiento estado diasParaVencer archivoUrl }
       }
       total
       pagina

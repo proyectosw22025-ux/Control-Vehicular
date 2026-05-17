@@ -8,6 +8,7 @@ from schema import schema
 from apps.reportes.views import (
     VehiculosPDFView, SesionesPDFView, VisitasPDFView, MultasPDFView,
 )
+from apps.vehiculos.views import SubirArchivoDocumentoView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -16,4 +17,7 @@ urlpatterns = [
     path("api/pdf/sesiones/", csrf_exempt(SesionesPDFView.as_view()), name="pdf_sesiones"),
     path("api/pdf/visitas/",  csrf_exempt(VisitasPDFView.as_view()),  name="pdf_visitas"),
     path("api/pdf/multas/",   csrf_exempt(MultasPDFView.as_view()),   name="pdf_multas"),
+    # Upload de documentos vehiculares → Cloudinary si está configurado, local si no
+    path("api/documentos/<int:documento_id>/subir/",
+         csrf_exempt(SubirArchivoDocumentoView.as_view()), name="subir_documento"),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

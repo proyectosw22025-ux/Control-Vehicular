@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
+import { useState as useLocalState } from 'react'
 import {
   ArrowLeft, Car, DoorOpen, AlertTriangle, ParkingSquare, Clock, RefreshCw,
+  Upload, FileCheck, ExternalLink,
 } from 'lucide-react'
 import { VEHICULO_QUERY } from '../graphql/queries/vehiculos'
 import { REGISTROS_ACCESO_QUERY } from '../graphql/queries/acceso'
@@ -408,6 +410,13 @@ export default function HistorialVehiculo() {
                         </p>
                       </div>
                     </div>
+
+                    {/* Upload + previsualización del archivo */}
+                    <SubirArchivo
+                      documentoId={doc.id}
+                      archivoUrl={(doc as any).archivoUrl ?? null}
+                      onSubido={() => window.location.reload()}
+                    />
                   </div>
                 )
               })}
@@ -422,6 +431,75 @@ export default function HistorialVehiculo() {
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Subir archivo de documento a Cloudinary ────────────────
+function SubirArchivo({
+  documentoId, archivoUrl, onSubido,
+}: { documentoId: number; archivoUrl: string | null; onSubido: () => void }) {
+  const [subiendo, setSubiendo] = useLocalState(false)
+  const [error, setError]       = useLocalState('')
+  const [exito, setExito]       = useLocalState(false)
+  const esPDF = archivoUrl?.toLowerCase().endsWith('.pdf')
+
+  async function handleArchivo(e: React.ChangeEvent<HTMLInputElement>) {
+    const archivo = e.target.files?.[0]
+    if (!archivo) return
+    setSubiendo(true); setError(''); setExito(false)
+    const form = new FormData()
+    form.append('archivo', archivo)
+    const token = localStorage.getItem('access_token') ?? ''
+    const base  = (import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/').replace(/\/graphql\/?$/, '')
+    try {
+      const resp = await fetch(`${base}/api/documentos/${documentoId}/subir/`, {
+        method: 'POST', body: form,
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const json = await resp.json()
+      if (!resp.ok) { setError(json.error ?? 'Error al subir'); return }
+      setExito(true)
+      setTimeout(onSubido, 1200)
+    } catch {
+      setError('Error de red al subir el archivo')
+    } finally {
+      setSubiendo(false)
+    }
+  }
+
+  return (
+    <div className="mt-3 pt-3 border-t border-slate-100">
+      {/* Previsualización si ya hay archivo */}
+      {archivoUrl && (
+        <div className="flex items-center gap-2 mb-2">
+          {esPDF ? (
+            <a href={archivoUrl} target="_blank" rel="noreferrer"
+              className="flex items-center gap-1.5 text-xs text-blue-600 hover:underline font-medium">
+              <ExternalLink size={12} /> Ver PDF del documento
+            </a>
+          ) : (
+            <a href={archivoUrl} target="_blank" rel="noreferrer">
+              <img src={archivoUrl} alt="Documento" className="h-16 rounded-lg border border-slate-200 object-cover" />
+            </a>
+          )}
+          <span className="text-[10px] text-emerald-600 flex items-center gap-1">
+            <FileCheck size={11} /> Archivo subido
+          </span>
+        </div>
+      )}
+
+      {/* Botón de upload */}
+      <label className={`inline-flex items-center gap-1.5 cursor-pointer text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors ${
+        subiendo ? 'bg-slate-50 text-slate-400 border-slate-200' : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'
+      }`}>
+        <Upload size={12} />
+        {subiendo ? 'Subiendo...' : archivoUrl ? 'Reemplazar archivo' : 'Subir foto/PDF'}
+        <input type="file" className="hidden" accept="image/*,.pdf" onChange={handleArchivo} disabled={subiendo} />
+      </label>
+      <p className="text-[10px] text-slate-400 mt-1">JPG, PNG o PDF · máx. 5 MB</p>
+      {error  && <p className="text-[10px] text-red-500 mt-1">{error}</p>}
+      {exito  && <p className="text-[10px] text-emerald-600 mt-1">✓ Subido correctamente</p>}
     </div>
   )
 }
