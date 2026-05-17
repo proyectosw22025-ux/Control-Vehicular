@@ -40,6 +40,7 @@ const DELAY_BASE_MS  = 1000  // exponential backoff: 1s, 2s, 4s
 export function useAccesoGuardia() {
   const [resultado, setResultado]         = useState<ResultadoAcceso | null>(null)
   const [procesando, setProcesando]       = useState(false)
+  const [procesandoQr, setProcesandoQr]   = useState(false) // feedback previo a la red
   const [conexion, setConexion]           = useState<EstadoConexion>({
     online: navigator.onLine,
     reintentando: false,
@@ -56,10 +57,12 @@ export function useAccesoGuardia() {
   const puntoIdRef     = useRef<number | null>(puntoIdState)
 
   // Limpia el resultado después de N segundos
-  function mostrarResultado(r: ResultadoAcceso, duracion = 5000) {
+  // Éxito = 3000ms (guardia procesa la placa en 2s) | Error = 7000ms (necesita más tiempo para leer)
+  function mostrarResultado(r: ResultadoAcceso, duracion?: number) {
+    const ms = duracion ?? (r.ok ? 3000 : 7000)
     setResultado(r)
     if (timerResultado.current) clearTimeout(timerResultado.current)
-    timerResultado.current = setTimeout(() => setResultado(null), duracion)
+    timerResultado.current = setTimeout(() => setResultado(null), ms)
   }
 
   // ── Mutations Apollo ─────────────────────────────────────────────────────
@@ -115,6 +118,7 @@ export function useAccesoGuardia() {
     }
 
     setProcesando(true)
+    setProcesandoQr(true)  // feedback visual inmediato mientras va a la red
     try {
       const { data } = await ejecutarConRetry(() =>
         mutarQr({ variables: { input: { puntoAccesoId: puntoId, codigo, tipo } } })
@@ -131,6 +135,7 @@ export function useAccesoGuardia() {
       mostrarResultado({ ok: false, mensaje: msg }, 7000)
     } finally {
       setProcesando(false)
+      setProcesandoQr(false)
       setConexion(c => ({ ...c, reintentando: false, intentos: 0 }))
     }
   }, [mutarQr])
@@ -182,8 +187,9 @@ export function useAccesoGuardia() {
   return {
     resultado,
     procesando,
+    procesandoQr,                    // true entre detección QR y respuesta de red
     conexion,
-    puntoId: puntoIdState,           // state → el select ve el valor actualizado
+    puntoId: puntoIdState,
     setPuntoId,
     registrarQr,
     registrarManual,

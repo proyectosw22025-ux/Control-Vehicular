@@ -196,9 +196,15 @@ export default function Acceso() {
               onScan={(codigo) => {
                 setCamaraActiva(false)
                 if (codigoInputRef.current) codigoInputRef.current.value = codigo
-                // Auto-enviar
+
                 const puntoActual = puntoId
                 const tipoEl = document.querySelector<HTMLInputElement>('input[name="tipo-qr"]:checked')
+
+                if (!puntoActual) {
+                  // Fix crítico: antes el scan se ignoraba silenciosamente sin punto
+                  setResultado({ ok: false, msg: '⚠ Selecciona un punto de acceso antes de escanear' })
+                  return
+                }
                 if (puntoActual && tipoEl) {
                   registrarAcceso({
                     variables: {

@@ -15,7 +15,7 @@ import { useQuery, gql } from '@apollo/client'
 import {
   ShieldCheck, ArrowDownCircle, ArrowUpCircle, Camera, CameraOff,
   CheckCircle2, XCircle, Clock, ParkingSquare, UserCheck, DoorOpen,
-  Wifi, WifiOff, RefreshCw,
+  Wifi, WifiOff, RefreshCw, Loader2,
 } from 'lucide-react'
 import { QrScanner } from '../components/QrScanner'
 import { PUNTOS_ACCESO_QUERY, REGISTROS_ACCESO_QUERY } from '../graphql/queries/acceso'
@@ -185,6 +185,18 @@ export default function GuardiaDashboard() {
           {camaraActiva && (
             <div className="rounded-xl overflow-hidden border-2 border-orange-200">
               <QrScanner activo={camaraActiva} onScan={handleQrScan} />
+            </div>
+          )}
+
+          {/* ── Procesando QR: feedback inmediato antes de respuesta de red ── */}
+          {acceso.procesandoQr && !resultado && (
+            <div style={{ animation: 'resultadoEntrar 0.12s ease-out both' }}
+              className="rounded-2xl p-5 flex items-center gap-4 border-2 bg-blue-50 border-blue-300 text-blue-800 shadow-lg shadow-blue-100">
+              <Loader2 size={44} className="text-blue-500 shrink-0 animate-spin" />
+              <div>
+                <p className="font-black text-xl leading-tight">Verificando acceso...</p>
+                <p className="text-sm font-medium opacity-70 mt-0.5">Consultando el sistema</p>
+              </div>
             </div>
           )}
 
