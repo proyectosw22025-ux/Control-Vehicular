@@ -9,8 +9,9 @@
  *   2. Reemplaza ESCUDO_URL con esa URL
  */
 
-// URL del escudo oficial — actualizar con Cloudinary cuando esté disponible
-const ESCUDO_URL = 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/4c/Escudo_UAGRM.png/200px-Escudo_UAGRM.png'
+// URL del escudo oficial en Cloudinary
+// Para actualizar: sube la imagen en cloudinary.com → Media Library → copia la URL
+const ESCUDO_URL = 'https://res.cloudinary.com/dhrd5ee5c/image/upload/uagrm-escudo.png'
 
 interface Props {
   size?: number
