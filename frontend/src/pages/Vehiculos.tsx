@@ -68,6 +68,14 @@ const TIPO_DOC_LABELS: Record<string, string> = {
   otro:        'Otro',
 }
 
+// Texto contextual del campo de foto según el tipo de documento
+const TEXTO_FOTO: Record<string, string> = {
+  soat:        'Foto o PDF de tu SOAT',
+  tecnica:     'Certificado de Revisión Técnica',
+  circulacion: 'Permiso de Circulación',
+  otro:        'Foto o PDF del documento',
+}
+
 type Documento = {
   id: number; tipoDoc: string; numero: string; fechaVencimiento: string
   estado: string        // valido | por_vencer | vencido
@@ -102,6 +110,7 @@ export default function Vehiculos() {
   const [pagina, setPagina]                 = useState(1)
   const [motivoRechazo, setMotivoRechazo]   = useState('')
   const [fechaDoc, setFechaDoc]             = useState('')
+  const [tipoDocSel, setTipoDocSel]         = useState('soat')
   const [archivoDoc, setArchivoDoc]         = useState<File | null>(null)
   const [subiendoArchivo, setSubiendoArchivo] = useState(false)
   const archivoInputRef                     = useRef<HTMLInputElement>(null)
@@ -219,7 +228,7 @@ export default function Vehiculos() {
   function cerrarModal() {
     setModal(null); setSeleccionado(null); setError('')
     setConfirmarRegen(false); setMotivoRechazo(''); setFechaDoc('')
-    setArchivoDoc(null); setSubiendoArchivo(false)
+    setTipoDocSel('soat'); setArchivoDoc(null); setSubiendoArchivo(false)
     if (archivoInputRef.current) archivoInputRef.current.value = ''
   }
   function abrirQr(v: Vehiculo)       { setSeleccionado(v); setModal('qr') }
@@ -765,24 +774,84 @@ export default function Vehiculos() {
             </div>
           )}
 
-          {/* Formulario con validación de fecha */}
+          {/* Formulario — orden: Tipo → Foto (contextual) → Número → Fecha → Botón */}
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">
             Agregar documento
           </p>
-          <form onSubmit={handleDocumento} className="space-y-3">
+          <form onSubmit={handleDocumento} className="space-y-4">
+
+            {/* 1. Tipo de documento */}
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Tipo *</label>
-              <select name="tipoDoc" required className={inputCls}>
+              <select
+                name="tipoDoc"
+                required
+                value={tipoDocSel}
+                onChange={e => setTipoDocSel(e.target.value)}
+                className={inputCls}
+              >
                 <option value="soat">SOAT</option>
                 <option value="tecnica">Revisión Técnica</option>
                 <option value="circulacion">Permiso de Circulación</option>
-                <option value="otro">Otro</option>
+                <option value="otro">Otro documento</option>
               </select>
             </div>
 
-            <Campo label="Número de documento *" name="numero" placeholder="P-12345" />
+            {/* 2. Foto/PDF — AL INICIO, contextual por tipo, SIEMPRE VISIBLE */}
+            <div className="rounded-2xl border-2 border-dashed p-4 transition-colors
+              bg-slate-50 border-slate-200 hover:border-emerald-400 hover:bg-emerald-50">
+              <p className="text-xs font-semibold text-slate-600 mb-3">
+                📸 {TEXTO_FOTO[tipoDocSel] ?? 'Foto o PDF del documento'}
+                <span className="ml-1 font-normal text-slate-400">(recomendado)</span>
+              </p>
 
-            {/* Campo de fecha con validación en tiempo real */}
+              {archivoDoc ? (
+                /* Vista previa cuando hay archivo seleccionado */
+                <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-300 rounded-xl px-3 py-2.5">
+                  <span className="text-2xl shrink-0">
+                    {archivoDoc.name.endsWith('.pdf') ? '📄' : '🖼'}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-emerald-800 truncate">{archivoDoc.name}</p>
+                    <p className="text-xs text-emerald-600">{(archivoDoc.size / 1024).toFixed(0)} KB · listo para subir</p>
+                  </div>
+                  <button type="button"
+                    onClick={e => { e.preventDefault(); setArchivoDoc(null); if (archivoInputRef.current) archivoInputRef.current.value = '' }}
+                    className="shrink-0 text-slate-400 hover:text-red-500 p-1 rounded-lg hover:bg-red-50 transition-colors">
+                    <X size={15} />
+                  </button>
+                </div>
+              ) : (
+                /* Botón de upload prominente */
+                <label className="flex flex-col items-center gap-2 cursor-pointer py-3">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center text-2xl">
+                    📷
+                  </div>
+                  <p className="text-sm font-medium text-slate-700">Toca para seleccionar</p>
+                  <p className="text-xs text-slate-400">JPG, PNG o PDF · máx. 5 MB</p>
+                  <input
+                    ref={archivoInputRef}
+                    type="file"
+                    className="hidden"
+                    accept="image/*,.pdf"
+                    onChange={e => {
+                      const f = e.target.files?.[0]
+                      if (f && f.size > 5 * 1024 * 1024) {
+                        toast.error('Archivo demasiado grande', 'El límite es 5 MB')
+                        e.target.value = ''
+                      } else {
+                        setArchivoDoc(f ?? null)
+                      }
+                    }}
+                  />
+                </label>
+              )}
+            </div>
+
+            {/* 3. Número de documento */}
+            <Campo label="Número de documento *" name="numero" placeholder="Ej: P-12345" />
+
+            {/* 4. Fecha de vencimiento con validación en tiempo real */}
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">
                 Fecha de vencimiento *
@@ -801,16 +870,12 @@ export default function Vehiculos() {
                     : ''
                 }`}
               />
-              {/* Feedback contextual bajo el campo */}
               {fechaDoc && (() => {
                 const v = validarFechaDoc(fechaDoc)
                 if (!v) return null
-                const styles = {
-                  error: 'text-red-600 bg-red-50 border-red-200',
-                  warn:  'text-amber-700 bg-amber-50 border-amber-200',
-                }
+                const s = { error: 'text-red-600 bg-red-50 border-red-200', warn: 'text-amber-700 bg-amber-50 border-amber-200' }
                 return (
-                  <div className={`mt-1.5 text-xs px-3 py-2 rounded-lg border flex items-start gap-1.5 ${styles[v.tipo]}`}>
+                  <div className={`mt-1.5 text-xs px-3 py-2 rounded-lg border flex items-start gap-1.5 ${s[v.tipo]}`}>
                     <span className="shrink-0">{v.tipo === 'error' ? '🚫' : '⚠'}</span>
                     <span>{v.msg}</span>
                   </div>
@@ -818,62 +883,20 @@ export default function Vehiculos() {
               })()}
             </div>
 
-            {/* Campo de archivo — foto/PDF del documento físico */}
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">
-                Foto o PDF del documento
-                <span className="ml-1 text-slate-400 font-normal">(opcional pero recomendado)</span>
-              </label>
-              <label className={`flex items-center gap-3 cursor-pointer border-2 border-dashed rounded-xl px-4 py-3 transition-colors ${
-                archivoDoc
-                  ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
-                  : 'border-slate-300 bg-slate-50 text-slate-500 hover:border-slate-400 hover:bg-slate-100'
-              }`}>
-                <span className="text-xl shrink-0">{archivoDoc ? '✅' : '📎'}</span>
-                <div className="flex-1 min-w-0">
-                  {archivoDoc ? (
-                    <>
-                      <p className="text-sm font-semibold truncate">{archivoDoc.name}</p>
-                      <p className="text-xs opacity-70">{(archivoDoc.size / 1024).toFixed(0)} KB</p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-sm font-medium">Subir foto o PDF del documento</p>
-                      <p className="text-xs opacity-60">JPG, PNG o PDF · máx. 5 MB</p>
-                    </>
-                  )}
-                </div>
-                {archivoDoc && (
-                  <button type="button"
-                    onClick={e => { e.preventDefault(); setArchivoDoc(null); if (archivoInputRef.current) archivoInputRef.current.value = '' }}
-                    className="shrink-0 text-emerald-500 hover:text-emerald-700 p-1">
-                    <X size={14} />
-                  </button>
-                )}
-                <input
-                  ref={archivoInputRef}
-                  type="file"
-                  className="hidden"
-                  accept="image/*,.pdf"
-                  onChange={e => {
-                    const f = e.target.files?.[0]
-                    if (f && f.size > 5 * 1024 * 1024) {
-                      toast.error('Archivo demasiado grande', 'El límite es 5 MB')
-                      e.target.value = ''
-                    } else {
-                      setArchivoDoc(f ?? null)
-                    }
-                  }}
-                />
-              </label>
-              <p className="text-[10px] text-slate-400 mt-1">
-                Permite verificar la autenticidad del documento. Se puede agregar después desde Historial.
-              </p>
-            </div>
-
             {error && <MsgError texto={error} />}
-            <BtnSubmit loading={loadingDoc || subiendoArchivo}
-              label={subiendoArchivo ? 'Subiendo archivo...' : archivoDoc ? 'Agregar y subir archivo' : 'Agregar documento'} />
+            <button type="submit" disabled={loadingDoc || subiendoArchivo}
+              className={`w-full font-semibold py-2.5 rounded-xl text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2 ${
+                archivoDoc
+                  ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
+                  : 'bg-emerald-500 hover:bg-emerald-600 text-white'
+              }`}>
+              {(loadingDoc || subiendoArchivo)
+                ? <><div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> {subiendoArchivo ? 'Subiendo archivo...' : 'Guardando...'}</>
+                : archivoDoc
+                ? <>📎 Agregar y subir archivo</>
+                : 'Agregar documento'
+              }
+            </button>
           </form>
         </ModalWrapper>
       )}
