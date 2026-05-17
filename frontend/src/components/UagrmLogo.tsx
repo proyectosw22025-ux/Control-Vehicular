@@ -73,7 +73,16 @@ function EscudoImg({ size, className = '' }: { size: number; className?: string 
       <img
         src={ESCUDO_URL}
         alt="Escudo UAGRM"
-        style={{ width: '92%', height: '92%', objectFit: 'contain', display: 'block' }}
+        style={{
+          width: '100%',
+          height: '100%',
+          objectFit: 'contain',
+          display: 'block',
+          // clip-path ellipse: recorta la imagen a la forma oval del escudo
+          // eliminando el fondo blanco de los 4 lados sin necesitar PNG transparente
+          clipPath: 'ellipse(44% 46% at 50% 50%)',
+          WebkitClipPath: 'ellipse(44% 46% at 50% 50%)',
+        }}
         onError={(e) => {
           const parent = (e.target as HTMLImageElement).parentElement
           if (parent) {
