@@ -9,12 +9,8 @@
  *   2. Reemplaza ESCUDO_URL con esa URL
  */
 
-// Cloudinary convierte el PNG a fondo transparente en el servidor:
-//   e_trim:20       → detecta y elimina el borde blanco uniforme
-//   b_transparent   → reemplaza el fondo recortado con transparencia
-//   f_png           → PNG con canal alpha (transparencia real)
-//   q_auto          → calidad automática
-const ESCUDO_URL = 'https://res.cloudinary.com/dhrd5ee5c/image/upload/e_trim:20,b_transparent,f_png,q_auto/uagrm-escudo'
+// URL original sin transformaciones — el fondo blanco se elimina con CSS clip-path
+const ESCUDO_URL = 'https://res.cloudinary.com/dhrd5ee5c/image/upload/q_auto,f_auto/uagrm-escudo'
 
 interface Props {
   size?: number
@@ -52,8 +48,11 @@ function EscudoFallback({ size }: { size: number }) {
 
 // ── Imagen oficial con fallback ────────────────────────────────
 function EscudoImg({ size, className = '' }: { size: number; className?: string }) {
-  // La URL de Cloudinary ya retorna un PNG con fondo transparente (e_trim + b_transparent).
-  // El contenedor solo añade el glow dorado y el tamaño.
+  // El sello UAGRM es circular y ocupa ~75% del ancho del PNG (centrado).
+  // Con objectFit:contain en el contenedor cuadrado, la imagen se centra.
+  // clip-path: ellipse(37.5% 37.5%) recorta EXACTAMENTE la circunferencia
+  // del sello, dejando transparente el fondo blanco exterior.
+  // El fondo del contenedor permanece transparente → muestra el campus detrás.
   return (
     <div
       className={className}
@@ -61,7 +60,8 @@ function EscudoImg({ size, className = '' }: { size: number; className?: string 
         width: size,
         height: size,
         flexShrink: 0,
-        filter: 'drop-shadow(0 6px 18px rgba(232, 149, 26, 0.6))',
+        // drop-shadow aplicado al contenedor dibuja el glow alrededor del clip
+        filter: 'drop-shadow(0 0 16px rgba(232,149,26,0.7)) drop-shadow(0 4px 12px rgba(0,0,0,0.5))',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -75,6 +75,10 @@ function EscudoImg({ size, className = '' }: { size: number; className?: string 
           height: '100%',
           objectFit: 'contain',
           display: 'block',
+          // Recorta al círculo del sello (radio 37.5% = sello ocupa 75% del PNG)
+          // Fondo blanco exterior queda fuera del clip → invisible
+          clipPath: 'ellipse(37.5% 37.5% at 50% 50%)',
+          WebkitClipPath: 'ellipse(37.5% 37.5% at 50% 50%)',
         }}
         onError={(e) => {
           const parent = (e.target as HTMLImageElement).parentElement
