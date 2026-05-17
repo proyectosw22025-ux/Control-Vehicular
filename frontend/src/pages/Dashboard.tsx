@@ -40,10 +40,11 @@ interface StatCardProps {
   icon: React.ElementType
   accent: string
 }
-function StatCard({ label, value, sub, icon: Icon, accent }: StatCardProps) {
+function StatCard({ label, value, sub, icon: Icon, accent, idx = 0 }: StatCardProps & { idx?: number }) {
+  const stagger = ['stagger-1','stagger-2','stagger-3','stagger-4','stagger-5']
   return (
-    <div className={`bg-white rounded-xl shadow-sm p-5 border-l-4 ${accent} flex items-center gap-4`}>
-      <div className={`p-3 rounded-xl bg-slate-50`}>
+    <div className={`bg-white rounded-xl shadow-sm p-5 border-l-4 ${accent} flex items-center gap-4 animate-fade-bottom ${stagger[idx % 5] ?? ''}`}>
+      <div className="p-3 rounded-xl bg-slate-50">
         <Icon size={22} className="text-slate-600" />
       </div>
       <div>
@@ -201,34 +202,10 @@ export default function Dashboard() {
           ) : stats ? (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <StatCard
-                  label="Vehículos registrados"
-                  value={stats.totalVehiculos}
-                  sub="con estado activo"
-                  icon={Car}
-                  accent="border-emerald-400"
-                />
-                <StatCard
-                  label="Accesos hoy"
-                  value={stats.accesosHoy}
-                  sub={`${stats.vehiculosActivosHoy} vehículos distintos`}
-                  icon={DoorOpen}
-                  accent="border-orange-400"
-                />
-                <StatCard
-                  label="Espacios disponibles"
-                  value={`${stats.espaciosDisponibles} / ${stats.totalEspacios}`}
-                  sub="en todas las zonas"
-                  icon={ParkingSquare}
-                  accent="border-violet-400"
-                />
-                <StatCard
-                  label="Multas pendientes"
-                  value={stats.multasPendientes}
-                  sub={`Bs ${stats.montoMultasPendientes.toFixed(2)} total`}
-                  icon={AlertTriangle}
-                  accent="border-red-400"
-                />
+                <StatCard idx={0} label="Vehículos registrados" value={stats.totalVehiculos} sub="con estado activo" icon={Car} accent="border-emerald-400" />
+                <StatCard idx={1} label="Accesos hoy" value={stats.accesosHoy} sub={`${stats.vehiculosActivosHoy} vehículos distintos`} icon={DoorOpen} accent="border-orange-400" />
+                <StatCard idx={2} label="Espacios disponibles" value={`${stats.espaciosDisponibles} / ${stats.totalEspacios}`} sub="en todas las zonas" icon={ParkingSquare} accent="border-violet-400" />
+                <StatCard idx={3} label="Multas pendientes" value={stats.multasPendientes} sub={`Bs ${stats.montoMultasPendientes.toFixed(2)} total`} icon={AlertTriangle} accent="border-red-400" />
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <StatCard

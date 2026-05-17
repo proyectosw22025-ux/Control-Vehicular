@@ -5,6 +5,7 @@ import {
   DoorOpen, UserCheck, AlertTriangle, Bell, LogOut,
   Menu, X, UserCircle, BarChart2, ShieldCheck, Shield,
 } from 'lucide-react'
+import { UagrmLogo } from './UagrmLogo'
 import { useQuery } from '@apollo/client'
 import { useAuth } from '../hooks/useAuth'
 import { useNotificaciones, NotifPayload } from '../hooks/useNotificaciones'
@@ -164,10 +165,14 @@ export default function Layout() {
         hidden md:flex flex-col bg-slate-800 text-white shrink-0 transition-all duration-200
         ${desktopOpen ? 'w-56' : 'w-16'}
       `}>
-        <div className="flex items-center justify-between p-4 border-b border-slate-700 min-h-[57px]">
-          {desktopOpen && <span className="font-bold text-sm truncate">Control Vehicular</span>}
-          <button onClick={() => setDesktopOpen(!desktopOpen)} className="text-slate-300 hover:text-white ml-auto">
-            {desktopOpen ? <X size={18} /> : <Menu size={18} />}
+        <div className="flex items-center justify-between p-3 border-b border-slate-700 min-h-[57px]"
+          style={{ background: 'linear-gradient(135deg, #1a4d1a 0%, #0d2b0d 100%)' }}>
+          {desktopOpen
+            ? <UagrmLogo size={32} variant="completo" />
+            : <UagrmLogo size={28} variant="escudo" />
+          }
+          <button onClick={() => setDesktopOpen(!desktopOpen)} className="text-yellow-200/60 hover:text-yellow-200 ml-2 shrink-0">
+            {desktopOpen ? <X size={16} /> : <Menu size={16} />}
           </button>
         </div>
 
@@ -245,9 +250,10 @@ export default function Layout() {
         transform transition-transform duration-300 md:hidden
         ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        <div className="flex items-center justify-between p-4 border-b border-slate-700">
-          <span className="font-bold text-sm">Control Vehicular</span>
-          <button onClick={() => setMobileOpen(false)} className="text-slate-300 hover:text-white">
+        <div className="flex items-center justify-between p-4 border-b border-slate-700"
+          style={{ background: 'linear-gradient(135deg, #1a4d1a 0%, #0d2b0d 100%)' }}>
+          <UagrmLogo size={30} variant="completo" />
+          <button onClick={() => setMobileOpen(false)} className="text-yellow-200/60 hover:text-yellow-200">
             <X size={18} />
           </button>
         </div>

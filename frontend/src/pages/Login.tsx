@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { useMutation } from '@apollo/client'
 import { Eye, EyeOff, Loader2, ShieldCheck, ArrowLeft } from 'lucide-react'
 import { LOGIN_MUTATION } from '../graphql/mutations/auth'
+import { UagrmLogo } from '../components/UagrmLogo'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -64,19 +65,26 @@ export default function Login() {
   const inputBase = 'w-full border border-slate-200 rounded-xl px-4 py-3 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-transparent transition-all placeholder:text-slate-300'
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4"
+      style={{ background: 'linear-gradient(135deg, #0d2b0d 0%, #1a4d1a 40%, #2d1f00 100%)' }}>
       <div className="w-full max-w-sm">
 
-        {/* Marca institucional */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-white/10 backdrop-blur mb-4">
-            <span className="text-white font-black text-2xl tracking-tight">UV</span>
+        {/* Marca institucional UAGRM con animación de entrada */}
+        <div className="text-center mb-8 animate-fade-slide-up">
+          <div className="inline-flex items-center justify-center mb-5">
+            <UagrmLogo size={72} variant="escudo" />
           </div>
-          <h1 className="text-white font-bold text-xl tracking-tight">Control Vehicular</h1>
-          <p className="text-slate-400 text-sm mt-1">Universidad Autónoma Gabriel René Moreno</p>
+          <h1 className="text-white font-black text-2xl tracking-wide" style={{ fontFamily: 'serif' }}>
+            UAGRM
+          </h1>
+          <p className="text-yellow-200/80 text-xs mt-1 font-medium tracking-widest uppercase">
+            Universidad Autónoma Gabriel René Moreno
+          </p>
+          <div className="h-px bg-gradient-to-r from-transparent via-yellow-500/40 to-transparent mt-3" />
+          <p className="text-white/60 text-xs mt-2">Sistema de Control Vehicular</p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-2xl p-8">
+        <div className="bg-white rounded-2xl shadow-2xl p-8 animate-scale-in" style={{ animationDelay: '0.1s' }}>
 
           {/* ── Paso 1: CI + Contraseña ── */}
           {!requiere2FA && (
@@ -189,8 +197,8 @@ export default function Login() {
           )}
         </div>
 
-        <p className="text-center text-slate-500 text-xs mt-6">
-          Sistema de Control Vehicular · UAGRM · 2025
+        <p className="text-center text-yellow-200/50 text-xs mt-6">
+          © 2025 · UAGRM · Todos los derechos reservados
         </p>
       </div>
     </div>

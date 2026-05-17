@@ -2,37 +2,107 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Microanimaciones del sistema ──────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   ANIMACIONES UAGRM — Sistema de Control Vehicular
+   Basadas en patrones de animista.net, adaptadas para:
+     - Tablet-first (guardia en garita)
+     - Accesibilidad (respeta prefers-reduced-motion)
+     - GPU-only: solo transform y opacity (sin layout thrash)
+   ═══════════════════════════════════════════════════════════════ */
 
-/* Resultado QR del guardia: scale-in desde 0.85 → 1 en 150ms con spring */
+/* ── Resultado QR del Guardia: scale-in-center con spring ────── */
 @keyframes resultadoEntrar {
-  from { opacity: 0; transform: scale(0.88) translateY(6px); }
-  to   { opacity: 1; transform: scale(1) translateY(0); }
+  from { opacity: 0; transform: scale(0.88) translateY(8px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0); }
 }
 
-/* Entrada suave de modales y cards */
+/* ── scale-in-center (animista) ─────────────────────────────── */
+@keyframes scaleInCenter {
+  0%   { transform: scale(0);   opacity: 0; }
+  100% { transform: scale(1);   opacity: 1; }
+}
+
+/* ── fade-in-bottom (animista) — tarjetas de vehículos ──────── */
+@keyframes fadeInBottom {
+  0%   { transform: translateY(20px); opacity: 0; }
+  100% { transform: translateY(0);    opacity: 1; }
+}
+
+/* ── slide-in-top (animista) — stats del admin ──────────────── */
+@keyframes slideInTop {
+  0%   { transform: translateY(-18px); opacity: 0; }
+  100% { transform: translateY(0);     opacity: 1; }
+}
+
+/* ── pulsate-fwd (animista) — vehículos sancionados, alertas ── */
+@keyframes pulsateFwd {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+/* ── heartbeat (animista) — badges de estado activo ─────────── */
+@keyframes heartbeat {
+  0%   { transform: scale(1); }
+  14%  { transform: scale(1.08); }
+  28%  { transform: scale(1); }
+  42%  { transform: scale(1.05); }
+  70%  { transform: scale(1); }
+}
+
+/* ── shake-horizontal (animista) — errores de validación ─────── */
+@keyframes shakeHorizontal {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70% { transform: translateX(-6px); }
+  20%, 40%, 60%      { transform: translateX(6px);  }
+  80%                { transform: translateX(4px);  }
+  90%                { transform: translateX(-4px); }
+}
+
+/* ── slide-in-left (animista) — sidebar mobile ──────────────── */
+@keyframes slideInLeft {
+  0%   { transform: translateX(-100%); opacity: 0; }
+  100% { transform: translateX(0);     opacity: 1; }
+}
+
+/* ── fade-slide-up — modales y cards ─────────────────────────── */
 @keyframes fadeSlideUp {
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Badge de estado que aparece */
+/* ── badge-entrar — badges de estado ─────────────────────────── */
 @keyframes badgeEntrar {
   from { opacity: 0; transform: scale(0.7); }
   to   { opacity: 1; transform: scale(1); }
 }
 
-/* Shake para errores de validación */
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  20%       { transform: translateX(-6px); }
-  40%       { transform: translateX(6px); }
-  60%       { transform: translateX(-4px); }
-  80%       { transform: translateX(4px); }
+/* ── Utilities de Tailwind extendidas ─────────────────────────── */
+@layer utilities {
+  /* Entradas de elementos */
+  .animate-scale-in       { animation: scaleInCenter 0.18s cubic-bezier(0.34,1.56,0.64,1) both; }
+  .animate-fade-bottom    { animation: fadeInBottom  0.25s ease-out both; }
+  .animate-slide-top      { animation: slideInTop    0.20s ease-out both; }
+  .animate-fade-slide-up  { animation: fadeSlideUp   0.20s ease-out both; }
+  .animate-badge-entrar   { animation: badgeEntrar   0.15s cubic-bezier(0.34,1.56,0.64,1) both; }
+
+  /* Estados y alertas */
+  .animate-pulsate        { animation: pulsateFwd 1.5s ease-in-out infinite; }
+  .animate-heartbeat      { animation: heartbeat  1.2s ease-in-out infinite; }
+  .animate-shake          { animation: shakeHorizontal 0.5s ease-in-out; }
+
+  /* Stagger para listas (delay por posición) */
+  .stagger-1  { animation-delay: 0.05s; }
+  .stagger-2  { animation-delay: 0.10s; }
+  .stagger-3  { animation-delay: 0.15s; }
+  .stagger-4  { animation-delay: 0.20s; }
+  .stagger-5  { animation-delay: 0.25s; }
 }
 
-@layer utilities {
-  .animate-fade-slide-up  { animation: fadeSlideUp 0.2s ease-out both; }
-  .animate-badge-entrar   { animation: badgeEntrar 0.15s cubic-bezier(0.34,1.56,0.64,1) both; }
-  .animate-shake          { animation: shake 0.35s ease-in-out; }
+/* ── Respeta la preferencia de movimiento reducido ────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
