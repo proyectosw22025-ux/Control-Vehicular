@@ -45,8 +45,15 @@ export function useAccesoGuardia() {
     reintentando: false,
     intentos: 0,
   })
+  // puntoId necesita STATE (no solo ref) para que el select re-renderice cuando cambia.
+  // El ref se mantiene para que registrarQr/registrarManual puedan leer el valor
+  // dentro de callbacks sin depender del closure (evita stale closure).
+  const [puntoIdState, setPuntoIdState]   = useState<number | null>(() => {
+    const saved = localStorage.getItem('guardia_punto_id')
+    return saved ? parseInt(saved) : null
+  })
   const timerResultado = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const puntoIdRef     = useRef<number | null>(null)
+  const puntoIdRef     = useRef<number | null>(puntoIdState)
 
   // Limpia el resultado después de N segundos
   function mostrarResultado(r: ResultadoAcceso, duracion = 5000) {
@@ -163,24 +170,20 @@ export function useAccesoGuardia() {
     }
   }, [mutarManual])
 
-  // ── Gestión del punto de acceso (persistido en localStorage) ─────────────
+  // ── Gestión del punto de acceso ───────────────────────────────────────────
 
   const setPuntoId = useCallback((id: number | null) => {
-    puntoIdRef.current = id
+    puntoIdRef.current = id          // ref para callbacks (no stale closure)
+    setPuntoIdState(id)              // state para re-renderizar el select
     if (id) localStorage.setItem('guardia_punto_id', String(id))
-    else localStorage.removeItem('guardia_punto_id')
+    else     localStorage.removeItem('guardia_punto_id')
   }, [])
-
-  const puntoIdGuardado = localStorage.getItem('guardia_punto_id')
-  if (puntoIdGuardado && puntoIdRef.current === null) {
-    puntoIdRef.current = parseInt(puntoIdGuardado)
-  }
 
   return {
     resultado,
     procesando,
     conexion,
-    puntoId: puntoIdRef.current,
+    puntoId: puntoIdState,           // state → el select ve el valor actualizado
     setPuntoId,
     registrarQr,
     registrarManual,

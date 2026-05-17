@@ -196,13 +196,11 @@ export default function GuardiaDashboard() {
                 ? 'bg-green-50 border-green-400 text-green-800 shadow-lg shadow-green-100'
                 : 'bg-red-50 border-red-400 text-red-800 shadow-lg shadow-red-100'
             }`}>
-              {/* Ícono con pulso suave en éxito */}
-              <div className={resultado.ok ? 'animate-[ping_0.4s_ease-out_1]' : ''}>
-                {resultado.ok
-                  ? <CheckCircle2 size={44} className="text-green-500 shrink-0" />
-                  : <XCircle     size={44} className="text-red-500 shrink-0" />
-                }
-              </div>
+              {/* Ícono simple — sin animate-ping para no interferir con el scanner QR */}
+              {resultado.ok
+                ? <CheckCircle2 size={44} className="text-green-500 shrink-0" />
+                : <XCircle     size={44} className="text-red-500 shrink-0" />
+              }
               <div className="flex-1 min-w-0">
                 {resultado.placa && (
                   <p className="font-black text-2xl font-mono tracking-widest leading-tight">
