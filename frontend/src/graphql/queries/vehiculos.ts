@@ -66,6 +66,11 @@ export const VEHICULO_QUERY = gql`
       id placa marca modelo anio color estado createdAt
       tipo { id nombre }
       propietarioNombre
+      estadoDocumentacion
+      documentos {
+        id tipoDoc numero fechaVencimiento
+        estado diasParaVencer archivoUrl
+      }
     }
   }
 `
