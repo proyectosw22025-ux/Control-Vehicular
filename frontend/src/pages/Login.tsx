@@ -64,9 +64,25 @@ export default function Login() {
 
   const inputBase = 'w-full border border-slate-200 rounded-xl px-4 py-3 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-transparent transition-all placeholder:text-slate-300'
 
+  // URL del campus UAGRM en Cloudinary — sube la foto con public_id "uagrm-campus"
+  // Ej: https://res.cloudinary.com/dhrd5ee5c/image/upload/uagrm-campus.jpg
+  const CAMPUS_BG = 'https://res.cloudinary.com/dhrd5ee5c/image/upload/q_auto,f_auto/uagrm-campus.jpg'
+
   return (
-    <div className="min-h-screen flex items-center justify-center p-4"
-      style={{ background: 'linear-gradient(160deg, #061840 0%, #0a2a6e 45%, #0f1e4a 100%)' }}>
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden"
+      style={{
+        // Foto del campus UAGRM con overlay azul navy semitransparente
+        // Si la foto no existe, el degradado navy sirve como fallback
+        backgroundImage: `
+          linear-gradient(160deg, rgba(6,24,64,0.82) 0%, rgba(10,42,110,0.78) 50%, rgba(15,30,74,0.85) 100%),
+          url('${CAMPUS_BG}')
+        `,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center 30%',
+        backgroundRepeat: 'no-repeat',
+        // Fallback si la imagen no carga
+        backgroundColor: '#0a2a6e',
+      }}>
 
       {/* Línea dorada decorativa superior */}
       <div className="fixed top-0 left-0 right-0 h-1"

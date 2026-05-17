@@ -51,37 +51,33 @@ function EscudoFallback({ size }: { size: number }) {
 
 // ── Imagen oficial con fallback ────────────────────────────────
 function EscudoImg({ size, className = '' }: { size: number; className?: string }) {
-  // El escudo UAGRM tiene forma de ÓVALO VERTICAL (elipse, más alto que ancho).
-  // Contenedor elíptico: height > width para dar la forma correcta al escudo.
-  // objectFit:cover escala la imagen para cubrir sin deformar.
-  const ancho = size          // base
-  const alto  = size * 1.15   // 15% más alto → óvalo vertical como el escudo
-
+  // Solución definitiva al fondo blanco del PNG:
+  //   1. Contenedor circular con background navy (#0a2a6e)
+  //   2. img con mix-blend-mode: multiply → blanco × navy = navy (desaparece)
+  //   3. Los colores del escudo quedan visibles (multiplicados con navy)
+  // Esto funciona porque el blend ocurre DENTRO del contenedor (mismo stacking context).
   return (
     <div
       className={className}
       style={{
-        width: ancho,
-        height: alto,
-        borderRadius: '50%',           // 50% en un rect no cuadrado = elipse
-        background: 'linear-gradient(160deg, #061840 0%, #0a2a6e 100%)',
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        backgroundColor: '#0a2a6e',   // fondo contra el que el blanco se multiplica
         overflow: 'hidden',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
         flexShrink: 0,
-        filter: 'drop-shadow(0 4px 14px rgba(232, 149, 26, 0.5))',
+        filter: 'drop-shadow(0 6px 18px rgba(232, 149, 26, 0.55))',
       }}
     >
       <img
         src={ESCUDO_URL}
         alt="Escudo UAGRM"
         style={{
-          width: '112%',    // ligeramente más ancho para cubrir márgenes blancos
+          width: '100%',
           height: '100%',
-          objectFit: 'cover',
+          objectFit: 'contain',
           display: 'block',
-          objectPosition: 'center center',
+          mixBlendMode: 'multiply',     // blanco × navy = navy → desaparece
         }}
         onError={(e) => {
           const parent = (e.target as HTMLImageElement).parentElement
