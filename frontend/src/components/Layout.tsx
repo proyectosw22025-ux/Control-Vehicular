@@ -118,9 +118,12 @@ export default function Layout() {
             end={to === '/'}
             onClick={onItemClick}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-2.5 text-sm transition-colors
-               ${isActive ? 'bg-slate-600 text-white' : 'text-slate-300 hover:bg-slate-700 hover:text-white'}`
+              `flex items-center gap-3 px-4 py-2.5 text-sm transition-all
+               ${isActive
+                 ? 'text-white font-semibold border-l-2'
+                 : 'text-blue-100/70 hover:text-white hover:bg-white/10'}`
             }
+            style={({ isActive }) => isActive ? { borderColor: '#e8951a', background: 'rgba(255,255,255,0.12)' } : {}}
           >
             <span className="relative shrink-0">
               <Icon size={18} />
@@ -161,10 +164,11 @@ export default function Layout() {
     <div className="flex h-screen bg-gray-100 overflow-hidden">
 
       {/* ── SIDEBAR DESKTOP (md+) ─────────────────────────── */}
+      {/* Sidebar con paleta azul marino UAGRM */}
       <aside className={`
-        hidden md:flex flex-col bg-slate-800 text-white shrink-0 transition-all duration-200
+        hidden md:flex flex-col text-white shrink-0 transition-all duration-200
         ${desktopOpen ? 'w-56' : 'w-16'}
-      `}>
+      `} style={{ background: 'linear-gradient(180deg, #061840 0%, #0a2a6e 100%)' }}>
         <div className="flex items-center justify-between p-3 border-b border-slate-700 min-h-[57px]"
           style={{ background: 'linear-gradient(135deg, #1a4d1a 0%, #0d2b0d 100%)' }}>
           {desktopOpen
@@ -246,10 +250,10 @@ export default function Layout() {
 
       {/* ── SIDEBAR MOBILE (drawer) ───────────────────────── */}
       <aside className={`
-        fixed inset-y-0 left-0 z-50 w-72 bg-slate-800 text-white flex flex-col
+        fixed inset-y-0 left-0 z-50 w-72 text-white flex flex-col
         transform transition-transform duration-300 md:hidden
         ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}
-      `}>
+      `} style={{ background: 'linear-gradient(180deg, #061840 0%, #0a2a6e 100%)' }}>
         <div className="flex items-center justify-between p-4 border-b border-slate-700"
           style={{ background: 'linear-gradient(135deg, #1a4d1a 0%, #0d2b0d 100%)' }}>
           <UagrmLogo size={30} variant="completo" />
@@ -276,11 +280,12 @@ export default function Layout() {
       {/* ── CONTENIDO PRINCIPAL ───────────────────────────── */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top bar mobile */}
-        <header className="md:hidden flex items-center gap-3 px-4 py-3 bg-slate-800 text-white shrink-0">
-          <button onClick={() => setMobileOpen(true)} className="text-slate-300 hover:text-white">
+        <header className="md:hidden flex items-center gap-3 px-4 py-3 text-white shrink-0"
+          style={{ background: 'linear-gradient(90deg, #061840 0%, #0a2a6e 100%)', borderBottom: '2px solid #e8951a' }}>
+          <button onClick={() => setMobileOpen(true)} className="text-blue-100/70 hover:text-white">
             <Menu size={20} />
           </button>
-          <span className="font-bold text-sm flex-1">Control Vehicular</span>
+          <UagrmLogo size={26} variant="completo" className="flex-1" />
           <NavLink to="/notificaciones" className="relative text-slate-300 hover:text-white">
             <Bell size={20} />
             {conteo > 0 && (

@@ -66,25 +66,54 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4"
-      style={{ background: 'linear-gradient(135deg, #0d2b0d 0%, #1a4d1a 40%, #2d1f00 100%)' }}>
+      style={{ background: 'linear-gradient(160deg, #061840 0%, #0a2a6e 45%, #0f1e4a 100%)' }}>
+
+      {/* Línea dorada decorativa superior */}
+      <div className="fixed top-0 left-0 right-0 h-1"
+        style={{ background: 'linear-gradient(90deg, #e8951a, #f5b81c, #e8951a)' }} />
+
       <div className="w-full max-w-sm">
 
         {/* Marca institucional UAGRM con animación de entrada */}
         <div className="text-center mb-8 animate-fade-slide-up">
-          <div className="inline-flex items-center justify-center mb-5">
-            <UagrmLogo size={72} variant="escudo" />
+
+          {/* Escudo con glow dorado */}
+          <div className="inline-flex items-center justify-center mb-4 relative">
+            <div className="absolute inset-0 rounded-full blur-xl opacity-20"
+              style={{ background: '#e8951a' }} />
+            <UagrmLogo size={90} variant="escudo" className="relative z-10 drop-shadow-2xl" />
           </div>
-          <h1 className="text-white font-black text-2xl tracking-wide" style={{ fontFamily: 'serif' }}>
-            UAGRM
+
+          {/* Nombre completo */}
+          <h1 className="text-white font-black text-lg tracking-wide leading-tight"
+            style={{ fontFamily: 'Georgia, serif', textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
+            Universidad Autónoma
           </h1>
-          <p className="text-yellow-200/80 text-xs mt-1 font-medium tracking-widest uppercase">
-            Universidad Autónoma Gabriel René Moreno
+          <h2 className="font-black text-lg leading-tight"
+            style={{ color: '#f5b81c', fontFamily: 'Georgia, serif', textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
+            "Gabriel René Moreno"
+          </h2>
+
+          {/* Divider dorado */}
+          <div className="flex items-center gap-3 my-3 px-4">
+            <div className="flex-1 h-px" style={{ background: 'linear-gradient(90deg, transparent, #e8951a)' }} />
+            <span className="text-[10px] font-bold tracking-[0.3em] text-white/50">SANTA CRUZ · BOLIVIA</span>
+            <div className="flex-1 h-px" style={{ background: 'linear-gradient(90deg, #e8951a, transparent)' }} />
+          </div>
+
+          <p className="text-white/50 text-xs tracking-widest uppercase font-medium">
+            Sistema de Control Vehicular
           </p>
-          <div className="h-px bg-gradient-to-r from-transparent via-yellow-500/40 to-transparent mt-3" />
-          <p className="text-white/60 text-xs mt-2">Sistema de Control Vehicular</p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-2xl p-8 animate-scale-in" style={{ animationDelay: '0.1s' }}>
+        {/* Card con borde dorado sutil */}
+        <div className="rounded-2xl shadow-2xl p-8 animate-scale-in"
+          style={{
+            background: 'white',
+            border: '1px solid rgba(232, 149, 26, 0.3)',
+            boxShadow: '0 25px 50px rgba(6, 24, 64, 0.6), 0 0 0 1px rgba(232,149,26,0.2)',
+            animationDelay: '0.15s',
+          }}>
 
           {/* ── Paso 1: CI + Contraseña ── */}
           {!requiere2FA && (
@@ -197,10 +226,15 @@ export default function Login() {
           )}
         </div>
 
-        <p className="text-center text-yellow-200/50 text-xs mt-6">
-          © 2025 · UAGRM · Todos los derechos reservados
+        <p className="text-center text-white/30 text-xs mt-6">
+          © 2025 · Universidad Autónoma "Gabriel René Moreno" · Santa Cruz, Bolivia
         </p>
+
       </div>
+
+      {/* Línea dorada decorativa inferior */}
+      <div className="fixed bottom-0 left-0 right-0 h-1"
+        style={{ background: 'linear-gradient(90deg, #e8951a, #f5b81c, #e8951a)' }} />
     </div>
   )
 }
