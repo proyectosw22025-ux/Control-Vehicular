@@ -56,6 +56,13 @@ function EscudoImg({ size, className = '' }: { size: number; className?: string 
       width={size}
       height={size}
       className={`object-contain ${className}`}
+      style={{
+        // mix-blend-mode: multiply → el blanco del PNG se fusiona con
+        // el fondo oscuro y desaparece, dejando solo los colores del escudo.
+        // Funciona en cualquier fondo oscuro (navy, verde, negro).
+        mixBlendMode: 'multiply',
+        filter: 'drop-shadow(0 2px 8px rgba(232, 149, 26, 0.4))',
+      }}
       onError={(e) => {
         // Si la imagen falla, mostrar el SVG fallback
         const parent = (e.target as HTMLImageElement).parentElement
