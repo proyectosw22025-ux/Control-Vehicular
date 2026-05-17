@@ -64,9 +64,9 @@ export default function Login() {
 
   const inputBase = 'w-full border border-slate-200 rounded-xl px-4 py-3 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-transparent transition-all placeholder:text-slate-300'
 
-  // URL del campus UAGRM en Cloudinary — sube la foto con public_id "uagrm-campus"
-  // Ej: https://res.cloudinary.com/dhrd5ee5c/image/upload/uagrm-campus.jpg
-  const CAMPUS_BG = 'https://res.cloudinary.com/dhrd5ee5c/image/upload/q_auto,f_auto/uagrm-campus.jpg'
+  // URL del campus UAGRM — f_auto detecta el formato (jpg/png/webp) automáticamente
+  // sin importar la extensión con la que fue subida a Cloudinary
+  const CAMPUS_BG = 'https://res.cloudinary.com/dhrd5ee5c/image/upload/q_auto,f_auto,c_fill,w_1920/uagrm-campus'
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden"

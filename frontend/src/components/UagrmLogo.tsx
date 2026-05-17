@@ -9,11 +9,12 @@
  *   2. Reemplaza ESCUDO_URL con esa URL
  */
 
-// URL del escudo UAGRM en Cloudinary con transformaciones:
-//   e_trim:15  → recorta el fondo blanco uniforme de los bordes
-//   f_png      → fuerza PNG con canal alpha (transparencia)
-//   q_auto     → calidad automática optimizada
-const ESCUDO_URL = 'https://res.cloudinary.com/dhrd5ee5c/image/upload/e_trim:15,f_png,q_auto/uagrm-escudo.png'
+// Cloudinary convierte el PNG a fondo transparente en el servidor:
+//   e_trim:20       → detecta y elimina el borde blanco uniforme
+//   b_transparent   → reemplaza el fondo recortado con transparencia
+//   f_png           → PNG con canal alpha (transparencia real)
+//   q_auto          → calidad automática
+const ESCUDO_URL = 'https://res.cloudinary.com/dhrd5ee5c/image/upload/e_trim:20,b_transparent,f_png,q_auto/uagrm-escudo'
 
 interface Props {
   size?: number
@@ -51,22 +52,19 @@ function EscudoFallback({ size }: { size: number }) {
 
 // ── Imagen oficial con fallback ────────────────────────────────
 function EscudoImg({ size, className = '' }: { size: number; className?: string }) {
-  // Solución definitiva al fondo blanco del PNG:
-  //   1. Contenedor circular con background navy (#0a2a6e)
-  //   2. img con mix-blend-mode: multiply → blanco × navy = navy (desaparece)
-  //   3. Los colores del escudo quedan visibles (multiplicados con navy)
-  // Esto funciona porque el blend ocurre DENTRO del contenedor (mismo stacking context).
+  // La URL de Cloudinary ya retorna un PNG con fondo transparente (e_trim + b_transparent).
+  // El contenedor solo añade el glow dorado y el tamaño.
   return (
     <div
       className={className}
       style={{
         width: size,
         height: size,
-        borderRadius: '50%',
-        backgroundColor: '#0a2a6e',   // fondo contra el que el blanco se multiplica
-        overflow: 'hidden',
         flexShrink: 0,
-        filter: 'drop-shadow(0 6px 18px rgba(232, 149, 26, 0.55))',
+        filter: 'drop-shadow(0 6px 18px rgba(232, 149, 26, 0.6))',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
       }}
     >
       <img
@@ -77,7 +75,6 @@ function EscudoImg({ size, className = '' }: { size: number; className?: string 
           height: '100%',
           objectFit: 'contain',
           display: 'block',
-          mixBlendMode: 'multiply',     // blanco × navy = navy → desaparece
         }}
         onError={(e) => {
           const parent = (e.target as HTMLImageElement).parentElement
