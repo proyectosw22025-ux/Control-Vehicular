@@ -51,12 +51,11 @@ function EscudoFallback({ size }: { size: number }) {
 
 // ── Imagen oficial con fallback ────────────────────────────────
 function EscudoImg({ size, className = '' }: { size: number; className?: string }) {
-  // El PNG del escudo es 1179×912px (proporción 1.29:1, más ancho que alto).
-  // Estrategia: contenedor OVAL con esa misma proporción + objectFit:fill
-  // → la imagen se estira para llenar exactamente el óvalo, el overflow:hidden
-  //   recorta el fondo blanco de las 4 esquinas.
-  const ancho = size * 1.29  // mismo aspect ratio que el PNG
-  const alto  = size
+  // El escudo UAGRM tiene forma de ÓVALO VERTICAL (elipse, más alto que ancho).
+  // Contenedor elíptico: height > width para dar la forma correcta al escudo.
+  // objectFit:cover escala la imagen para cubrir sin deformar.
+  const ancho = size          // base
+  const alto  = size * 1.15   // 15% más alto → óvalo vertical como el escudo
 
   return (
     <div
@@ -64,7 +63,7 @@ function EscudoImg({ size, className = '' }: { size: number; className?: string 
       style={{
         width: ancho,
         height: alto,
-        borderRadius: '50%',
+        borderRadius: '50%',           // 50% en un rect no cuadrado = elipse
         background: 'linear-gradient(160deg, #061840 0%, #0a2a6e 100%)',
         overflow: 'hidden',
         display: 'flex',
@@ -78,10 +77,11 @@ function EscudoImg({ size, className = '' }: { size: number; className?: string 
         src={ESCUDO_URL}
         alt="Escudo UAGRM"
         style={{
-          width: '100%',
+          width: '112%',    // ligeramente más ancho para cubrir márgenes blancos
           height: '100%',
-          objectFit: 'fill',  // llena el óvalo exactamente
+          objectFit: 'cover',
           display: 'block',
+          objectPosition: 'center center',
         }}
         onError={(e) => {
           const parent = (e.target as HTMLImageElement).parentElement
