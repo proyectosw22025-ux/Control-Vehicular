@@ -44,10 +44,15 @@ const TIPO_DOC_LABELS: Record<string, string> = {
   otro:        'Otro',
 }
 
-type Documento = { id: number; tipoDoc: string; numero: string; fechaVencimiento: string }
+type Documento = {
+  id: number; tipoDoc: string; numero: string; fechaVencimiento: string
+  estado: string        // valido | por_vencer | vencido
+  diasParaVencer: number
+}
 type Vehiculo = {
   id: number; placa: string; marca: string; modelo: string; anio: number;
   color: string; estado: string; codigoQr: string; createdAt: string;
+  estadoDocumentacion: string   // al_dia | advertencia | critico | sin_documentos
   tipo: { id: number; nombre: string }; propietarioNombre: string;
   documentos: Documento[]
 }
