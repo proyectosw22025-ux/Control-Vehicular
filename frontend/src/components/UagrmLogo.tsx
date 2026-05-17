@@ -51,15 +51,19 @@ function EscudoFallback({ size }: { size: number }) {
 
 // ── Imagen oficial con fallback ────────────────────────────────
 function EscudoImg({ size, className = '' }: { size: number; className?: string }) {
-  // Contenedor con fondo del mismo color que el login — recorta las
-  // esquinas blancas del PNG sin necesitar un PNG con transparencia.
-  // La forma oval del escudo llena el círculo, ocultando el fondo blanco.
+  // El PNG del escudo es 1179×912px (proporción 1.29:1, más ancho que alto).
+  // Estrategia: contenedor OVAL con esa misma proporción + objectFit:fill
+  // → la imagen se estira para llenar exactamente el óvalo, el overflow:hidden
+  //   recorta el fondo blanco de las 4 esquinas.
+  const ancho = size * 1.29  // mismo aspect ratio que el PNG
+  const alto  = size
+
   return (
     <div
       className={className}
       style={{
-        width: size,
-        height: size,
+        width: ancho,
+        height: alto,
         borderRadius: '50%',
         background: 'linear-gradient(160deg, #061840 0%, #0a2a6e 100%)',
         overflow: 'hidden',
@@ -67,7 +71,7 @@ function EscudoImg({ size, className = '' }: { size: number; className?: string 
         alignItems: 'center',
         justifyContent: 'center',
         flexShrink: 0,
-        filter: 'drop-shadow(0 4px 12px rgba(232, 149, 26, 0.45))',
+        filter: 'drop-shadow(0 4px 14px rgba(232, 149, 26, 0.5))',
       }}
     >
       <img
@@ -76,12 +80,8 @@ function EscudoImg({ size, className = '' }: { size: number; className?: string 
         style={{
           width: '100%',
           height: '100%',
-          objectFit: 'contain',
+          objectFit: 'fill',  // llena el óvalo exactamente
           display: 'block',
-          // clip-path ellipse: recorta la imagen a la forma oval del escudo
-          // eliminando el fondo blanco de los 4 lados sin necesitar PNG transparente
-          clipPath: 'ellipse(44% 46% at 50% 50%)',
-          WebkitClipPath: 'ellipse(44% 46% at 50% 50%)',
         }}
         onError={(e) => {
           const parent = (e.target as HTMLImageElement).parentElement
