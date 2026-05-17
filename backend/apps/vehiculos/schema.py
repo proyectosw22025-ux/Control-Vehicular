@@ -550,7 +550,12 @@ class VehiculosMutation:
             raise Exception("Solo puedes agregar documentos a tus propios vehículos")
         if input.tipo_doc not in ["soat", "tecnica", "circulacion", "otro"]:
             raise Exception("Tipo de documento inválido. Opciones: soat, tecnica, circulacion, otro")
-        fecha = date.fromisoformat(input.fecha_vencimiento)
+        if not input.fecha_vencimiento or not input.fecha_vencimiento.strip():
+            raise Exception("La fecha de vencimiento es obligatoria")
+        try:
+            fecha = date.fromisoformat(input.fecha_vencimiento.strip())
+        except ValueError:
+            raise Exception("Formato de fecha inválido. Usa el selector de fecha del formulario.")
         return DocumentoVehiculo.objects.create(
             vehiculo=vehiculo,
             tipo_doc=input.tipo_doc,

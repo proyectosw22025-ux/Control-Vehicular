@@ -101,7 +101,10 @@ export default function Vehiculos() {
   const [busquedaInput, setBusquedaInput]   = useState('')
   const [pagina, setPagina]                 = useState(1)
   const [motivoRechazo, setMotivoRechazo]   = useState('')
-  const [fechaDoc, setFechaDoc]             = useState('')    // fecha de vencimiento del doc a agregar
+  const [fechaDoc, setFechaDoc]             = useState('')
+  const [archivoDoc, setArchivoDoc]         = useState<File | null>(null)
+  const [subiendoArchivo, setSubiendoArchivo] = useState(false)
+  const archivoInputRef                     = useRef<HTMLInputElement>(null)
 
   // Debounce 300ms — useRef evita acumulación de timeouts (memory leak)
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -173,7 +176,35 @@ export default function Vehiculos() {
     onError(e) { setError(e.message); toast.error('Error al regenerar QR', e.message) },
   })
   const [agregarDocumento, { loading: loadingDoc }] = useMutation(AGREGAR_DOCUMENTO_MUTATION, {
-    onCompleted() { cerrarModal(); refetch(); toast.exito('Documento agregado correctamente') },
+    async onCompleted(d) {
+      const docId = d.agregarDocumento?.id
+      // Si el usuario seleccionó un archivo, subirlo justo después de crear el doc
+      if (archivoDoc && docId) {
+        setSubiendoArchivo(true)
+        try {
+          const form = new FormData()
+          form.append('archivo', archivoDoc)
+          const token = localStorage.getItem('access_token') ?? ''
+          const base  = (import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/').replace(/\/graphql\/?$/, '')
+          const resp  = await fetch(`${base}/api/documentos/${docId}/subir/`, {
+            method: 'POST', body: form,
+            headers: { Authorization: `Bearer ${token}` },
+          })
+          if (resp.ok) {
+            toast.exito('Documento agregado', 'Archivo subido correctamente ✓')
+          } else {
+            toast.info('Documento registrado', 'El archivo no se pudo subir — agrégalo desde el Historial')
+          }
+        } catch {
+          toast.info('Documento registrado', 'Sin conexión para el archivo — agrégalo desde el Historial')
+        } finally {
+          setSubiendoArchivo(false)
+        }
+      } else {
+        toast.exito('Documento agregado', 'Sin archivo adjunto')
+      }
+      cerrarModal(); refetch()
+    },
     onError(e) { setError(e.message); toast.error('Error al agregar documento', e.message) },
   })
 
@@ -186,7 +217,10 @@ export default function Vehiculos() {
   const pendientes: Vehiculo[] = pendientesData?.vehiculosPendientes ?? []
 
   function cerrarModal() {
-    setModal(null); setSeleccionado(null); setError(''); setConfirmarRegen(false); setMotivoRechazo(''); setFechaDoc('')
+    setModal(null); setSeleccionado(null); setError('')
+    setConfirmarRegen(false); setMotivoRechazo(''); setFechaDoc('')
+    setArchivoDoc(null); setSubiendoArchivo(false)
+    if (archivoInputRef.current) archivoInputRef.current.value = ''
   }
   function abrirQr(v: Vehiculo)       { setSeleccionado(v); setModal('qr') }
   function abrirEditar(v: Vehiculo)   { setSeleccionado(v); setModal('editar') }
@@ -784,8 +818,62 @@ export default function Vehiculos() {
               })()}
             </div>
 
+            {/* Campo de archivo — foto/PDF del documento físico */}
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Foto o PDF del documento
+                <span className="ml-1 text-slate-400 font-normal">(opcional pero recomendado)</span>
+              </label>
+              <label className={`flex items-center gap-3 cursor-pointer border-2 border-dashed rounded-xl px-4 py-3 transition-colors ${
+                archivoDoc
+                  ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
+                  : 'border-slate-300 bg-slate-50 text-slate-500 hover:border-slate-400 hover:bg-slate-100'
+              }`}>
+                <span className="text-xl shrink-0">{archivoDoc ? '✅' : '📎'}</span>
+                <div className="flex-1 min-w-0">
+                  {archivoDoc ? (
+                    <>
+                      <p className="text-sm font-semibold truncate">{archivoDoc.name}</p>
+                      <p className="text-xs opacity-70">{(archivoDoc.size / 1024).toFixed(0)} KB</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm font-medium">Subir foto o PDF del documento</p>
+                      <p className="text-xs opacity-60">JPG, PNG o PDF · máx. 5 MB</p>
+                    </>
+                  )}
+                </div>
+                {archivoDoc && (
+                  <button type="button"
+                    onClick={e => { e.preventDefault(); setArchivoDoc(null); if (archivoInputRef.current) archivoInputRef.current.value = '' }}
+                    className="shrink-0 text-emerald-500 hover:text-emerald-700 p-1">
+                    <X size={14} />
+                  </button>
+                )}
+                <input
+                  ref={archivoInputRef}
+                  type="file"
+                  className="hidden"
+                  accept="image/*,.pdf"
+                  onChange={e => {
+                    const f = e.target.files?.[0]
+                    if (f && f.size > 5 * 1024 * 1024) {
+                      toast.error('Archivo demasiado grande', 'El límite es 5 MB')
+                      e.target.value = ''
+                    } else {
+                      setArchivoDoc(f ?? null)
+                    }
+                  }}
+                />
+              </label>
+              <p className="text-[10px] text-slate-400 mt-1">
+                Permite verificar la autenticidad del documento. Se puede agregar después desde Historial.
+              </p>
+            </div>
+
             {error && <MsgError texto={error} />}
-            <BtnSubmit loading={loadingDoc} label="Agregar documento" />
+            <BtnSubmit loading={loadingDoc || subiendoArchivo}
+              label={subiendoArchivo ? 'Subiendo archivo...' : archivoDoc ? 'Agregar y subir archivo' : 'Agregar documento'} />
           </form>
         </ModalWrapper>
       )}
