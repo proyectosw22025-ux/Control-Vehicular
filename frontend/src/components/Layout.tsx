@@ -196,9 +196,9 @@ export default function Layout() {
             <div className="flex items-center gap-3 mb-2">
               {usuario.fotoUrl ? (
                 <img src={usuario.fotoUrl} alt="Perfil"
-                  className="w-9 h-9 rounded-full object-cover shrink-0 border-2 border-yellow-400/40" />
+                  className="w-12 h-12 rounded-full object-cover shrink-0 border-2 border-yellow-400/50 shadow-md" />
               ) : (
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-600 to-slate-800 flex items-center justify-center shrink-0 border-2 border-slate-600 text-white text-xs font-bold">
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-slate-600 to-slate-800 flex items-center justify-center shrink-0 border-2 border-slate-600 text-white text-sm font-bold shadow-md">
                   {(usuario.nombreCompleto || 'U').split(' ').map((n: string) => n[0]).slice(0,2).join('')}
                 </div>
               )}

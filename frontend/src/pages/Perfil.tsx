@@ -277,11 +277,11 @@ export default function Perfil() {
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
           <div className="flex items-start gap-6">
 
-            {/* Avatar con clic para cambiar foto */}
+            {/* Avatar con clic para cambiar foto — w-24=96px, un poco más grande */}
             <div className="relative group shrink-0">
               {fotoPreview ? (
                 <img src={fotoPreview} alt="Foto de perfil"
-                  className="w-20 h-20 rounded-full object-cover shadow-md border-2 border-slate-200" />
+                  className="w-24 h-24 rounded-full object-cover shadow-md border-2 border-slate-200" />
               ) : (
                 <Avatar nombre={me?.nombreCompleto ?? usuario.nombreCompleto ?? ''} />
               )}
