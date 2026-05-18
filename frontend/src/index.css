@@ -2,6 +2,63 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Tema claro (defecto) ──────────────────────────────────── */
+:root {
+  --page-bg:       #f1f5f9;   /* slate-100 */
+  --card-bg:       #ffffff;
+  --card-border:   #e2e8f0;   /* slate-200 */
+  --text-primary:  #1e293b;   /* slate-800 */
+  --text-secondary:#64748b;   /* slate-500 */
+  --input-bg:      #f8fafc;   /* slate-50 */
+  --input-border:  #cbd5e1;   /* slate-300 */
+}
+
+/* ── Tema oscuro ────────────────────────────────────────────── */
+.dark {
+  --page-bg:       #0f172a;   /* slate-950 */
+  --card-bg:       #1e293b;   /* slate-800 */
+  --card-border:   #334155;   /* slate-700 */
+  --text-primary:  #f1f5f9;   /* slate-100 */
+  --text-secondary:#94a3b8;   /* slate-400 */
+  --input-bg:      #1e293b;   /* slate-800 */
+  --input-border:  #475569;   /* slate-600 */
+}
+
+/* Aplicar variables al contenido principal (no al sidebar, ya es oscuro) */
+.theme-content {
+  background-color: var(--page-bg);
+  color: var(--text-primary);
+  min-height: 100vh;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Cards/panels */
+.dark .bg-white    { background-color: var(--card-bg) !important; }
+.dark .bg-slate-50 { background-color: #1e293b !important; }
+.dark .bg-gray-100 { background-color: #0f172a !important; }
+.dark .bg-slate-100{ background-color: #1e293b !important; }
+
+/* Texto */
+.dark .text-slate-800 { color: #f1f5f9 !important; }
+.dark .text-slate-700 { color: #e2e8f0 !important; }
+.dark .text-slate-600 { color: #cbd5e1 !important; }
+.dark .text-slate-500 { color: #94a3b8 !important; }
+.dark .text-slate-400 { color: #64748b !important; }
+
+/* Bordes */
+.dark .border-slate-200 { border-color: #334155 !important; }
+.dark .border-slate-100 { border-color: #1e293b !important; }
+
+/* Inputs en modo oscuro */
+.dark input, .dark select, .dark textarea {
+  background-color: var(--input-bg) !important;
+  border-color: var(--input-border) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Divisores */
+.dark .divide-slate-100 > * + * { border-color: #1e293b !important; }
+
 /* ═══════════════════════════════════════════════════════════════
    ANIMACIONES UAGRM — Sistema de Control Vehicular
    Basadas en patrones de animista.net, adaptadas para:

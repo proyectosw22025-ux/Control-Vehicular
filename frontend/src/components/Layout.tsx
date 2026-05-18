@@ -53,6 +53,14 @@ export default function Layout() {
   const [toasts, setToasts]           = useState<Toast[]>([])
 
   const { logout, usuario, roles, esAdmin } = useAuth()
+  // Aplicar tema al montar (lee preferencia guardada)
+  useEffect(() => {
+    const saved = localStorage.getItem('uagrm_theme') ?? 'auto'
+    const hora = new Date().getHours()
+    const auto = hora >= 18 || hora < 6 ? 'dark' : 'light'
+    const resolved = saved === 'auto' ? auto : saved
+    document.documentElement.classList.toggle('dark', resolved === 'dark')
+  }, [])
   const navigate  = useNavigate()
   const location  = useLocation()
 
@@ -184,8 +192,19 @@ export default function Layout() {
 
         {desktopOpen && (
           <div className="px-4 py-3 border-b border-slate-700">
-            <p className="text-sm font-medium text-white truncate">{usuario.nombreCompleto}</p>
-            <div className="flex flex-wrap gap-1 mt-1">
+            {/* Foto + nombre del usuario */}
+            <div className="flex items-center gap-3 mb-2">
+              {usuario.fotoUrl ? (
+                <img src={usuario.fotoUrl} alt="Perfil"
+                  className="w-9 h-9 rounded-full object-cover shrink-0 border-2 border-yellow-400/40" />
+              ) : (
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-600 to-slate-800 flex items-center justify-center shrink-0 border-2 border-slate-600 text-white text-xs font-bold">
+                  {(usuario.nombreCompleto || 'U').split(' ').map((n: string) => n[0]).slice(0,2).join('')}
+                </div>
+              )}
+              <p className="text-sm font-medium text-white truncate">{usuario.nombreCompleto}</p>
+            </div>
+            <div className="flex flex-wrap gap-1">
               {roles.length > 0
                 ? roles.map(r => (
                     <span key={r} className="text-xs bg-slate-600 text-slate-200 px-1.5 py-0.5 rounded">{r}</span>
@@ -279,8 +298,8 @@ export default function Layout() {
         <NavContent onItemClick={() => setMobileOpen(false)} />
       </aside>
 
-      {/* ── CONTENIDO PRINCIPAL ───────────────────────────── */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      {/* ── CONTENIDO PRINCIPAL — aplica tema claro/oscuro ─── */}
+      <div className="flex-1 flex flex-col overflow-hidden theme-content">
         {/* Top bar mobile */}
         <header className="md:hidden flex items-center gap-3 px-4 py-3 text-white shrink-0"
           style={{ background: 'linear-gradient(90deg, #061840 0%, #0a2a6e 100%)', borderBottom: '2px solid #e8951a' }}>

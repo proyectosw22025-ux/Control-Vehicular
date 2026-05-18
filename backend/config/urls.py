@@ -9,6 +9,7 @@ from apps.reportes.views import (
     VehiculosPDFView, SesionesPDFView, VisitasPDFView, MultasPDFView,
 )
 from apps.vehiculos.views import SubirArchivoDocumentoView
+from apps.usuarios.views import SubirFotoPerfilView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -20,4 +21,6 @@ urlpatterns = [
     # Upload de documentos vehiculares → Cloudinary si está configurado, local si no
     path("api/documentos/<int:documento_id>/subir/",
          csrf_exempt(SubirArchivoDocumentoView.as_view()), name="subir_documento"),
+    path("api/perfil/foto/",
+         csrf_exempt(SubirFotoPerfilView.as_view()), name="subir_foto_perfil"),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

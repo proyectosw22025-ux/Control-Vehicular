@@ -1,7 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, gql } from '@apollo/client'
-import { Lock, Save, CheckCircle, AlertCircle, Calendar, ShieldCheck, Shield, ShieldOff, Smartphone, Copy, Check } from 'lucide-react'
+import {
+  Lock, Save, CheckCircle, AlertCircle, Calendar, ShieldCheck, Shield,
+  ShieldOff, Smartphone, Copy, Check, Sun, Moon, Monitor, Camera, Upload,
+} from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
+import { useTheme, type Theme } from '../hooks/useTheme'
 import { ACTUALIZAR_USUARIO_MUTATION, CAMBIAR_PASSWORD_MUTATION } from '../graphql/mutations/usuarios'
 import { INICIAR_2FA_MUTATION, VERIFICAR_2FA_MUTATION, DESACTIVAR_2FA_MUTATION } from '../graphql/mutations/auth'
 
@@ -19,6 +23,7 @@ const ME_PERFIL_QUERY = gql`
       dateJoined
       isSuperuser
       totpActivo
+      fotoUrl
       roles { nombre }
     }
   }
@@ -112,8 +117,44 @@ function RolBadge({ nombre }: { nombre: string }) {
 // ── Componente principal ───────────────────────────────────
 export default function Perfil() {
   const { usuario } = useAuth()
-  const { data, loading } = useQuery(ME_PERFIL_QUERY)
+  const { data, loading, refetch } = useQuery(ME_PERFIL_QUERY)
   const me = data?.me
+  const theme = useTheme()
+  const [fotoPreview, setFotoPreview] = useState<string | null>(me?.fotoUrl ?? usuario.fotoUrl ?? null)
+  const [subiendoFoto, setSubiendoFoto] = useState(false)
+  const [fotoMsg, setFotoMsg] = useState('')
+  const fotoInputRef = useRef<HTMLInputElement>(null)
+
+  // Actualizar preview cuando llegan datos de la query
+  useEffect(() => {
+    if (me?.fotoUrl) setFotoPreview(me.fotoUrl)
+  }, [me?.fotoUrl])
+
+  async function handleSubirFoto(archivo: File) {
+    if (archivo.size > 3 * 1024 * 1024) { setFotoMsg('La foto supera 3 MB'); return }
+    setSubiendoFoto(true); setFotoMsg('')
+    const form = new FormData()
+    form.append('foto', archivo)
+    const token = localStorage.getItem('access_token') ?? ''
+    const base = (import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/').replace(/\/graphql\/?$/, '')
+    try {
+      const resp = await fetch(`${base}/api/perfil/foto/`, {
+        method: 'POST', body: form, headers: { Authorization: `Bearer ${token}` },
+      })
+      const json = await resp.json()
+      if (resp.ok) {
+        setFotoPreview(json.url)
+        setFotoMsg('✓ Foto actualizada')
+        // Actualizar localStorage para que el sidebar la muestre
+        const stored = JSON.parse(localStorage.getItem('usuario') || '{}')
+        localStorage.setItem('usuario', JSON.stringify({ ...stored, fotoUrl: json.url }))
+        refetch()
+      } else {
+        setFotoMsg(json.error ?? 'Error al subir la foto')
+      }
+    } catch { setFotoMsg('Error de conexión') }
+    finally { setSubiendoFoto(false) }
+  }
 
   // Inicializar desde localStorage para no mostrar campos vacíos mientras carga
   const [perfil, setPerfil] = useState(() => {
@@ -231,10 +272,31 @@ export default function Perfil() {
           <p className="text-slate-400 text-sm mt-1">Gestiona tu información personal y seguridad de cuenta</p>
         </div>
 
-        {/* ── Tarjeta de identidad ── */}
+        {/* ── Tarjeta de identidad + foto de perfil ── */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
           <div className="flex items-start gap-6">
-            <Avatar nombre={me?.nombreCompleto ?? usuario.nombreCompleto ?? ''} />
+
+            {/* Avatar con clic para cambiar foto */}
+            <div className="relative group shrink-0">
+              {fotoPreview ? (
+                <img src={fotoPreview} alt="Foto de perfil"
+                  className="w-20 h-20 rounded-full object-cover shadow-md border-2 border-slate-200" />
+              ) : (
+                <Avatar nombre={me?.nombreCompleto ?? usuario.nombreCompleto ?? ''} />
+              )}
+              {/* Overlay de cámara al hacer hover */}
+              <label className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
+                {subiendoFoto
+                  ? <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  : <Camera size={20} className="text-white" />
+                }
+                <input ref={fotoInputRef} type="file" className="hidden" accept="image/jpeg,image/png,image/webp"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleSubirFoto(f) }} />
+              </label>
+            </div>
+            {fotoMsg && (
+              <p className="text-xs text-emerald-600 mt-1">{fotoMsg}</p>
+            )}
             <div className="flex-1 min-w-0">
               <h2 className="text-xl font-bold text-slate-800 truncate">
                 {me?.nombreCompleto ?? usuario.nombreCompleto ?? 'Usuario'}
@@ -256,6 +318,38 @@ export default function Perfil() {
               )}
             </div>
           </div>
+        </div>
+
+        {/* ── Apariencia — modo claro/oscuro/auto ── */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+          <h3 className="text-sm font-bold text-slate-700 mb-4 pb-3 border-b border-slate-100 flex items-center gap-2">
+            {theme.isDark ? <Moon size={15} /> : <Sun size={15} />}
+            Apariencia
+          </h3>
+          <p className="text-xs text-slate-500 mb-4">
+            El modo automático cambia a oscuro a las 6:00 PM y a claro a las 6:00 AM.
+          </p>
+          <div className="grid grid-cols-3 gap-3">
+            {([
+              { id: 'light', label: 'Claro',    icon: Sun,     desc: 'Siempre claro' },
+              { id: 'dark',  label: 'Oscuro',   icon: Moon,    desc: 'Siempre oscuro' },
+              { id: 'auto',  label: 'Automático', icon: Monitor, desc: 'Según el horario' },
+            ] as { id: Theme; label: string; icon: React.ElementType; desc: string }[]).map(({ id, label, icon: Icon, desc }) => (
+              <button key={id} onClick={() => theme.setTheme(id)}
+                className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
+                  theme.preference === id
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-300'
+                }`}>
+                <Icon size={22} />
+                <span className="text-sm font-semibold">{label}</span>
+                <span className="text-[10px] opacity-70">{desc}</span>
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-slate-400 mt-3 text-center">
+            Ahora: <strong>{theme.isDark ? '🌙 Oscuro' : '☀️ Claro'}</strong>
+          </p>
         </div>
 
         {/* ── Grid: Info + Contraseña ── */}

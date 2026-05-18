@@ -5,6 +5,7 @@ interface UsuarioGuardado {
   email: string
   isSuperuser: boolean
   roles: { nombre: string }[]
+  fotoUrl?: string | null
 }
 
 export function useAuth() {
@@ -14,7 +15,7 @@ export function useAuth() {
 
   const esAdmin = usuario.isSuperuser === true || roles.includes('Administrador')
   const esGuardia = roles.includes('Guardia')
-  const esResidente = roles.includes('Residente')
+  const esResidente = roles.some(r => ['Estudiante', 'Docente', 'Personal Administrativo'].includes(r))
 
   function tieneRol(...nombres: string[]) {
     return nombres.some(n => roles.includes(n))
