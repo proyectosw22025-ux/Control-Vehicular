@@ -75,7 +75,7 @@ export default function Layout() {
     setMobileOpen(false)
     const ruta = Object.keys(PAGE_TITLES).find(k => location.pathname === k || location.pathname.startsWith(k + '/'))
     const titulo = ruta ? PAGE_TITLES[ruta] : 'Sistema Vehicular'
-    document.title = `${titulo} · Control Vehicular UAGRM`
+    document.title = `${titulo} · Control Vehicular UAGRM · 2026`
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname])
 

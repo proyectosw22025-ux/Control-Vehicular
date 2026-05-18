@@ -179,10 +179,11 @@ export default function Dashboard() {
       {/* ── Encabezado ── */}
       <div className="flex items-start justify-between gap-2">
         <div>
-          <h1 className="text-lg sm:text-2xl font-bold text-slate-800">
+          <h1 className="text-lg sm:text-2xl font-bold text-slate-800 animate-text-pop-up-l">
             Bienvenido, {usuario.nombreCompleto?.split(' ')[0] || 'Usuario'}
           </h1>
-          <p className="text-slate-400 text-xs sm:text-sm mt-1 capitalize">{fechaHoy}</p>
+          <p className="text-slate-400 text-xs sm:text-sm mt-1 capitalize animate-fade-slide-up"
+            style={{ animationDelay: '0.15s' }}>{fechaHoy}</p>
         </div>
         <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400 bg-white rounded-lg px-3 py-2 shadow-sm border border-slate-100 shrink-0">
           <LayoutDashboard size={14} />

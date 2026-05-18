@@ -99,6 +99,50 @@
   .stagger-5  { animation-delay: 0.25s; }
 }
 
+/* ── text-pop-up-top (animista.net) ─────────────────────────────
+   Texto sube y aparece con sombra 3D desde abajo.
+   Ideal para títulos de página, encabezados institucionales.     */
+@keyframes textPopUpTop {
+  0% {
+    transform: translateY(8px);
+    text-shadow: none;
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    text-shadow:
+      0 1px 0 rgba(255,255,255,0.15),
+      0 2px 0 rgba(0,0,0,0.2),
+      0 3px 0 rgba(0,0,0,0.15),
+      0 4px 0 rgba(0,0,0,0.1),
+      0 8px 15px rgba(0,0,0,0.25);
+    opacity: 1;
+  }
+}
+
+/* Variante clara — para textos sobre fondos blancos (dashboard, módulos) */
+@keyframes textPopUpTopLight {
+  0% {
+    transform: translateY(8px);
+    text-shadow: none;
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    text-shadow:
+      0 1px 0 rgba(0,0,0,0.08),
+      0 2px 4px rgba(0,0,0,0.12);
+    opacity: 1;
+  }
+}
+
+@layer utilities {
+  /* Login / fondos oscuros — efecto 3D dorado */
+  .animate-text-pop-up   { animation: textPopUpTop      0.5s cubic-bezier(0.25,0.46,0.45,0.94) both; }
+  /* Dashboard / fondos claros — sombra sutil */
+  .animate-text-pop-up-l { animation: textPopUpTopLight 0.4s cubic-bezier(0.25,0.46,0.45,0.94) both; }
+}
+
 /* ── Respeta la preferencia de movimiento reducido ────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

@@ -93,20 +93,20 @@ export default function Login() {
         {/* Marca institucional UAGRM con animación de entrada */}
         <div className="text-center mb-8 animate-fade-slide-up">
 
-          {/* Escudo con glow dorado */}
-          <div className="inline-flex items-center justify-center mb-4 relative">
-            <div className="absolute inset-0 rounded-full blur-xl opacity-20"
-              style={{ background: '#e8951a' }} />
-            <UagrmLogo size={90} variant="escudo" className="relative z-10 drop-shadow-2xl" />
+          {/* Escudo más grande con glow dorado */}
+          <div className="inline-flex items-center justify-center mb-5 relative">
+            <div className="absolute rounded-full blur-2xl opacity-30"
+              style={{ background: '#e8951a', width: 140, height: 140 }} />
+            <UagrmLogo size={115} variant="escudo" className="relative z-10" />
           </div>
 
-          {/* Nombre completo */}
-          <h1 className="text-white font-black text-lg tracking-wide leading-tight"
-            style={{ fontFamily: 'Georgia, serif', textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
+          {/* Nombre completo — text-pop-up-top de animista */}
+          <h1 className="text-white font-black text-lg tracking-wide leading-tight animate-text-pop-up"
+            style={{ fontFamily: 'Georgia, serif', animationDelay: '0.2s' }}>
             Universidad Autónoma
           </h1>
-          <h2 className="font-black text-lg leading-tight"
-            style={{ color: '#f5b81c', fontFamily: 'Georgia, serif', textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
+          <h2 className="font-black text-lg leading-tight animate-text-pop-up"
+            style={{ color: '#f5b81c', fontFamily: 'Georgia, serif', animationDelay: '0.35s' }}>
             "Gabriel René Moreno"
           </h2>
 
@@ -243,7 +243,7 @@ export default function Login() {
         </div>
 
         <p className="text-center text-white/30 text-xs mt-6">
-          © 2025 · Universidad Autónoma "Gabriel René Moreno" · Santa Cruz, Bolivia
+          © 2026 · Universidad Autónoma "Gabriel René Moreno" · Santa Cruz, Bolivia
         </p>
 
       </div>
