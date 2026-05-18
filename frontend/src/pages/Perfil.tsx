@@ -138,8 +138,9 @@ export default function Perfil() {
     const token = localStorage.getItem('access_token') ?? ''
     const base = (import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/').replace(/\/graphql\/?$/, '')
     try {
-      const resp = await fetch(`${base}/api/perfil/foto/`, {
-        method: 'POST', body: form, headers: { Authorization: `Bearer ${token}` },
+      // Pasar token como query param (mismo patrón que PDFs) para evitar problemas CORS con Authorization header
+      const resp = await fetch(`${base}/api/perfil/foto/?token=${encodeURIComponent(token)}`, {
+        method: 'POST', body: form,
       })
       const json = await resp.json()
       if (resp.ok) {
@@ -320,35 +321,36 @@ export default function Perfil() {
           </div>
         </div>
 
-        {/* ── Apariencia — modo claro/oscuro/auto ── */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-          <h3 className="text-sm font-bold text-slate-700 mb-4 pb-3 border-b border-slate-100 flex items-center gap-2">
-            {theme.isDark ? <Moon size={15} /> : <Sun size={15} />}
-            Apariencia
-          </h3>
-          <p className="text-xs text-slate-500 mb-4">
-            El modo automático cambia a oscuro a las 6:00 PM y a claro a las 6:00 AM.
-          </p>
-          <div className="grid grid-cols-3 gap-3">
+        {/* ── Apariencia — compacta ── */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-bold text-slate-700 flex items-center gap-1.5">
+              {theme.isDark ? <Moon size={13} /> : <Sun size={13} />}
+              Apariencia
+            </h3>
+            <span className="text-[10px] text-slate-400">
+              {theme.isDark ? '🌙 Oscuro' : '☀️ Claro'}
+            </span>
+          </div>
+          <div className="flex gap-2">
             {([
-              { id: 'light', label: 'Claro',    icon: Sun,     desc: 'Siempre claro' },
-              { id: 'dark',  label: 'Oscuro',   icon: Moon,    desc: 'Siempre oscuro' },
-              { id: 'auto',  label: 'Automático', icon: Monitor, desc: 'Según el horario' },
-            ] as { id: Theme; label: string; icon: React.ElementType; desc: string }[]).map(({ id, label, icon: Icon, desc }) => (
+              { id: 'light', label: 'Claro',       icon: Sun,     },
+              { id: 'dark',  label: 'Oscuro',       icon: Moon,    },
+              { id: 'auto',  label: 'Automático',   icon: Monitor, },
+            ] as { id: Theme; label: string; icon: React.ElementType }[]).map(({ id, label, icon: Icon }) => (
               <button key={id} onClick={() => theme.setTheme(id)}
-                className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg border transition-all text-xs font-medium ${
                   theme.preference === id
                     ? 'border-blue-500 bg-blue-50 text-blue-700'
                     : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-300'
                 }`}>
-                <Icon size={22} />
-                <span className="text-sm font-semibold">{label}</span>
-                <span className="text-[10px] opacity-70">{desc}</span>
+                <Icon size={14} />
+                {label}
               </button>
             ))}
           </div>
-          <p className="text-xs text-slate-400 mt-3 text-center">
-            Ahora: <strong>{theme.isDark ? '🌙 Oscuro' : '☀️ Claro'}</strong>
+          <p className="text-[10px] text-slate-400 mt-2">
+            Automático: oscuro 6 PM – 6 AM
           </p>
         </div>
 
