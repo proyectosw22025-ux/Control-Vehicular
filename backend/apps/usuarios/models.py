@@ -26,6 +26,8 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     apellido = models.CharField(max_length=100)
     telefono = models.CharField(max_length=20, blank=True)
     foto = models.ImageField(upload_to="usuarios/fotos/", blank=True, null=True)
+    foto_url = models.URLField(blank=True, default="",
+        help_text="URL Cloudinary de la foto de perfil (evita problemas con STORAGES)")
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     date_joined = models.DateTimeField(default=timezone.now)

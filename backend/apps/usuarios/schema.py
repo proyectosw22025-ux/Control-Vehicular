@@ -51,13 +51,8 @@ class UsuarioType:
 
     @strawberry.field
     def foto_url(self) -> Optional[str]:
-        """URL de la foto de perfil subida a Cloudinary."""
-        if not self.foto:
-            return None
-        try:
-            return self.foto.url
-        except Exception:
-            return None
+        """URL de la foto de perfil (guardada en foto_url URLField, sin storage backend)."""
+        return self.foto_url or None
 
     @strawberry.field
     def nombre_completo(self) -> str:
