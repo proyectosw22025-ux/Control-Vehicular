@@ -18,10 +18,11 @@ class TipoMulta(models.Model):
 
 class Multa(models.Model):
     ESTADOS = [
-        ("pendiente", "Pendiente"),
-        ("pagada", "Pagada"),
-        ("apelada", "En apelación"),
-        ("cancelada", "Cancelada"),
+        ("pendiente",    "Pendiente"),
+        ("en_revision",  "Comprobante en revisión"),   # pago digital enviado, esperando confirmación admin
+        ("pagada",       "Pagada"),
+        ("apelada",      "En apelación"),
+        ("cancelada",    "Cancelada"),
     ]
 
     vehiculo = models.ForeignKey(
@@ -31,7 +32,7 @@ class Multa(models.Model):
     monto = models.DecimalField(max_digits=8, decimal_places=2)
     descripcion = models.TextField()
     fecha = models.DateTimeField(auto_now_add=True)
-    estado = models.CharField(max_length=10, choices=ESTADOS, default="pendiente")
+    estado = models.CharField(max_length=12, choices=ESTADOS, default="pendiente")
     registrado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -52,16 +53,24 @@ class Multa(models.Model):
 
 class PagoMulta(models.Model):
     METODOS = [
-        ("efectivo", "Efectivo"),
-        ("transferencia", "Transferencia"),
-        ("qr_pago", "QR de pago"),
+        ("efectivo",      "Efectivo (ventanilla)"),
+        ("transferencia", "Transferencia bancaria"),
+        ("qr_pago",       "QR de Pago"),
+        ("banca_movil",   "Banca Móvil / Tigo Money"),
     ]
 
     multa = models.OneToOneField(Multa, on_delete=models.CASCADE, related_name="pago")
     fecha_pago = models.DateTimeField(auto_now_add=True)
     monto_pagado = models.DecimalField(max_digits=8, decimal_places=2)
     metodo_pago = models.CharField(max_length=15, choices=METODOS)
+    # comprobante_url → URL Cloudinary del screenshot/foto del comprobante de pago
+    # Requerido para pagos digitales, opcional para efectivo (admin lo verifica en ventanilla)
     comprobante = models.CharField(max_length=100, blank=True)
+    comprobante_url = models.URLField(blank=True, default="",
+        help_text="URL Cloudinary del comprobante/screenshot de pago digital")
+    # referencia_pago → código de transacción del banco o número de operación
+    referencia_pago = models.CharField(max_length=60, blank=True, default="",
+        help_text="Número de referencia o código de transacción bancaria")
     registrado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

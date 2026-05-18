@@ -65,6 +65,8 @@ class PagoMultaType:
     monto_pagado: Decimal
     metodo_pago: str
     comprobante: str
+    comprobante_url: str
+    referencia_pago: str
 
 
 @strawberry.type
@@ -103,6 +105,15 @@ class PagarMultaInput:
     multa_id: int
     metodo_pago: str
     comprobante: Optional[str] = ""
+    comprobante_url: Optional[str] = ""      # URL Cloudinary del comprobante digital
+    referencia_pago: Optional[str] = ""     # Código de transacción/referencia bancaria
+
+
+@strawberry.input
+class ConfirmarPagoInput:
+    multa_id: int
+    aprobado: bool
+    observacion: Optional[str] = ""
 
 
 @strawberry.input
@@ -212,9 +223,23 @@ class MultasQuery:
             raise Exception("Autenticación requerida")
         if not tiene_rol(user, "Administrador") and not tiene_rol(user, "Guardia"):
             raise Exception("Solo guardias y administradores pueden ver las multas pendientes")
+        # Incluye "en_revision" para que el admin vea comprobantes pendientes de verificar
         return list(
-            Multa.objects.filter(estado="pendiente")
+            Multa.objects.filter(estado__in=["pendiente", "en_revision"])
             .select_related("tipo", "vehiculo", "registrado_por")
+            .order_by("-fecha")
+        )
+
+    @strawberry.field
+    def pagos_en_revision(self, info: Info) -> List[MultaType]:
+        """Comprobantes de pago digital pendientes de verificación por el admin."""
+        from apps.usuarios.utils import tiene_rol
+        user = info.context.request.user
+        if not tiene_rol(user, "Administrador"):
+            raise Exception("Solo administradores pueden ver pagos en revisión")
+        return list(
+            Multa.objects.filter(estado="en_revision")
+            .select_related("tipo", "vehiculo__propietario", "pago")
             .order_by("-fecha")
         )
 
@@ -339,9 +364,19 @@ class MultasMutation:
                 "Solo el propietario del vehículo o un administrador pueden registrar el pago"
             )
 
-        METODOS = ["efectivo", "transferencia", "qr_pago"]
+        METODOS = ["efectivo", "transferencia", "qr_pago", "banca_movil"]
         if input.metodo_pago not in METODOS:
             raise Exception(f"Método de pago inválido. Opciones: {', '.join(METODOS)}")
+
+        # Pagos digitales REQUIEREN comprobante para verificación del admin
+        METODOS_DIGITALES = ["transferencia", "qr_pago", "banca_movil"]
+        es_digital = input.metodo_pago in METODOS_DIGITALES
+        if es_digital and not es_admin:
+            if not (input.comprobante_url or "").strip():
+                raise Exception(
+                    "Los pagos digitales requieren subir el comprobante/screenshot "
+                    "para que el administrador verifique la transacción."
+                )
 
         with transaction.atomic():
             pago = PagoMulta.objects.create(
@@ -349,26 +384,80 @@ class MultasMutation:
                 monto_pagado=multa.monto,
                 metodo_pago=input.metodo_pago,
                 comprobante=input.comprobante or "",
+                comprobante_url=input.comprobante_url or "",
+                referencia_pago=input.referencia_pago or "",
                 registrado_por=user,
             )
-            multa.estado = "pagada"
-            multa.save(update_fields=["estado"])
-
-            # Rehabilitar vehículo si no quedan multas pendientes
-            if not Multa.objects.filter(vehiculo=multa.vehiculo, estado="pendiente").exists():
-                multa.vehiculo.estado = "activo"
-                multa.vehiculo.save(update_fields=["estado"])
-
-            log_audit(
-                user, "multa_pagada",
-                f"Multa #{multa.id} pagada vía {input.metodo_pago} — {multa.vehiculo.placa}",
-                request=info.context.request,
-            )
+            if es_digital and not es_admin:
+                # Pago digital pendiente de verificación → admin debe confirmar
+                multa.estado = "en_revision"
+                multa.save(update_fields=["estado"])
+                log_audit(
+                    user, "pago_en_revision",
+                    f"Multa #{multa.id} — comprobante enviado vía {input.metodo_pago}, en revisión",
+                    request=info.context.request,
+                )
+            else:
+                # Efectivo en ventanilla o admin → pago inmediato verificado
+                multa.estado = "pagada"
+                multa.save(update_fields=["estado"])
+                if not Multa.objects.filter(
+                    vehiculo=multa.vehiculo, estado__in=["pendiente", "en_revision"]
+                ).exists():
+                    multa.vehiculo.estado = "activo"
+                    multa.vehiculo.save(update_fields=["estado"])
+                log_audit(
+                    user, "multa_pagada",
+                    f"Multa #{multa.id} pagada vía {input.metodo_pago} — {multa.vehiculo.placa}",
+                    request=info.context.request,
+                )
 
         _notificar_pago_async(
             multa.vehiculo.propietario, multa.vehiculo, multa.monto, input.metodo_pago
         )
         return pago
+
+    @strawberry.mutation
+    def confirmar_pago_multa(self, info: Info, input: ConfirmarPagoInput) -> MultaType:
+        """
+        Admin confirma o rechaza un comprobante de pago digital (en_revision → pagada/pendiente).
+        Este es el paso que separa un sistema de cobros confiable de uno que fía por confianza.
+        """
+        from apps.usuarios.utils import tiene_rol
+        from apps.acceso.utils import log_audit
+
+        user = info.context.request.user
+        if not tiene_rol(user, "Administrador"):
+            raise Exception("Solo administradores pueden confirmar pagos")
+
+        multa = Multa.objects.select_related("vehiculo__propietario").filter(
+            pk=input.multa_id, estado="en_revision"
+        ).first()
+        if not multa:
+            raise Exception("Multa en revisión no encontrada")
+
+        with transaction.atomic():
+            if input.aprobado:
+                multa.estado = "pagada"
+                multa.save(update_fields=["estado"])
+                if not Multa.objects.filter(
+                    vehiculo=multa.vehiculo, estado__in=["pendiente", "en_revision"]
+                ).exists():
+                    multa.vehiculo.estado = "activo"
+                    multa.vehiculo.save(update_fields=["estado"])
+                log_audit(user, "pago_confirmado",
+                    f"Pago de multa #{multa.id} CONFIRMADO por {user.ci}",
+                    request=info.context.request)
+            else:
+                # Rechazado → vuelve a pendiente para que el propietario pague correctamente
+                multa.estado = "pendiente"
+                multa.save(update_fields=["estado"])
+                # Eliminar el pago rechazado para que pueda enviarse uno nuevo
+                multa.pago.delete()
+                log_audit(user, "pago_rechazado",
+                    f"Pago de multa #{multa.id} RECHAZADO por {user.ci}. Obs: {input.observacion}",
+                    request=info.context.request)
+        return multa
 
     @strawberry.mutation
     def apelar_multa(self, info: Info, input: ApelarMultaInput) -> ApelacionMultaType:

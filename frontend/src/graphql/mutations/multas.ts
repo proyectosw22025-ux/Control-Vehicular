@@ -17,11 +17,15 @@ export const REGISTRAR_MULTA_MUTATION = gql`
 export const PAGAR_MULTA_MUTATION = gql`
   mutation PagarMulta($input: PagarMultaInput!) {
     pagarMulta(input: $input) {
-      id
-      fechaPago
-      montoPagado
-      metodoPago
-      comprobante
+      id fechaPago montoPagado metodoPago comprobante comprobanteUrl referenciaPago
+    }
+  }
+`
+
+export const CONFIRMAR_PAGO_MUTATION = gql`
+  mutation ConfirmarPago($input: ConfirmarPagoInput!) {
+    confirmarPagoMulta(input: $input) {
+      id monto estado placaVehiculo
     }
   }
 `

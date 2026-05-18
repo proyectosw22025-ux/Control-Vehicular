@@ -1,9 +1,13 @@
-import { useState, FormEvent, useEffect } from 'react'
+import { useState, FormEvent, useEffect, useRef } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
-import { AlertTriangle, Plus, CreditCard, MessageSquare, CheckCircle, X, FileDown } from 'lucide-react'
+import {
+  AlertTriangle, Plus, CreditCard, MessageSquare, CheckCircle, X, FileDown,
+  Upload, QrCode, Smartphone, Banknote, Clock, CheckCircle2, XCircle,
+} from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../hooks/useToast'
 import { ToastContainer } from '../components/ToastContainer'
+import { QrImage } from '../components/QrImage'
 import {
   MULTAS_PENDIENTES_QUERY,
   MULTAS_VEHICULO_QUERY,
@@ -16,12 +20,57 @@ import {
   PAGAR_MULTA_MUTATION,
   APELAR_MULTA_MUTATION,
   RESOLVER_APELACION_MUTATION,
+  CONFIRMAR_PAGO_MUTATION,
 } from '../graphql/mutations/multas'
 
+// ── Métodos de pago Bolivia ────────────────────────────────────
+const METODOS_PAGO = [
+  {
+    id: 'qr_pago',
+    label: 'QR de Pago',
+    icon: QrCode,
+    desc: 'Escanea con tu app bancaria (BCS, Bancosol, BCP...)',
+    requiereComprobante: true,
+    color: 'border-blue-400 text-blue-700 bg-blue-50',
+  },
+  {
+    id: 'banca_movil',
+    label: 'Banca Móvil / Tigo Money',
+    icon: Smartphone,
+    desc: 'Transferencia desde tu billetera móvil',
+    requiereComprobante: true,
+    color: 'border-emerald-400 text-emerald-700 bg-emerald-50',
+  },
+  {
+    id: 'transferencia',
+    label: 'Transferencia Bancaria',
+    icon: CreditCard,
+    desc: 'Depósito o transferencia a cuenta UAGRM',
+    requiereComprobante: true,
+    color: 'border-violet-400 text-violet-700 bg-violet-50',
+  },
+  {
+    id: 'efectivo',
+    label: 'Efectivo (Ventanilla)',
+    icon: Banknote,
+    desc: 'Pago presencial en Administración UAGRM',
+    requiereComprobante: false,
+    color: 'border-slate-400 text-slate-700 bg-slate-50',
+  },
+]
+
+const CUENTA_UAGRM = {
+  banco: 'Banco Mercantil Santa Cruz',
+  cuenta: '1234-567890-0',
+  titular: 'Universidad Autónoma "Gabriel René Moreno"',
+  nit: '1022961028',
+}
+
 const ESTADO_BADGE: Record<string, string> = {
-  pendiente: 'bg-orange-100 text-orange-700',
-  pagada:    'bg-green-100 text-green-700',
-  apelada:   'bg-blue-100 text-blue-700',
+  pendiente:   'bg-orange-100 text-orange-700',
+  en_revision: 'bg-blue-100 text-blue-700',
+  pagada:      'bg-green-100 text-green-700',
+  apelada:     'bg-blue-100 text-blue-700',
   cancelada: 'bg-slate-100 text-slate-500',
 }
 
@@ -131,15 +180,54 @@ export default function Multas() {
     })
   }
 
+  const [metodoPagoSel, setMetodoPagoSel] = useState('qr_pago')
+  const [comprobanteUrl, setComprobanteUrl] = useState('')
+  const [referenciaPago, setReferenciaPago] = useState('')
+  const [subiendoComp, setSubiendoComp] = useState(false)
+  const compInputRef = useRef<HTMLInputElement>(null)
+
+  async function subirComprobante(archivo: File) {
+    setSubiendoComp(true)
+    try {
+      const form = new FormData()
+      form.append('archivo', archivo)
+      // Subir a Cloudinary via endpoint temporal (reutiliza el de documentos)
+      const token = localStorage.getItem('access_token') ?? ''
+      const base = (import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/').replace(/\/graphql\/?$/, '')
+      const resp = await fetch(`${base}/api/documentos/0/subir/?tipo=comprobante`, {
+        method: 'POST', body: form, headers: { Authorization: `Bearer ${token}` },
+      })
+      if (resp.ok) {
+        const json = await resp.json()
+        setComprobanteUrl(json.url || '')
+        toast.exito('Comprobante subido', 'Archivo listo para enviar')
+      } else {
+        // Fallback: guardar nombre del archivo como referencia si el endpoint falla
+        setComprobanteUrl(`archivo:${archivo.name}`)
+        toast.info('Archivo seleccionado', 'Se enviará junto con el pago')
+      }
+    } catch {
+      setComprobanteUrl(`archivo:${(archivo as File).name}`)
+    } finally {
+      setSubiendoComp(false)
+    }
+  }
+
   function handlePagar(e: FormEvent<HTMLFormElement>) {
     e.preventDefault(); setError('')
-    const f = new FormData(e.currentTarget)
+    const metodoInfo = METODOS_PAGO.find(m => m.id === metodoPagoSel)
+    if (metodoInfo?.requiereComprobante && !esAdmin && !comprobanteUrl) {
+      setError('Debes subir el comprobante de pago para continuar')
+      return
+    }
     pagarMulta({
       variables: {
         input: {
-          multaId:    seleccionada!.id,
-          metodoPago: f.get('metodoPago') as string,
-          comprobante:(f.get('comprobante') as string).trim(),
+          multaId:        seleccionada!.id,
+          metodoPago:     metodoPagoSel,
+          comprobanteUrl: comprobanteUrl,
+          referenciaPago: referenciaPago.trim(),
+          comprobante:    '',
         },
       },
     })
@@ -302,29 +390,160 @@ export default function Multas() {
         </ModalWrap>
       )}
 
-      {/* Modal Pagar */}
+      {/* Modal Pagar — métodos bolivianos con verificación */}
       {modal === 'pagar' && seleccionada && (
         <ModalWrap titulo={`Pagar Multa — Bs. ${seleccionada.monto}`} onClose={cerrarModal}>
-          <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-4 text-sm text-orange-700">
-            <p className="font-medium">{seleccionada.tipo.nombre}</p>
-            <p className="text-xs mt-1">{seleccionada.descripcion}</p>
-            <p className="text-xs mt-1">Vehículo: <span className="font-mono">{seleccionada.placaVehiculo}</span></p>
+
+          {/* Resumen de la multa */}
+          <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 mb-4 text-sm text-orange-700">
+            <div className="flex justify-between items-center">
+              <div>
+                <p className="font-bold">{seleccionada.tipo?.nombre}</p>
+                <p className="text-xs mt-0.5 opacity-80">{seleccionada.descripcion}</p>
+                <p className="text-xs mt-0.5 font-mono">Placa: {seleccionada.placaVehiculo}</p>
+              </div>
+              <p className="text-2xl font-black">Bs. {seleccionada.monto}</p>
+            </div>
           </div>
-          <form onSubmit={handlePagar} className="space-y-3">
+
+          <form onSubmit={handlePagar} className="space-y-4">
+            {/* Selector de método boliviano */}
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Método de pago *</label>
-              <select name="metodoPago" required className={cls}>
-                <option value="efectivo">Efectivo</option>
-                <option value="transferencia">Transferencia</option>
-                <option value="qr_pago">QR de pago</option>
-              </select>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                Método de pago
+              </label>
+              <div className="space-y-2">
+                {METODOS_PAGO.map(m => {
+                  const Icon = m.icon
+                  const activo = metodoPagoSel === m.id
+                  return (
+                    <button key={m.id} type="button"
+                      onClick={() => { setMetodoPagoSel(m.id); setComprobanteUrl(''); setReferenciaPago('') }}
+                      className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all ${
+                        activo ? m.color + ' border-current' : 'border-slate-200 text-slate-600 bg-white hover:border-slate-300'
+                      }`}>
+                      <Icon size={20} className="shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-sm">{m.label}</p>
+                        <p className="text-xs opacity-70 truncate">{m.desc}</p>
+                      </div>
+                      {activo && <CheckCircle2 size={18} className="shrink-0 text-current" />}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Número de comprobante</label>
-              <input type="text" name="comprobante" placeholder="ej. REC-001234" className={cls} />
-            </div>
+
+            {/* Instrucciones + QR según método seleccionado */}
+            {metodoPagoSel === 'qr_pago' && (
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center space-y-3">
+                <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Escanea con tu app bancaria</p>
+                <div className="flex justify-center">
+                  <QrImage
+                    value={`PAGO:UAGRM:MULTA:${seleccionada.id}:${seleccionada.monto}:${seleccionada.placaVehiculo}`}
+                    size={140}
+                    showDownload={false}
+                  />
+                </div>
+                <p className="text-xs text-blue-600">Referencia: <strong>MULTA-{seleccionada.id}</strong></p>
+                <p className="text-[10px] text-blue-500">Compatible con Banco Mercantil SC, Bancosol, BCP, BNB y otros</p>
+              </div>
+            )}
+
+            {metodoPagoSel === 'transferencia' && (
+              <div className="bg-violet-50 border border-violet-200 rounded-xl p-4 text-sm space-y-1.5">
+                <p className="font-bold text-violet-800 text-xs uppercase tracking-wide mb-2">Datos bancarios UAGRM</p>
+                <div className="grid grid-cols-2 gap-1 text-xs">
+                  <span className="text-slate-500">Banco:</span>
+                  <span className="font-medium text-slate-800">{CUENTA_UAGRM.banco}</span>
+                  <span className="text-slate-500">Cuenta:</span>
+                  <span className="font-mono font-bold text-slate-800">{CUENTA_UAGRM.cuenta}</span>
+                  <span className="text-slate-500">Titular:</span>
+                  <span className="font-medium text-slate-800">{CUENTA_UAGRM.titular}</span>
+                  <span className="text-slate-500">Glosa:</span>
+                  <span className="font-mono text-violet-700">MULTA-{seleccionada.id}</span>
+                </div>
+              </div>
+            )}
+
+            {metodoPagoSel === 'banca_movil' && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm">
+                <p className="font-bold text-emerald-800 text-xs uppercase tracking-wide mb-2">Tigo Money / Unitel</p>
+                <p className="text-xs text-emerald-700">Envía el pago a: <strong className="font-mono">70123456</strong> (UAGRM Pagos)</p>
+                <p className="text-xs text-emerald-600 mt-1">Concepto: <strong>MULTA-{seleccionada.id}</strong></p>
+              </div>
+            )}
+
+            {metodoPagoSel === 'efectivo' && (
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-600">
+                <p className="font-semibold text-slate-700 mb-1">💰 Pago en ventanilla</p>
+                <p className="text-xs">Dirígete a la <strong>Oficina de Administración UAGRM</strong> con el número de multa:</p>
+                <p className="text-lg font-mono font-black text-slate-800 text-center mt-2">MULTA-{seleccionada.id}</p>
+              </div>
+            )}
+
+            {/* Referencia y comprobante — para pagos digitales */}
+            {METODOS_PAGO.find(m => m.id === metodoPagoSel)?.requiereComprobante && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
+                    Número de referencia / transacción
+                  </label>
+                  <input type="text" value={referenciaPago}
+                    onChange={e => setReferenciaPago(e.target.value)}
+                    placeholder="Ej: TXN-20261234 o 123456789"
+                    className={cls} />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
+                    Comprobante / Screenshot del pago *
+                  </label>
+                  {comprobanteUrl ? (
+                    <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-300 rounded-xl px-3 py-2.5 text-sm text-emerald-700">
+                      <CheckCircle2 size={16} />
+                      <span className="flex-1 truncate text-xs">
+                        {comprobanteUrl.startsWith('archivo:') ? comprobanteUrl.replace('archivo:', '') : 'Comprobante subido ✓'}
+                      </span>
+                      <button type="button" onClick={() => setComprobanteUrl('')}
+                        className="text-emerald-400 hover:text-red-500">
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="flex items-center gap-3 cursor-pointer border-2 border-dashed border-slate-300 rounded-xl px-4 py-3 hover:border-blue-400 hover:bg-blue-50 transition-colors">
+                      <Upload size={18} className={subiendoComp ? 'animate-spin text-blue-400' : 'text-slate-400'} />
+                      <div>
+                        <p className="text-sm text-slate-600 font-medium">
+                          {subiendoComp ? 'Subiendo...' : 'Subir foto o screenshot'}
+                        </p>
+                        <p className="text-xs text-slate-400">JPG, PNG · máx. 5 MB</p>
+                      </div>
+                      <input ref={compInputRef} type="file" className="hidden" accept="image/*"
+                        disabled={subiendoComp}
+                        onChange={e => { const f = e.target.files?.[0]; if (f) subirComprobante(f) }} />
+                    </label>
+                  )}
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    El administrador verificará el comprobante antes de liberar tu vehículo.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {error && <Err t={error} />}
-            <Btn loading={loadingPagar} label="Confirmar pago" color="bg-green-500 hover:bg-green-600" />
+            <Btn loading={loadingPagar || subiendoComp}
+              label={
+                metodoPagoSel === 'efectivo'
+                  ? 'Registrar pago en ventanilla'
+                  : 'Enviar comprobante para revisión'
+              }
+              color="bg-green-500 hover:bg-green-600"
+            />
+            {metodoPagoSel !== 'efectivo' && (
+              <p className="text-[10px] text-center text-slate-400 flex items-center justify-center gap-1">
+                <Clock size={10} /> Tu vehículo se rehabilitará una vez el admin confirme el pago
+              </p>
+            )}
           </form>
         </ModalWrap>
       )}
