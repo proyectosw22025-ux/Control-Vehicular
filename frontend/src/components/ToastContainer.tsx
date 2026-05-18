@@ -24,8 +24,7 @@ export function ToastContainer({ toasts, onClose }: Props) {
           <div
             key={t.id}
             className={`${bg} border ${border} text-white rounded-xl shadow-2xl p-4
-                        flex gap-3 items-start pointer-events-auto
-                        animate-in slide-in-from-right-4 duration-300`}
+                        flex gap-3 items-start pointer-events-auto animate-slide-right`}
           >
             <Icon size={18} className="shrink-0 mt-0.5 opacity-90" />
             <div className="flex-1 min-w-0">

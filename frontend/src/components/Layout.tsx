@@ -126,9 +126,11 @@ export default function Layout() {
             style={({ isActive }) => isActive ? { borderColor: '#e8951a', background: 'rgba(255,255,255,0.12)' } : {}}
           >
             <span className="relative shrink-0">
-              <Icon size={18} />
+              {/* Campana oscila una vez al montar cuando hay notificaciones sin leer */}
+              <Icon size={18}
+                className={to === '/notificaciones' && conteo > 0 ? 'animate-swing-bell' : ''} />
               {to === '/notificaciones' && conteo > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full">
+                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full animate-badge-entrar">
                   {conteo > 9 ? '9+' : conteo}
                 </span>
               )}

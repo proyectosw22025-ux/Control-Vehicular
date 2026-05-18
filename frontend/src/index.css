@@ -143,6 +143,69 @@
   .animate-text-pop-up-l { animation: textPopUpTopLight 0.4s cubic-bezier(0.25,0.46,0.45,0.94) both; }
 }
 
+/* ── kenburns-top (animista) — zoom cinematográfico para fondos ─ */
+@keyframes kenburnsTop {
+  0%   { transform: scale(1)    translateY(0);   transform-origin: 50% 20%; }
+  100% { transform: scale(1.06) translateY(-8px); transform-origin: 50% 10%; }
+}
+
+/* ── slide-in-right (animista) — entradas desde la derecha ────── */
+@keyframes slideInRight {
+  0%   { transform: translateX(60px); opacity: 0; }
+  100% { transform: translateX(0);    opacity: 1; }
+}
+
+/* ── swing-bell (animista) — campana de notificaciones ─────────── */
+@keyframes swingBell {
+  0%   { transform: rotate(0deg);   transform-origin: 50% 0%; }
+  15%  { transform: rotate(18deg);  }
+  30%  { transform: rotate(-15deg); }
+  45%  { transform: rotate(12deg);  }
+  60%  { transform: rotate(-8deg);  }
+  75%  { transform: rotate(4deg);   }
+  90%  { transform: rotate(-2deg);  }
+  100% { transform: rotate(0deg);   }
+}
+
+/* ── bounce-in-top (animista) — QR éxito del guardia ───────────── */
+@keyframes bounceInTop {
+  0%   { transform: translateY(-40px); opacity: 0; animation-timing-function: ease-in; }
+  40%  { transform: translateY(0);      opacity: 1; animation-timing-function: ease-out; }
+  60%  { transform: translateY(-12px);              animation-timing-function: ease-in; }
+  75%  { transform: translateY(0);                  animation-timing-function: ease-out; }
+  85%  { transform: translateY(-5px);               animation-timing-function: ease-in; }
+  100% { transform: translateY(0);                  animation-timing-function: ease-out; }
+}
+
+/* ── flip-in-x-bottom (animista) — entrada de modales ──────────── */
+@keyframes flipInXBottom {
+  0%   { transform: perspective(400px) rotateX(25deg) translateY(20px); opacity: 0; }
+  100% { transform: perspective(400px) rotateX(0deg)  translateY(0);    opacity: 1; }
+}
+
+/* ── float (animista) — empty states, íconos decorativos ────────── */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-8px); }
+}
+
+/* ── tracking-in-expand (animista) — títulos de módulos ────────── */
+@keyframes trackingInExpand {
+  0%   { letter-spacing: -0.5em; opacity: 0; }
+  40%  { opacity: 0.6; }
+  100% { letter-spacing: normal; opacity: 1; }
+}
+
+@layer utilities {
+  .animate-kenburns      { animation: kenburnsTop     20s ease-out infinite alternate; }
+  .animate-slide-right   { animation: slideInRight    0.3s cubic-bezier(0.25,0.46,0.45,0.94) both; }
+  .animate-swing-bell    { animation: swingBell       0.8s ease-in-out; }
+  .animate-bounce-top    { animation: bounceInTop     0.6s both; }
+  .animate-flip-modal    { animation: flipInXBottom   0.3s ease-out both; }
+  .animate-float         { animation: float           3s ease-in-out infinite; }
+  .animate-tracking-in  { animation: trackingInExpand 0.7s cubic-bezier(0.215,0.61,0.355,1) both; }
+}
+
 /* ── Respeta la preferencia de movimiento reducido ────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

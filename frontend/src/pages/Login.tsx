@@ -70,25 +70,26 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden"
-      style={{
-        // Foto del campus UAGRM con overlay azul navy semitransparente
-        // Si la foto no existe, el degradado navy sirve como fallback
-        backgroundImage: `
-          linear-gradient(160deg, rgba(6,24,64,0.82) 0%, rgba(10,42,110,0.78) 50%, rgba(15,30,74,0.85) 100%),
-          url('${CAMPUS_BG}')
-        `,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center 30%',
-        backgroundRepeat: 'no-repeat',
-        // Fallback si la imagen no carga
-        backgroundColor: '#0a2a6e',
-      }}>
+      style={{ backgroundColor: '#0a2a6e' }}>
+
+      {/* Fondo animado con kenburns-top — div separado para que el zoom no afecte el contenido */}
+      <div className="absolute inset-0 animate-kenburns"
+        style={{
+          backgroundImage: `
+            linear-gradient(160deg, rgba(6,24,64,0.83) 0%, rgba(10,42,110,0.78) 50%, rgba(15,30,74,0.86) 100%),
+            url('${CAMPUS_BG}')
+          `,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center 30%',
+          backgroundRepeat: 'no-repeat',
+        }}
+      />
 
       {/* Línea dorada decorativa superior */}
       <div className="fixed top-0 left-0 right-0 h-1"
         style={{ background: 'linear-gradient(90deg, #e8951a, #f5b81c, #e8951a)' }} />
 
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-sm relative z-10">
 
         {/* Marca institucional UAGRM con animación de entrada */}
         <div className="text-center mb-8 animate-fade-slide-up">

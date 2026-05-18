@@ -190,8 +190,7 @@ export default function GuardiaDashboard() {
 
           {/* ── Procesando QR: feedback inmediato antes de respuesta de red ── */}
           {acceso.procesandoQr && !resultado && (
-            <div style={{ animation: 'resultadoEntrar 0.12s ease-out both' }}
-              className="rounded-2xl p-5 flex items-center gap-4 border-2 bg-blue-50 border-blue-300 text-blue-800 shadow-lg shadow-blue-100">
+            <div className="animate-fade-slide-up rounded-2xl p-5 flex items-center gap-4 border-2 bg-blue-50 border-blue-300 text-blue-800 shadow-lg shadow-blue-100">
               <Loader2 size={44} className="text-blue-500 shrink-0 animate-spin" />
               <div>
                 <p className="font-black text-xl leading-tight">Verificando acceso...</p>
@@ -200,14 +199,16 @@ export default function GuardiaDashboard() {
             </div>
           )}
 
-          {/* ── Resultado grande — microanimación 150ms scale-in ── */}
+          {/* ── Resultado QR: bounce (éxito) o spring (error) ── */}
           {resultado && (
-            <div style={{ animation: 'resultadoEntrar 0.15s cubic-bezier(0.34,1.56,0.64,1) both' }}
+            <div
               className={`rounded-2xl p-5 flex items-center gap-4 border-2 ${
-              resultado.ok
-                ? 'bg-green-50 border-green-400 text-green-800 shadow-lg shadow-green-100'
-                : 'bg-red-50 border-red-400 text-red-800 shadow-lg shadow-red-100'
-            }`}>
+                resultado.ok
+                  ? 'bg-green-50 border-green-400 text-green-800 shadow-lg shadow-green-100 animate-bounce-top'
+                  : 'bg-red-50 border-red-400 text-red-800 shadow-lg shadow-red-100'
+              }`}
+              style={!resultado.ok ? { animation: 'resultadoEntrar 0.15s cubic-bezier(0.34,1.56,0.64,1) both' } : {}}
+            >
               {/* Ícono simple — sin animate-ping para no interferir con el scanner QR */}
               {resultado.ok
                 ? <CheckCircle2 size={44} className="text-green-500 shrink-0" />

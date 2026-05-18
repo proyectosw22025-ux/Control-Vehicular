@@ -120,10 +120,10 @@ const SVGS = {
 export function EmptyState({ tipo = 'generico', titulo, sub, accion }: Props) {
   return (
     <div className="flex flex-col items-center justify-center py-16 px-4 text-center animate-fade-slide-up">
-      <div className="mb-4 opacity-80">
+      <div className="mb-4 opacity-80 animate-float">
         {SVGS[tipo]}
       </div>
-      <p className="font-semibold text-slate-700 text-base">{titulo}</p>
+      <p className="font-semibold text-slate-700 text-base animate-text-pop-up-l">{titulo}</p>
       {sub && (
         <p className="text-slate-400 text-sm mt-1 max-w-xs">{sub}</p>
       )}

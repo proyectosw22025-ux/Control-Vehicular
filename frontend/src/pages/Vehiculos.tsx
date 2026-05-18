@@ -1008,11 +1008,11 @@ function ModalWrapper({ titulo, onClose, children }: {
   titulo: string; onClose: () => void; children: React.ReactNode
 }) {
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto animate-flip-modal">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h2 className="font-semibold text-slate-800">{titulo}</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+          <h2 className="font-semibold text-slate-800 animate-text-pop-up-l">{titulo}</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 hover:rotate-90 transition-transform duration-200"><X size={18} /></button>
         </div>
         <div className="px-6 py-4">{children}</div>
       </div>
