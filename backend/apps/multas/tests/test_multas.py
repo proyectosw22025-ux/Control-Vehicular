@@ -96,6 +96,38 @@ def test_registrar_multa_vehiculo_inexistente(gql_admin, tipo_multa):
 
 
 @pytest.mark.django_db
+def test_pagar_unica_multa_rehabilita_vehiculo(gql_admin, vehiculo_activo, tipo_multa):
+    """Pagar la única multa pendiente debe rehabilitar el vehículo a 'activo'."""
+    graphql(gql_admin, REGISTRAR_MULTA, {
+        "input": {"vehiculoId": vehiculo_activo.id, "tipoId": tipo_multa.id, "descripcion": "Test rehab"}
+    })
+    vehiculo_activo.refresh_from_db()
+    assert vehiculo_activo.estado == "sancionado"
+
+    multa = vehiculo_activo.multas.filter(estado="pendiente").first()
+    graphql(gql_admin, PAGAR_MULTA, {"input": {"multaId": multa.id, "metodoPago": "efectivo"}})
+
+    vehiculo_activo.refresh_from_db()
+    assert vehiculo_activo.estado == "activo"
+
+
+@pytest.mark.django_db
+def test_vehiculo_permanece_sancionado_si_tiene_mas_multas(gql_admin, vehiculo_activo, tipo_multa):
+    """Pagar una multa no rehabilita si aún quedan otras pendientes."""
+    r1 = graphql(gql_admin, REGISTRAR_MULTA, {
+        "input": {"vehiculoId": vehiculo_activo.id, "tipoId": tipo_multa.id, "descripcion": "Multa 1"}
+    })
+    graphql(gql_admin, REGISTRAR_MULTA, {
+        "input": {"vehiculoId": vehiculo_activo.id, "tipoId": tipo_multa.id, "descripcion": "Multa 2"}
+    })
+    multa_id = r1["data"]["registrarMulta"]["id"]
+    graphql(gql_admin, PAGAR_MULTA, {"input": {"multaId": multa_id, "metodoPago": "transferencia"}})
+
+    vehiculo_activo.refresh_from_db()
+    assert vehiculo_activo.estado == "sancionado"
+
+
+@pytest.mark.django_db
 def test_metodo_pago_invalido(gql_admin, vehiculo_activo, tipo_multa):
     r = graphql(gql_admin, REGISTRAR_MULTA, {
         "input": {

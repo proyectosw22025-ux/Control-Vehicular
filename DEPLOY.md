@@ -160,6 +160,14 @@ SECRET_KEY=<misma clave que en Railway>
 
 ---
 
+## URLs de producción
+
+| Servicio | URL |
+|---|---|
+| Frontend | https://control-vehicular-six.vercel.app |
+| Backend GraphQL | https://control-vehicular-production.up.railway.app/graphql/ |
+| Backend Admin | https://control-vehicular-production.up.railway.app/admin/ |
+
 ## Checklist final antes de la demo
 
 - [ ] `docker compose up --build` corre sin errores localmente

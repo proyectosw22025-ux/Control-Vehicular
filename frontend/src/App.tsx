@@ -35,18 +35,18 @@ export default function App() {
             }
           >
             <Route index element={<Dashboard />} />
-            <Route path="usuarios" element={<Usuarios />} />
+            <Route path="usuarios" element={<PrivateRoute roles={['Administrador']}><Usuarios /></PrivateRoute>} />
             <Route path="vehiculos" element={<Vehiculos />} />
-            <Route path="parqueos" element={<Parqueos />} />
-            <Route path="acceso" element={<Acceso />} />
-            <Route path="visitantes" element={<Visitantes />} />
+            <Route path="parqueos" element={<PrivateRoute roles={['Administrador', 'Guardia']}><Parqueos /></PrivateRoute>} />
+            <Route path="acceso" element={<PrivateRoute roles={['Administrador', 'Guardia']}><Acceso /></PrivateRoute>} />
+            <Route path="visitantes" element={<PrivateRoute roles={['Administrador', 'Guardia']}><Visitantes /></PrivateRoute>} />
             <Route path="multas" element={<Multas />} />
             <Route path="notificaciones" element={<Notificaciones />} />
             <Route path="perfil" element={<Perfil />} />
-            <Route path="reportes" element={<Reportes />} />
-            <Route path="guardia" element={<GuardiaDashboard />} />
+            <Route path="reportes" element={<PrivateRoute roles={['Administrador']}><Reportes /></PrivateRoute>} />
+            <Route path="guardia" element={<PrivateRoute roles={['Administrador', 'Guardia']}><GuardiaDashboard /></PrivateRoute>} />
             <Route path="vehiculos/:vehiculoId/historial" element={<HistorialVehiculo />} />
-            <Route path="auditoria" element={<Auditoria />} />
+            <Route path="auditoria" element={<PrivateRoute roles={['Administrador']}><Auditoria /></PrivateRoute>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

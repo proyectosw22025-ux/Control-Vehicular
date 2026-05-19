@@ -1,10 +1,11 @@
-import { useState, FormEvent, useCallback, useRef, useEffect } from 'react'
+import { useState, FormEvent, useCallback, useRef, useEffect, DragEvent, useMemo } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Car, Plus, RefreshCw, FileText, Edit, QrCode, X,
   AlertTriangle, Search, ChevronLeft, ChevronRight,
-  CheckCircle, XCircle, Clock, History,
+  CheckCircle, XCircle, Clock, History, SlidersHorizontal,
+  ChevronDown, ChevronUp,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { QrDinamico } from '../components/QrDinamico'
@@ -97,6 +98,7 @@ const POR_PAGINA = 15
 export default function Vehiculos() {
   const { usuario, esAdmin } = useAuth()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const toast = useToast()
 
   const [tab, setTab]                       = useState<Tab>('lista')
@@ -108,12 +110,51 @@ export default function Vehiculos() {
   const [busqueda, setBusqueda]             = useState('')
   const [busquedaInput, setBusquedaInput]   = useState('')
   const [pagina, setPagina]                 = useState(1)
+  // Filtros avanzados — se leen/persisten en la URL para que sean compartibles
+  const [filtrosAbiertos, setFiltrosAbiertos] = useState(false)
+  const [filtroTipo,       setFiltroTipo]      = useState(() => searchParams.get('tipoId') || '')
+  const [filtroFechaDesde, setFiltroFechaDesde]= useState(() => searchParams.get('fechaDesde') || '')
+  const [filtroFechaHasta, setFiltroFechaHasta]= useState(() => searchParams.get('fechaHasta') || '')
+  const [filtroMultas,     setFiltroMultas]    = useState<'si' | 'no' | ''>(() => (searchParams.get('multas') as 'si' | 'no' | '') || '')
+  const [filtroDocsVenc,   setFiltroDocsVenc]  = useState<'si' | 'no' | ''>(() => (searchParams.get('docsVenc') as 'si' | 'no' | '') || '')
+  const [filtroColor,      setFiltroColor]     = useState(() => searchParams.get('color') || '')
+  const [filtroOrden,      setFiltroOrden]     = useState(() => searchParams.get('orden') || '')
+
+  const filtrosActivos = useMemo(() =>
+    [filtroTipo, filtroFechaDesde, filtroFechaHasta, filtroMultas, filtroDocsVenc, filtroColor, filtroOrden]
+      .filter(Boolean).length,
+  [filtroTipo, filtroFechaDesde, filtroFechaHasta, filtroMultas, filtroDocsVenc, filtroColor, filtroOrden])
+
+  function aplicarFiltros() {
+    const params: Record<string, string> = {}
+    if (filtroTipo)       params.tipoId    = filtroTipo
+    if (filtroFechaDesde) params.fechaDesde= filtroFechaDesde
+    if (filtroFechaHasta) params.fechaHasta= filtroFechaHasta
+    if (filtroMultas)     params.multas    = filtroMultas
+    if (filtroDocsVenc)   params.docsVenc  = filtroDocsVenc
+    if (filtroColor)      params.color     = filtroColor
+    if (filtroOrden)      params.orden     = filtroOrden
+    if (busqueda)         params.q         = busqueda
+    if (filtroEstado)     params.estado    = filtroEstado
+    setSearchParams(params)
+    setPagina(1)
+  }
+
+  function limpiarFiltros() {
+    setFiltroTipo(''); setFiltroFechaDesde(''); setFiltroFechaHasta('')
+    setFiltroMultas(''); setFiltroDocsVenc(''); setFiltroColor(''); setFiltroOrden('')
+    setSearchParams({})
+    setPagina(1)
+  }
+
   const [motivoRechazo, setMotivoRechazo]   = useState('')
   const [fechaDoc, setFechaDoc]             = useState('')
   const [tipoDocSel, setTipoDocSel]         = useState('soat')
   const [archivoDoc, setArchivoDoc]         = useState<File | null>(null)
   const [subiendoArchivo, setSubiendoArchivo] = useState(false)
   const archivoInputRef                     = useRef<HTMLInputElement>(null)
+  // Foto de vehículo pendiente de subir tras crear el vehículo (wizard B2)
+  const fotoVehiculoRef = useRef<File | null>(null)
 
   // Debounce 300ms — useRef evita acumulación de timeouts (memory leak)
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -128,7 +169,21 @@ export default function Vehiculos() {
   const propietarioId = esAdmin ? undefined : usuario.id
 
   const { data, loading, refetch } = useQuery(VEHICULOS_QUERY, {
-    variables: { propietarioId, buscar: busqueda || undefined, estado: filtroEstado || undefined, pagina, porPagina: POR_PAGINA },
+    variables: {
+      propietarioId,
+      buscar:    busqueda     || undefined,
+      estado:    filtroEstado || undefined,
+      pagina,
+      porPagina: POR_PAGINA,
+      // Filtros avanzados C1
+      tipoId:                  filtroTipo       ? parseInt(filtroTipo) : undefined,
+      fechaDesde:              filtroFechaDesde || undefined,
+      fechaHasta:              filtroFechaHasta || undefined,
+      tieneMultas:             filtroMultas     === 'si' ? true : filtroMultas === 'no' ? false : undefined,
+      tieneDocumentosVencidos: filtroDocsVenc   === 'si' ? true : filtroDocsVenc === 'no' ? false : undefined,
+      ordenarPor:              filtroOrden      || undefined,
+      color:                   filtroColor      || undefined,
+    },
     fetchPolicy: 'cache-and-network',
   })
   const { data: pendientesData, refetch: refetchPendientes } = useQuery(VEHICULOS_PENDIENTES_QUERY, {
@@ -150,9 +205,21 @@ export default function Vehiculos() {
   )
 
   const [registrarVehiculo, { loading: loadingRegistrar }] = useMutation(REGISTRAR_VEHICULO_MUTATION, {
-    onCompleted(d) {
+    async onCompleted(d) {
+      const { id: vehiculoId, placa } = d.registrarVehiculo
+      // Subir foto del vehículo si el wizard capturó una
+      const fotoFile = fotoVehiculoRef.current
+      fotoVehiculoRef.current = null
+      if (fotoFile) {
+        try {
+          const form = new FormData()
+          form.append('foto', fotoFile)
+          const token = localStorage.getItem('access_token') ?? ''
+          const base  = (import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/').replace(/\/graphql\/?$/, '')
+          await fetch(`${base}/api/vehiculos/${vehiculoId}/foto/?token=${token}`, { method: 'POST', body: form })
+        } catch { /* la foto no es crítica */ }
+      }
       cerrarModal(); refetch(); refetchPendientes()
-      const placa = d.registrarVehiculo.placa
       esAdmin
         ? toast.exito('Vehículo registrado', `${placa} está activo en el sistema`)
         : toast.info('Vehículo enviado a revisión', `${placa} será aprobado por un administrador`)
@@ -377,7 +444,117 @@ export default function Vehiculos() {
                 Limpiar
               </button>
             )}
+            {/* Botón filtros avanzados con badge */}
+            {esAdmin && (
+              <button
+                onClick={() => setFiltrosAbiertos(v => !v)}
+                className={`flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border transition-colors
+                  ${filtrosActivos > 0
+                    ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
+                    : 'border-slate-300 text-slate-600 hover:border-emerald-300 hover:bg-slate-50'}`}
+              >
+                <SlidersHorizontal size={14} />
+                Filtros
+                {filtrosActivos > 0 && (
+                  <span className="bg-emerald-500 text-white text-[10px] font-bold w-4 h-4 flex items-center justify-center rounded-full">
+                    {filtrosActivos}
+                  </span>
+                )}
+                {filtrosAbiertos ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              </button>
+            )}
           </div>
+
+          {/* Panel de filtros avanzados colapsable */}
+          {esAdmin && filtrosAbiertos && (
+            <div className="mb-4 bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {/* Tipo */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Tipo</label>
+                  <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400">
+                    <option value="">Todos los tipos</option>
+                    {tipos.map((t: any) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+                  </select>
+                </div>
+                {/* Fecha desde */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Registrado desde</label>
+                  <input type="date" value={filtroFechaDesde} onChange={e => setFiltroFechaDesde(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+                </div>
+                {/* Fecha hasta */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Hasta</label>
+                  <input type="date" value={filtroFechaHasta} onChange={e => setFiltroFechaHasta(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+                </div>
+                {/* Color */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Color</label>
+                  <input type="text" value={filtroColor} onChange={e => setFiltroColor(e.target.value)}
+                    placeholder="ej: rojo, azul..." list="colores-filtro-lista"
+                    className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+                  <datalist id="colores-filtro-lista">
+                    {['Blanco','Negro','Gris','Plata','Rojo','Azul','Verde','Amarillo','Naranja','Morado','Café'].map(c => <option key={c} value={c} />)}
+                  </datalist>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-4">
+                {/* Multas activas */}
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-slate-500 text-xs">Multas:</span>
+                  {[['', 'Todos'], ['si', 'Con multas'], ['no', 'Sin multas']].map(([val, label]) => (
+                    <label key={val} className="flex items-center gap-1 cursor-pointer">
+                      <input type="radio" name="filtroMultas" value={val}
+                        checked={filtroMultas === val}
+                        onChange={() => setFiltroMultas(val as 'si' | 'no' | '')}
+                        className="accent-emerald-500" />
+                      <span className="text-xs text-slate-600">{label}</span>
+                    </label>
+                  ))}
+                </div>
+                {/* Docs vencidos */}
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-slate-500 text-xs">Docs:</span>
+                  {[['', 'Todos'], ['si', 'Vencidos'], ['no', 'Al día']].map(([val, label]) => (
+                    <label key={val} className="flex items-center gap-1 cursor-pointer">
+                      <input type="radio" name="filtroDocsVenc" value={val}
+                        checked={filtroDocsVenc === val}
+                        onChange={() => setFiltroDocsVenc(val as 'si' | 'no' | '')}
+                        className="accent-emerald-500" />
+                      <span className="text-xs text-slate-600">{label}</span>
+                    </label>
+                  ))}
+                </div>
+                {/* Ordenar */}
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 text-xs">Orden:</span>
+                  <select value={filtroOrden} onChange={e => setFiltroOrden(e.target.value)}
+                    className="border border-slate-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-400">
+                    <option value="">Más reciente</option>
+                    <option value="placa">Placa A→Z</option>
+                    <option value="-placa">Placa Z→A</option>
+                    <option value="fecha">Más antiguo</option>
+                    <option value="propietario">Propietario</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1 border-t border-slate-200">
+                <button onClick={limpiarFiltros}
+                  className="text-xs text-slate-500 hover:text-slate-700 underline">
+                  Limpiar filtros
+                </button>
+                <button onClick={aplicarFiltros}
+                  className="ml-auto flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-sm px-4 py-1.5 rounded-lg transition-colors font-medium">
+                  Aplicar{filtrosActivos > 0 ? ` (${filtrosActivos})` : ''}
+                </button>
+              </div>
+            </div>
+          )}
 
           {loading ? (
             <div className="space-y-2">
@@ -640,50 +817,18 @@ export default function Vehiculos() {
 
       {/* ── MODALES ── */}
 
-      {/* Modal Registrar */}
+      {/* Modal Registrar — Wizard de 3 pasos */}
       {modal === 'registrar' && (
-        <ModalWrapper titulo="Registrar Vehículo" onClose={cerrarModal}>
-          <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
-            El vehículo quedará en estado <strong>Pendiente</strong> hasta que sea aprobado.
-          </p>
-          <form onSubmit={handleRegistrar} className="space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Campo label="Placa *" name="placa" placeholder="ABC-123" />
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Tipo *</label>
-                <select name="tipoId" required className={inputCls}>
-                  <option value="">Seleccionar...</option>
-                  {tipos.map((t: any) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
-                </select>
-              </div>
-            </div>
-            {esAdmin ? (
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Propietario *</label>
-                <select name="propietarioId" required className={inputCls}>
-                  <option value="">Seleccionar usuario...</option>
-                  {usuarios.map((u: any) => (
-                    <option key={u.id} value={u.id}>{u.nombreCompleto} — {u.ci}</option>
-                  ))}
-                </select>
-              </div>
-            ) : (
-              <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600">
-                Propietario: <strong>{usuario.nombreCompleto}</strong> (tú)
-              </div>
-            )}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Campo label="Marca *" name="marca" placeholder="Toyota" />
-              <Campo label="Modelo *" name="modelo" placeholder="Corolla" />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Campo label="Año *" name="anio" type="number" placeholder="2020" />
-              <Campo label="Color *" name="color" placeholder="Blanco" />
-            </div>
-            {error && <MsgError texto={error} />}
-            <BtnSubmit loading={loadingRegistrar} label="Registrar vehículo" />
-          </form>
-        </ModalWrapper>
+        <WizardRegistrarVehiculo
+          tipos={tipos}
+          usuarios={usuarios}
+          esAdmin={esAdmin}
+          usuario={usuario}
+          onClose={cerrarModal}
+          onFotoFile={f => { fotoVehiculoRef.current = f }}
+          registrarVehiculo={registrarVehiculo}
+          loadingRegistrar={loadingRegistrar}
+        />
       )}
 
       {/* Modal Rechazar */}
@@ -1004,12 +1149,12 @@ function Campo({ label, name, type = 'text', placeholder = '', defaultValue = ''
   )
 }
 
-function ModalWrapper({ titulo, onClose, children }: {
-  titulo: string; onClose: () => void; children: React.ReactNode
+function ModalWrapper({ titulo, onClose, children, ancho = 'max-w-md' }: {
+  titulo: string; onClose: () => void; children: React.ReactNode; ancho?: string
 }) {
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto animate-flip-modal">
+      <div className={`bg-white rounded-2xl shadow-2xl w-full ${ancho} max-h-[90vh] overflow-y-auto animate-flip-modal`}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <h2 className="font-semibold text-slate-800 animate-text-pop-up-l">{titulo}</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 hover:rotate-90 transition-transform duration-200"><X size={18} /></button>
@@ -1037,5 +1182,483 @@ function BtnSubmit({ loading, label }: { loading: boolean; label: string }) {
     >
       {loading ? 'Guardando...' : label}
     </button>
+  )
+}
+
+// ── Wizard de registro de vehículo en 3 pasos ─────────────────────────────
+
+const PLACA_RE = /^[A-Z0-9]{2,4}[-]?\d{3,4}[A-Z]?$/i
+
+const COLORES_PRESET = [
+  { nombre: 'Blanco',      hex: '#FFFFFF' },
+  { nombre: 'Negro',       hex: '#1a1a1a' },
+  { nombre: 'Gris',        hex: '#9CA3AF' },
+  { nombre: 'Plata',       hex: '#C0C0C0' },
+  { nombre: 'Rojo',        hex: '#EF4444' },
+  { nombre: 'Azul',        hex: '#3B82F6' },
+  { nombre: 'Azul oscuro', hex: '#1E3A5F' },
+  { nombre: 'Verde',       hex: '#22C55E' },
+  { nombre: 'Amarillo',    hex: '#EAB308' },
+  { nombre: 'Naranja',     hex: '#F97316' },
+  { nombre: 'Morado',      hex: '#A855F7' },
+  { nombre: 'Café',        hex: '#92400E' },
+  { nombre: 'Beige',       hex: '#F5F0DC' },
+  { nombre: 'Celeste',     hex: '#7DD3FC' },
+  { nombre: 'Vino',        hex: '#7F1D1D' },
+  { nombre: 'Verde oscuro',hex: '#14532D' },
+]
+
+const MARCAS_COMUNES = [
+  'Toyota','Honda','Chevrolet','Hyundai','Kia','Nissan','Mazda','Ford',
+  'Volkswagen','Suzuki','Mitsubishi','BMW','Mercedes-Benz','Audi',
+  'Renault','Peugeot','Fiat','Jeep','Land Rover','Subaru',
+]
+
+function tipoIcon(nombre: string): string {
+  const n = nombre.toLowerCase()
+  if (n.includes('moto'))                       return '🏍'
+  if (n.includes('bicicl'))                     return '🚲'
+  if (n.includes('camioneta') || n.includes('pickup')) return '🚙'
+  if (n.includes('camion'))                     return '🚛'
+  if (n.includes('bus') || n.includes('mini'))  return '🚌'
+  if (n.includes('tricicl'))                    return '🛺'
+  return '🚗'
+}
+
+interface WizardProps {
+  tipos: any[]; usuarios: any[]; esAdmin: boolean; usuario: any
+  onClose: () => void
+  onFotoFile: (f: File | null) => void
+  registrarVehiculo: (opts: any) => void
+  loadingRegistrar: boolean
+}
+
+function WizardRegistrarVehiculo({ tipos, usuarios, esAdmin, usuario, onClose, onFotoFile, registrarVehiculo, loadingRegistrar }: WizardProps) {
+  const [paso, setPaso] = useState(1)
+
+  // Paso 1
+  const [placa, setPlaca]           = useState('')
+  const [tipoId, setTipoId]         = useState(0)
+  const [propietarioId, setPropId]  = useState<number>(esAdmin ? 0 : usuario.id)
+  const [fotoFile, setFotoFile]     = useState<File | null>(null)
+  const [fotoPreview, setFotoPreview] = useState('')
+  const [dragOver, setDragOver]     = useState(false)
+  const fotoInputRef                = useRef<HTMLInputElement>(null)
+
+  // Paso 2
+  const [marca, setMarca]           = useState('')
+  const [modelo, setModelo]         = useState('')
+  const [anio, setAnio]             = useState(new Date().getFullYear())
+  const [colorNombre, setColorNombre] = useState('')
+  const [colorHex, setColorHex]     = useState('')
+  const [cilindrada, setCilindrada] = useState('')
+  const [numPuertas, setNumPuertas] = useState<number | null>(null)
+  const [capacidadCarga, setCapCarga] = useState('')
+
+  // Paso 3
+  const [numeroSoat, setNumeroSoat]   = useState('')
+  const [soatFecha, setSoatFecha]     = useState('')
+  const [numeroMotor, setNumMotor]    = useState('')
+  const [numeroChasis, setNumChasis]  = useState('')
+  const [tooltipMotor, setTooltipMotor] = useState(false)
+  const [tooltipChasis, setTooltipChasis] = useState(false)
+
+  const [errWizard, setErrWizard]   = useState('')
+
+  const placaValida = PLACA_RE.test(placa.trim())
+  const tipoSel     = tipos.find((t: any) => t.id === tipoId)
+  const esMotoCiclo = tipoSel && (tipoSel.nombre.toLowerCase().includes('moto') || tipoSel.nombre.toLowerCase().includes('bicicl'))
+  const esCarga     = tipoSel && (tipoSel.nombre.toLowerCase().includes('camion') || tipoSel.nombre.toLowerCase().includes('pickup'))
+  const paso1OK     = placaValida && tipoId > 0 && (!esAdmin || propietarioId > 0)
+
+  function handleFotoChange(file: File | null) {
+    if (!file) return
+    if (file.size > 3 * 1024 * 1024) { setErrWizard('La foto supera 3 MB'); return }
+    setFotoFile(file); setFotoPreview(URL.createObjectURL(file))
+  }
+
+  function selColor(nombre: string, hex: string) {
+    setColorNombre(nombre); setColorHex(hex)
+  }
+
+  function avanzar() { setErrWizard(''); setPaso(p => p + 1) }
+  function retroceder() { setErrWizard(''); setPaso(p => p - 1) }
+
+  function buildInput() {
+    return {
+      placa: placa.trim().toUpperCase(),
+      tipoId,
+      propietarioId: esAdmin ? propietarioId : usuario.id,
+      marca:  marca.trim()  || 'Sin especificar',
+      modelo: modelo.trim() || 'Sin especificar',
+      anio:   anio || new Date().getFullYear(),
+      color:  colorNombre   || 'Sin especificar',
+      colorHex:        colorHex        || null,
+      cilindrada:      cilindrada      || null,
+      numPuertas:      numPuertas,
+      capacidadCarga:  capacidadCarga  || null,
+      numeroSoat:      numeroSoat      || null,
+      soatFechaVencimiento: (numeroSoat && soatFecha) ? soatFecha : null,
+      numeroMotor:     numeroMotor     || null,
+      numeroChasis:    numeroChasis    || null,
+      fotoVehiculo:    '',
+    }
+  }
+
+  function handleRegistrar() {
+    setErrWizard('')
+    onFotoFile(fotoFile)
+    registrarVehiculo({ variables: { input: buildInput() } })
+  }
+
+  const completitud = paso >= 3 ? 100 : paso === 2 ? 66 : 33
+
+  const PASOS = ['Identificación', 'Datos técnicos', 'Documentación']
+
+  return (
+    <ModalWrapper titulo="Registrar Vehículo" onClose={onClose} ancho="max-w-lg">
+
+      {/* Indicador de pasos */}
+      <div className="flex items-center justify-center gap-0 mb-6">
+        {PASOS.map((label, idx) => {
+          const num = idx + 1
+          const activo = num === paso
+          const completado = num < paso
+          return (
+            <div key={num} className="flex items-center">
+              <div className="flex flex-col items-center gap-1">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all
+                  ${completado ? 'bg-emerald-500 text-white' : activo ? 'bg-emerald-600 text-white ring-4 ring-emerald-100' : 'bg-slate-200 text-slate-400'}`}>
+                  {completado ? '✓' : num}
+                </div>
+                <span className={`text-[10px] font-medium ${activo ? 'text-emerald-600' : 'text-slate-400'}`}>{label}</span>
+              </div>
+              {idx < PASOS.length - 1 && (
+                <div className={`w-10 h-0.5 mx-1 mb-4 transition-colors ${num < paso ? 'bg-emerald-400' : 'bg-slate-200'}`} />
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* ── PASO 1: Identificación básica ── */}
+      {paso === 1 && (
+        <div className="space-y-4">
+          {!esAdmin && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+              El vehículo quedará en <strong>Pendiente</strong> hasta que un administrador lo apruebe.
+            </div>
+          )}
+
+          {/* Placa con validación en tiempo real */}
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Placa *</label>
+            <div className="relative">
+              <input
+                type="text"
+                value={placa}
+                onChange={e => setPlaca(e.target.value.toUpperCase())}
+                placeholder="ABC-1234"
+                maxLength={10}
+                className={`${inputCls} pr-8 font-mono tracking-widest transition-colors ${
+                  placa.length > 2
+                    ? placaValida
+                      ? 'border-emerald-400 bg-emerald-50 focus:ring-emerald-400'
+                      : 'border-red-400 bg-red-50 focus:ring-red-400'
+                    : ''
+                }`}
+              />
+              {placa.length > 2 && (
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm">
+                  {placaValida ? '✓' : '✗'}
+                </span>
+              )}
+            </div>
+            {placa.length > 2 && !placaValida && (
+              <p className="text-xs text-red-600 mt-1">Formato: 2-4 letras + 3-4 números (ej: ABC-1234, SCZ3456)</p>
+            )}
+          </div>
+
+          {/* Propietario (solo admin) */}
+          {esAdmin ? (
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Propietario *</label>
+              <select
+                value={propietarioId || ''}
+                onChange={e => setPropId(parseInt(e.target.value))}
+                className={inputCls}
+                required
+              >
+                <option value="">Seleccionar usuario...</option>
+                {usuarios.map((u: any) => (
+                  <option key={u.id} value={u.id}>{u.nombreCompleto} — {u.ci}</option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600">
+              Propietario: <strong>{usuario.nombreCompleto}</strong>
+            </div>
+          )}
+
+          {/* Tipo con íconos */}
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-2">Tipo de vehículo *</label>
+            <div className="grid grid-cols-3 gap-2">
+              {tipos.map((t: any) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => { setTipoId(t.id); setNumPuertas(null) }}
+                  className={`flex flex-col items-center gap-1 p-2.5 rounded-xl border-2 text-xs font-medium transition-all
+                    ${tipoId === t.id
+                      ? 'border-emerald-500 bg-emerald-50 text-emerald-700 scale-105'
+                      : 'border-slate-200 hover:border-emerald-300 text-slate-600'}`}
+                >
+                  <span className="text-xl">{tipoIcon(t.nombre)}</span>
+                  <span className="text-center leading-tight">{t.nombre}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Foto del vehículo — drag & drop */}
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Foto del vehículo <span className="font-normal text-slate-400">(recomendado)</span></label>
+            {fotoPreview ? (
+              <div className="relative rounded-xl overflow-hidden border border-emerald-300">
+                <img src={fotoPreview} alt="Vista previa" className="w-full h-32 object-cover" />
+                <button
+                  type="button"
+                  onClick={() => { setFotoFile(null); setFotoPreview(''); if (fotoInputRef.current) fotoInputRef.current.value = '' }}
+                  className="absolute top-2 right-2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1 transition-colors"
+                >
+                  <X size={12} />
+                </button>
+                <span className="absolute bottom-2 left-2 bg-black/50 text-white text-xs px-2 py-0.5 rounded-full">
+                  {fotoFile?.name}
+                </span>
+              </div>
+            ) : (
+              <div
+                onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={(e: DragEvent<HTMLDivElement>) => {
+                  e.preventDefault(); setDragOver(false)
+                  const f = e.dataTransfer.files[0]
+                  if (f) handleFotoChange(f)
+                }}
+                onClick={() => fotoInputRef.current?.click()}
+                className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all
+                  ${dragOver ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 hover:border-emerald-300 hover:bg-slate-50'}`}
+              >
+                <span className="text-3xl block mb-1">🚗</span>
+                <p className="text-sm text-slate-500">Arrastra o toca para subir</p>
+                <p className="text-xs text-slate-400 mt-0.5">JPG, PNG, WEBP · máx. 3 MB</p>
+              </div>
+            )}
+            <input ref={fotoInputRef} type="file" className="hidden" accept="image/*"
+              onChange={e => handleFotoChange(e.target.files?.[0] ?? null)} />
+          </div>
+        </div>
+      )}
+
+      {/* ── PASO 2: Datos técnicos (opcional) ── */}
+      {paso === 2 && (
+        <div className="space-y-4">
+          <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+            Estos datos son <strong>opcionales</strong> pero mejoran la identificación del vehículo.
+          </p>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Marca</label>
+              <input type="text" list="marcas-lista" value={marca} onChange={e => setMarca(e.target.value)}
+                placeholder="Toyota" className={inputCls} />
+              <datalist id="marcas-lista">
+                {MARCAS_COMUNES.map(m => <option key={m} value={m} />)}
+              </datalist>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Modelo</label>
+              <input type="text" value={modelo} onChange={e => setModelo(e.target.value)}
+                placeholder="Corolla" className={inputCls} />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Año</label>
+            <input type="number" value={anio} min={1900} max={2027}
+              onChange={e => setAnio(parseInt(e.target.value))}
+              className={`${inputCls} ${anio < 1900 || anio > 2027 ? 'border-red-400' : ''}`} />
+            {(anio < 1900 || anio > 2027) && <p className="text-xs text-red-600 mt-1">Año entre 1900 y 2027</p>}
+          </div>
+
+          {/* Selector de color visual */}
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-2">Color</label>
+            <div className="grid grid-cols-8 gap-1.5 mb-2">
+              {COLORES_PRESET.map(c => (
+                <button key={c.nombre} type="button" title={c.nombre}
+                  onClick={() => selColor(c.nombre, c.hex)}
+                  style={{ backgroundColor: c.hex }}
+                  className={`w-7 h-7 rounded-full border transition-all
+                    ${colorHex === c.hex
+                      ? 'ring-2 ring-offset-1 ring-emerald-500 scale-125 border-emerald-400'
+                      : 'border-slate-300 hover:scale-110'}`}
+                />
+              ))}
+            </div>
+            {colorNombre && (
+              <div className="flex items-center gap-2 text-xs text-slate-600">
+                <span className="w-4 h-4 rounded-full border border-slate-300 shrink-0" style={{ backgroundColor: colorHex }} />
+                {colorNombre} seleccionado
+              </div>
+            )}
+          </div>
+
+          {/* Cilindrada y puertas (condicional) */}
+          {!esMotoCiclo && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Cilindrada</label>
+                <input type="text" value={cilindrada} onChange={e => setCilindrada(e.target.value)}
+                  placeholder="1.6L" className={inputCls} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Puertas</label>
+                <div className="flex gap-1.5">
+                  {[2, 3, 4, 5].map(n => (
+                    <button key={n} type="button"
+                      onClick={() => setNumPuertas(numPuertas === n ? null : n)}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-all
+                        ${numPuertas === n ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-300 text-slate-600 hover:border-emerald-300'}`}>
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          {esCarga && (
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Capacidad de carga</label>
+              <input type="text" value={capacidadCarga} onChange={e => setCapCarga(e.target.value)}
+                placeholder="1000 kg" className={inputCls} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── PASO 3: Documentación (opcional) ── */}
+      {paso === 3 && (
+        <div className="space-y-4">
+          <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+            Ingresa el SOAT para crear el documento automáticamente.
+          </p>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Número SOAT</label>
+              <input type="text" value={numeroSoat} onChange={e => setNumeroSoat(e.target.value)}
+                placeholder="SOA-123456" className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Vencimiento SOAT{numeroSoat ? ' *' : ''}
+              </label>
+              <input type="date" value={soatFecha} onChange={e => setSoatFecha(e.target.value)}
+                className={`${inputCls} ${numeroSoat && !soatFecha ? 'border-red-400' : ''}`} />
+            </div>
+          </div>
+          {numeroSoat && !soatFecha && (
+            <p className="text-xs text-red-600 -mt-2">La fecha de vencimiento del SOAT es requerida</p>
+          )}
+
+          <div className="border-t border-slate-100 pt-3 space-y-3">
+            <div className="relative">
+              <label className="block text-xs font-medium text-slate-600 mb-1 flex items-center gap-1">
+                Número de motor
+                <button type="button" onMouseEnter={() => setTooltipMotor(true)} onMouseLeave={() => setTooltipMotor(false)}
+                  className="text-slate-400 hover:text-slate-600">
+                  <span className="text-xs border border-slate-300 rounded-full w-4 h-4 inline-flex items-center justify-center">?</span>
+                </button>
+              </label>
+              {tooltipMotor && (
+                <div className="absolute bottom-full left-0 mb-1 z-10 bg-slate-800 text-white text-xs px-3 py-2 rounded-lg max-w-xs shadow-lg">
+                  Encuéntralo en la tarjeta de propiedad del vehículo o en el motor físicamente.
+                </div>
+              )}
+              <input type="text" value={numeroMotor} onChange={e => setNumMotor(e.target.value)}
+                placeholder="MTR-XYZ789" className={inputCls} />
+            </div>
+
+            <div className="relative">
+              <label className="block text-xs font-medium text-slate-600 mb-1 flex items-center gap-1">
+                Número de chasis (VIN)
+                <button type="button" onMouseEnter={() => setTooltipChasis(true)} onMouseLeave={() => setTooltipChasis(false)}
+                  className="text-slate-400 hover:text-slate-600">
+                  <span className="text-xs border border-slate-300 rounded-full w-4 h-4 inline-flex items-center justify-center">?</span>
+                </button>
+              </label>
+              {tooltipChasis && (
+                <div className="absolute bottom-full left-0 mb-1 z-10 bg-slate-800 text-white text-xs px-3 py-2 rounded-lg max-w-xs shadow-lg">
+                  17 caracteres alfanuméricos. Está en el parabrisas (esquina inferior izquierda) o en la tarjeta de propiedad.
+                </div>
+              )}
+              <input type="text" value={numeroChasis} onChange={e => setNumChasis(e.target.value.toUpperCase())}
+                placeholder="1HGCM82633A123456" className={`${inputCls} font-mono`} maxLength={17} />
+            </div>
+          </div>
+
+          {/* Indicador de completitud */}
+          <div className={`rounded-xl px-4 py-3 text-sm font-medium flex items-center gap-2
+            ${completitud === 100 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+            : completitud >= 66   ? 'bg-blue-50 text-blue-700 border border-blue-200'
+            : 'bg-slate-50 text-slate-600 border border-slate-200'}`}>
+            <span>{completitud === 100 ? '🏅' : completitud >= 66 ? '📋' : '📄'}</span>
+            <span>
+              {completitud === 100 ? 'Perfil completo · 100%' : completitud >= 66 ? 'Perfil parcial · 66%' : 'Perfil básico · 33%'}
+            </span>
+            <div className="ml-auto flex-1 max-w-[80px] bg-white/60 rounded-full h-1.5">
+              <div className="h-1.5 rounded-full bg-current transition-all" style={{ width: `${completitud}%` }} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {errWizard && <MsgError texto={errWizard} />}
+
+      {/* Navegación */}
+      <div className="flex items-center gap-2 mt-6 pt-4 border-t border-slate-100">
+        {paso > 1 && (
+          <button type="button" onClick={retroceder}
+            className="flex items-center gap-1 px-4 py-2 text-sm text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
+            <ChevronLeft size={14} /> Anterior
+          </button>
+        )}
+        <div className="flex-1" />
+        {paso < 3 && paso > 1 && (
+          <button type="button" onClick={handleRegistrar} disabled={loadingRegistrar}
+            className="text-sm text-slate-500 hover:text-slate-700 px-3 py-2 underline transition-colors">
+            Omitir y terminar
+          </button>
+        )}
+        {paso < 3 ? (
+          <button type="button" onClick={avanzar}
+            disabled={paso === 1 && !paso1OK}
+            className="flex items-center gap-1 px-4 py-2 text-sm bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors disabled:opacity-40">
+            Siguiente <ChevronRight size={14} />
+          </button>
+        ) : (
+          <button type="button" onClick={handleRegistrar} disabled={loadingRegistrar || (!!numeroSoat && !soatFecha)}
+            className="flex items-center gap-2 px-5 py-2 text-sm bg-emerald-500 hover:bg-emerald-600 text-white font-medium rounded-lg transition-colors disabled:opacity-40">
+            {loadingRegistrar
+              ? <><div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Registrando...</>
+              : '✓ Registrar vehículo'}
+          </button>
+        )}
+      </div>
+    </ModalWrapper>
   )
 }

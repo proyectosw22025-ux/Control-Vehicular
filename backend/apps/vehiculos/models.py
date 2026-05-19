@@ -78,6 +78,16 @@ class Vehiculo(models.Model):
     color = models.CharField(max_length=40)
     estado = models.CharField(max_length=15, choices=ESTADOS, default="pendiente")
     foto = models.ImageField(upload_to="vehiculos/fotos/", blank=True, null=True)
+    # ── Campos extendidos (todos opcionales, backward-compatible) ──────────
+    numero_motor    = models.CharField(max_length=30, blank=True)
+    numero_chasis   = models.CharField(max_length=30, blank=True)
+    num_puertas     = models.PositiveSmallIntegerField(null=True, blank=True)
+    cilindrada      = models.CharField(max_length=10, blank=True)
+    color_hex       = models.CharField(max_length=7, blank=True)
+    foto_vehiculo   = models.URLField(blank=True)
+    numero_soat     = models.CharField(max_length=30, blank=True)
+    capacidad_carga = models.CharField(max_length=20, blank=True)
+    # ───────────────────────────────────────────────────────────────────────
     codigo_qr = models.CharField(
         max_length=64, unique=True, blank=True,
         help_text="Hash SHA-256 estático (legacy). Se mantiene para compatibilidad con QrSesion.",
@@ -92,7 +102,11 @@ class Vehiculo(models.Model):
         db_table = "vehiculos"
         verbose_name = "Vehículo"
         verbose_name_plural = "Vehículos"
-        indexes = [models.Index(fields=["codigo_qr"])]
+        indexes = [
+            models.Index(fields=["codigo_qr"]),
+            models.Index(fields=["estado"],     name="vehiculos_estado_idx"),
+            models.Index(fields=["created_at"], name="vehiculos_created_at_idx"),
+        ]
 
     def save(self, *args, **kwargs):
         if not self.codigo_qr:
@@ -133,6 +147,34 @@ class DocumentoVehiculo(models.Model):
         return f"{self.vehiculo.placa} - {self.get_tipo_doc_display()}"
 
 
+class VehiculoEstadoHistorial(models.Model):
+    """Rastrea cada cambio de estado de un Vehiculo con motivo y responsable."""
+    vehiculo        = models.ForeignKey(Vehiculo, on_delete=models.CASCADE, related_name="historial_estados")
+    estado_anterior = models.CharField(max_length=15, blank=True)
+    estado_nuevo    = models.CharField(max_length=15)
+    motivo          = models.TextField(blank=True)
+    usuario         = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="cambios_estado_vehiculo",
+    )
+    fecha = models.DateTimeField(default=None)  # set in pre_save signal; editable allows migration override
+
+    class Meta:
+        db_table = "vehiculo_estado_historial"
+        ordering = ["-fecha"]
+        verbose_name = "Historial de estado"
+        verbose_name_plural = "Historial de estados"
+
+    def __str__(self):
+        return f"{self.vehiculo.placa}: {self.estado_anterior or '∅'} → {self.estado_nuevo}"
+
+    def save(self, *args, **kwargs):
+        if self.fecha is None:
+            from django.utils import timezone
+            self.fecha = timezone.now()
+        super().save(*args, **kwargs)
+
+
 class HistorialPropietario(models.Model):
     vehiculo = models.ForeignKey(
         Vehiculo, on_delete=models.CASCADE, related_name="historial_propietarios"
@@ -153,3 +195,39 @@ class HistorialPropietario(models.Model):
 
     def __str__(self):
         return f"{self.vehiculo.placa} → {self.usuario} desde {self.fecha_inicio}"
+
+
+# ── Señales: trazabilidad de cambios de estado ────────────────────────────
+from django.db.models.signals import pre_save, post_save  # noqa: E402
+from django.dispatch import receiver  # noqa: E402
+
+
+@receiver(pre_save, sender=Vehiculo)
+def _capturar_estado_previo(sender, instance, **kwargs):
+    """Captura el estado actual antes del save para compararlo después."""
+    if instance.pk:
+        instance._estado_anterior = (
+            Vehiculo.objects.values_list("estado", flat=True)
+            .filter(pk=instance.pk)
+            .first()
+        )
+    else:
+        instance._estado_anterior = None
+
+
+@receiver(post_save, sender=Vehiculo)
+def _registrar_cambio_estado(sender, instance, created, **kwargs):
+    """Crea un VehiculoEstadoHistorial cuando el estado del Vehiculo cambia."""
+    update_fields = kwargs.get("update_fields")
+    # Saltar si se guardaron otros campos pero no 'estado'
+    if not created and update_fields is not None and "estado" not in update_fields:
+        return
+    estado_anterior = getattr(instance, "_estado_anterior", None) or ""
+    if created or estado_anterior != instance.estado:
+        VehiculoEstadoHistorial.objects.create(
+            vehiculo=instance,
+            estado_anterior=estado_anterior,
+            estado_nuevo=instance.estado,
+            motivo=getattr(instance, "_cambio_motivo", "Vehículo registrado" if created else ""),
+            usuario=getattr(instance, "_cambio_usuario", None),
+        )

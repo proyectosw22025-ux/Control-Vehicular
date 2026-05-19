@@ -17,7 +17,7 @@ from typing import List, Optional
 from datetime import datetime, date
 from django.db import transaction
 
-from .models import TipoVehiculo, Vehiculo, DocumentoVehiculo, HistorialPropietario
+from .models import TipoVehiculo, Vehiculo, DocumentoVehiculo, HistorialPropietario, VehiculoEstadoHistorial
 from apps.usuarios.utils import tiene_rol
 
 ESTADOS_VALIDOS = ["pendiente", "activo", "inactivo", "sancionado"]
@@ -107,6 +107,15 @@ class VehiculoType:
     estado: str
     codigo_qr: str
     created_at: datetime
+    # Campos extendidos
+    numero_motor: str
+    numero_chasis: str
+    num_puertas: Optional[int]
+    cilindrada: str
+    color_hex: str
+    foto_vehiculo: str
+    numero_soat: str
+    capacidad_carga: str
 
     @strawberry.field
     def tipo(self) -> TipoVehiculoType:
@@ -142,6 +151,24 @@ class VehiculoType:
             if (doc.fecha_vencimiento - hoy).days <= 30:
                 return "advertencia"
         return "al_dia"
+
+
+@strawberry.type
+class VehiculoEstadoHistorialType:
+    id: int
+    estado_anterior: str
+    estado_nuevo: str
+    motivo: str
+    fecha: datetime
+
+    @strawberry.field
+    def usuario_nombre(self) -> Optional[str]:
+        if self.usuario_id:
+            try:
+                return f"{self.usuario.nombre} {self.usuario.apellido}"
+            except Exception:
+                return None
+        return None
 
 
 @strawberry.type
@@ -181,6 +208,16 @@ class CrearVehiculoInput:
     modelo: str
     anio: int
     color: str
+    # Campos extendidos — todos opcionales para mantener backward compatibility
+    numero_motor: Optional[str] = ""
+    numero_chasis: Optional[str] = ""
+    num_puertas: Optional[int] = None
+    cilindrada: Optional[str] = ""
+    color_hex: Optional[str] = ""
+    foto_vehiculo: Optional[str] = ""
+    numero_soat: Optional[str] = ""
+    soat_fecha_vencimiento: Optional[str] = None  # ISO date; si se provee junto con numero_soat crea el documento
+    capacidad_carga: Optional[str] = ""
 
 
 @strawberry.input
@@ -198,6 +235,27 @@ class AgregarDocumentoInput:
     tipo_doc: str
     numero: str
     fecha_vencimiento: str
+
+
+# ── Validaciones de campos extendidos ─────────────────────────────────────
+
+import re as _re
+
+_HEX_RE = _re.compile(r'^#[0-9A-Fa-f]{6}$')
+_PUERTAS_VALIDAS = {2, 3, 4, 5}
+
+
+def _validar_campos_extendidos(input: "CrearVehiculoInput") -> None:
+    if input.color_hex and not _HEX_RE.match(input.color_hex):
+        raise Exception("color_hex debe tener formato #RRGGBB (ej: #FF5733)")
+    if input.num_puertas is not None and input.num_puertas not in _PUERTAS_VALIDAS:
+        raise Exception(f"num_puertas debe ser 2, 3, 4 o 5 (recibido: {input.num_puertas})")
+    if input.numero_chasis:
+        chasis = input.numero_chasis.strip()
+        if not chasis.isalnum() or not (6 <= len(chasis) <= 17):
+            raise Exception("numero_chasis debe ser alfanumérico y tener entre 6 y 17 caracteres")
+    if input.numero_soat and not input.soat_fecha_vencimiento:
+        raise Exception("Si se provee numero_soat, también se requiere soat_fecha_vencimiento")
 
 
 # ── Notificaciones privadas (SRP) ──────────────────────────────────────────
@@ -310,9 +368,21 @@ class VehiculosQuery:
         estado: Optional[str] = None,
         pagina: int = 1,
         por_pagina: int = 20,
+        # ── Filtros avanzados C1 ──────────────────────────────────────────
+        tipo_id: Optional[int] = None,
+        fecha_desde: Optional[str] = None,
+        fecha_hasta: Optional[str] = None,
+        tiene_multas: Optional[bool] = None,
+        tiene_documentos_vencidos: Optional[bool] = None,
+        ordenar_por: Optional[str] = None,
+        color: Optional[str] = None,
     ) -> VehiculosPage:
-        from django.db.models import Q
+        from django.db.models import Q, Exists, OuterRef
+        from datetime import date as dt_date
+
         qs = Vehiculo.objects.select_related("tipo", "propietario")
+
+        # ── Filtros base ──────────────────────────────────────────────────
         if propietario_id:
             qs = qs.filter(propietario_id=propietario_id)
         if estado:
@@ -326,6 +396,48 @@ class VehiculosQuery:
                 | Q(propietario__nombre__icontains=b)
                 | Q(propietario__apellido__icontains=b)
             )
+
+        # ── Filtros avanzados C1 ──────────────────────────────────────────
+        if tipo_id:
+            qs = qs.filter(tipo_id=tipo_id)
+
+        if color:
+            qs = qs.filter(color__icontains=color.strip())
+
+        if fecha_desde:
+            try:
+                qs = qs.filter(created_at__date__gte=dt_date.fromisoformat(fecha_desde))
+            except ValueError:
+                pass
+
+        if fecha_hasta:
+            try:
+                qs = qs.filter(created_at__date__lte=dt_date.fromisoformat(fecha_hasta))
+            except ValueError:
+                pass
+
+        if tiene_multas is not None:
+            from apps.multas.models import Multa
+            multas_activas = Multa.objects.filter(
+                vehiculo_id=OuterRef("pk"), estado__in=["pendiente", "en_revision"]
+            )
+            if tiene_multas:
+                qs = qs.filter(Exists(multas_activas))
+            else:
+                qs = qs.exclude(Exists(multas_activas))
+
+        if tiene_documentos_vencidos is not None:
+            from django.utils import timezone as tz
+            docs_vencidos = DocumentoVehiculo.objects.filter(
+                vehiculo_id=OuterRef("pk"),
+                fecha_vencimiento__lt=tz.now().date(),
+            )
+            if tiene_documentos_vencidos:
+                qs = qs.filter(Exists(docs_vencidos))
+            else:
+                qs = qs.exclude(Exists(docs_vencidos))
+
+        # ── Control de visibilidad por rol ────────────────────────────────
         usuario = info.context.request.user
         if not tiene_rol(usuario, "Administrador"):
             if usuario.is_authenticated:
@@ -333,7 +445,17 @@ class VehiculosQuery:
             else:
                 qs = qs.exclude(estado="pendiente")
 
-        qs = qs.order_by("-created_at")
+        # ── Ordenamiento ──────────────────────────────────────────────────
+        _ORDEN_MAP: dict[str, str | tuple] = {
+            "placa":       "placa",
+            "-placa":      "-placa",
+            "fecha":       "created_at",
+            "-fecha":      "-created_at",
+            "propietario": ("propietario__nombre", "propietario__apellido"),
+        }
+        orden = _ORDEN_MAP.get(ordenar_por or "", "-created_at")
+        qs = qs.order_by(*orden) if isinstance(orden, tuple) else qs.order_by(orden)
+
         total = qs.count()
         pagina = max(1, pagina)
         offset = (pagina - 1) * por_pagina
@@ -361,6 +483,24 @@ class VehiculosQuery:
     @strawberry.field
     def tipos_vehiculo(self, info: Info) -> List[TipoVehiculoType]:
         return list(TipoVehiculo.objects.all())
+
+    @strawberry.field
+    def historial_estados_vehiculo(self, info: Info, vehiculo_id: int) -> List[VehiculoEstadoHistorialType]:
+        """Línea de tiempo de cambios de estado para D3. Accesible por propietario o admin."""
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        v = Vehiculo.objects.filter(pk=vehiculo_id).first()
+        if not v:
+            raise Exception("Vehículo no encontrado")
+        if not tiene_rol(user, "Administrador") and v.propietario_id != user.pk:
+            raise Exception("Sin permisos para ver el historial de este vehículo")
+        return list(
+            VehiculoEstadoHistorial.objects
+            .filter(vehiculo_id=vehiculo_id)
+            .select_related("usuario")
+            .order_by("-fecha")
+        )
 
     @strawberry.field
     def historial_propietarios(self, info: Info, vehiculo_id: int) -> List[HistorialPropietarioType]:
@@ -414,6 +554,8 @@ class VehiculosMutation:
         if not propietario:
             raise Exception("Propietario no encontrado")
 
+        _validar_campos_extendidos(input)
+
         estado_inicial = "activo" if tiene_rol(user, "Administrador") else "pendiente"
         with transaction.atomic():
             vehiculo = Vehiculo.objects.create(
@@ -422,12 +564,32 @@ class VehiculosMutation:
                 marca=input.marca, modelo=input.modelo,
                 anio=input.anio, color=input.color,
                 estado=estado_inicial,
+                numero_motor=input.numero_motor or "",
+                numero_chasis=(input.numero_chasis or "").strip().upper(),
+                num_puertas=input.num_puertas,
+                cilindrada=input.cilindrada or "",
+                color_hex=input.color_hex or "",
+                foto_vehiculo=input.foto_vehiculo or "",
+                numero_soat=input.numero_soat or "",
+                capacidad_carga=input.capacidad_carga or "",
             )
             HistorialPropietario.objects.create(
                 vehiculo=vehiculo,
                 usuario=propietario,
                 fecha_inicio=vehiculo.created_at.date(),
             )
+            # Auto-crear documento SOAT si se proveyó número y fecha
+            if input.numero_soat and input.soat_fecha_vencimiento:
+                try:
+                    soat_fecha = date.fromisoformat(input.soat_fecha_vencimiento.strip())
+                except ValueError:
+                    raise Exception("soat_fecha_vencimiento tiene formato inválido. Usa YYYY-MM-DD")
+                DocumentoVehiculo.objects.create(
+                    vehiculo=vehiculo,
+                    tipo_doc="soat",
+                    numero=input.numero_soat,
+                    fecha_vencimiento=soat_fecha,
+                )
 
         # Notificar solo si está pendiente (propietario registró para sí mismo)
         if estado_inicial == "pendiente":

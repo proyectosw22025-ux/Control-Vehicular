@@ -7,6 +7,13 @@ export const VEHICULOS_QUERY = gql`
     $estado: String
     $pagina: Int
     $porPagina: Int
+    $tipoId: Int
+    $fechaDesde: String
+    $fechaHasta: String
+    $tieneMultas: Boolean
+    $tieneDocumentosVencidos: Boolean
+    $ordenarPor: String
+    $color: String
   ) {
     vehiculos(
       propietarioId: $propietarioId
@@ -14,6 +21,13 @@ export const VEHICULOS_QUERY = gql`
       estado: $estado
       pagina: $pagina
       porPagina: $porPagina
+      tipoId: $tipoId
+      fechaDesde: $fechaDesde
+      fechaHasta: $fechaHasta
+      tieneMultas: $tieneMultas
+      tieneDocumentosVencidos: $tieneDocumentosVencidos
+      ordenarPor: $ordenarPor
+      color: $color
     ) {
       items {
         id
@@ -71,6 +85,19 @@ export const VEHICULO_QUERY = gql`
         id tipoDoc numero fechaVencimiento
         estado diasParaVencer archivoUrl
       }
+    }
+  }
+`
+
+export const HISTORIAL_ESTADOS_QUERY = gql`
+  query HistorialEstadosVehiculo($vehiculoId: Int!) {
+    historialEstadosVehiculo(vehiculoId: $vehiculoId) {
+      id
+      estadoAnterior
+      estadoNuevo
+      motivo
+      fecha
+      usuarioNombre
     }
   }
 `

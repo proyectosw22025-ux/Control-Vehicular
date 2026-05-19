@@ -4,8 +4,10 @@ export const REGISTRAR_VEHICULO_MUTATION = gql`
   mutation RegistrarVehiculo($input: CrearVehiculoInput!) {
     registrarVehiculo(input: $input) {
       id placa marca modelo anio color estado codigoQr
+      numeroMotor numeroChasis numPuertas cilindrada colorHex fotoVehiculo numeroSoat capacidadCarga
       tipo { id nombre }
       propietarioNombre
+      documentos { id tipoDoc numero fechaVencimiento }
     }
   }
 `

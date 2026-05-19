@@ -4,14 +4,14 @@ import { useQuery } from '@apollo/client'
 import { useState as useLocalState } from 'react'
 import {
   ArrowLeft, Car, DoorOpen, AlertTriangle, ParkingSquare, Clock, RefreshCw,
-  Upload, FileCheck, ExternalLink,
+  Upload, FileCheck, ExternalLink, GitBranch, ChevronDown, ChevronUp,
 } from 'lucide-react'
-import { VEHICULO_QUERY } from '../graphql/queries/vehiculos'
+import { VEHICULO_QUERY, HISTORIAL_ESTADOS_QUERY } from '../graphql/queries/vehiculos'
 import { REGISTROS_ACCESO_QUERY } from '../graphql/queries/acceso'
 import { MULTAS_VEHICULO_QUERY } from '../graphql/queries/multas'
 import { HISTORIAL_SESIONES_QUERY } from '../graphql/queries/parqueos'
 
-type Tab = 'accesos' | 'multas' | 'sesiones' | 'documentos'
+type Tab = 'accesos' | 'multas' | 'sesiones' | 'documentos' | 'timeline'
 
 const ESTADO_BADGE: Record<string, string> = {
   pendiente:  'bg-amber-100 text-amber-700',
@@ -104,11 +104,17 @@ export default function HistorialVehiculo() {
     skip: !id,
     fetchPolicy: 'cache-and-network',
   })
+  const { data: tlData, loading: tlLoad } = useQuery(HISTORIAL_ESTADOS_QUERY, {
+    variables: { vehiculoId: id },
+    skip: !id,
+    fetchPolicy: 'cache-and-network',
+  })
 
-  const vehiculo = vData?.vehiculo
-  const accesos  = acData?.registrosAcceso ?? []
-  const multas   = muData?.multasVehiculo ?? []
-  const sesiones = seData?.historialSesiones ?? []
+  const vehiculo         = vData?.vehiculo
+  const accesos          = acData?.registrosAcceso ?? []
+  const multas           = muData?.multasVehiculo ?? []
+  const sesiones         = seData?.historialSesiones ?? []
+  const historialEstados = tlData?.historialEstadosVehiculo ?? []
 
   // Resumen estadístico — disponible en cuanto lleguen los datos
   const multasPendientesTotal = multas
@@ -229,6 +235,9 @@ export default function HistorialVehiculo() {
           {vehiculo?.documentos?.some((d: any) => d.estado === 'vencido') && (
             <span className="ml-1 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">!</span>
           )}
+        </TabBtn>
+        <TabBtn active={tab === 'timeline'} onClick={() => setTab('timeline')}>
+          <GitBranch size={14} /> Línea de tiempo ({tlLoad ? '…' : historialEstados.length})
         </TabBtn>
       </div>
 
@@ -431,6 +440,97 @@ export default function HistorialVehiculo() {
           )}
         </div>
       )}
+      {/* ── Línea de tiempo de estados ── */}
+      {tab === 'timeline' && (
+        tlLoad ? <SkeletonRows /> :
+        historialEstados.length === 0 ? (
+          <EmptyState icon={GitBranch} text="Sin historial de estados registrado" />
+        ) : (
+          <div className="relative">
+            {/* Línea vertical */}
+            <div className="absolute left-5 top-0 bottom-0 w-0.5 bg-slate-200" />
+            <div className="space-y-0">
+              {historialEstados.map((h: any, idx: number) => (
+                <TimelineEvento key={h.id} evento={h} ultimo={idx === historialEstados.length - 1} />
+              ))}
+            </div>
+          </div>
+        )
+      )}
+    </div>
+  )
+}
+
+// ── Línea de tiempo: un evento ────────────────────────────────────────────
+const ESTADO_COLOR: Record<string, { bg: string; ring: string; dot: string }> = {
+  activo:     { bg: 'bg-emerald-50 border-emerald-200', ring: 'ring-emerald-400', dot: 'bg-emerald-500' },
+  pendiente:  { bg: 'bg-amber-50 border-amber-200',     ring: 'ring-amber-400',   dot: 'bg-amber-400'   },
+  sancionado: { bg: 'bg-red-50 border-red-200',         ring: 'ring-red-400',     dot: 'bg-red-500'     },
+  inactivo:   { bg: 'bg-slate-50 border-slate-200',     ring: 'ring-slate-400',   dot: 'bg-slate-400'   },
+}
+
+const ESTADO_LABEL: Record<string, string> = {
+  activo: 'Activado', pendiente: 'Pendiente', sancionado: 'Sancionado', inactivo: 'Desactivado',
+}
+
+const ESTADO_ICON: Record<string, string> = {
+  activo: '✅', pendiente: '⏳', sancionado: '🚫', inactivo: '⬛', '': '🆕',
+}
+
+function TimelineEvento({ evento, ultimo }: { evento: any; ultimo: boolean }) {
+  const [expandido, setExpandido] = useState(false)
+  const esInicial = !evento.estadoAnterior
+  const colores   = ESTADO_COLOR[evento.estadoNuevo] ?? ESTADO_COLOR.inactivo
+
+  return (
+    <div className="relative flex gap-4 pb-6">
+      {/* Punto en la línea */}
+      <div className="relative z-10 flex-shrink-0 mt-1">
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg border-2 border-white ring-2 ${colores.ring} ${colores.dot === 'bg-emerald-500' ? 'bg-emerald-500' : colores.dot === 'bg-amber-400' ? 'bg-amber-400' : colores.dot === 'bg-red-500' ? 'bg-red-500' : 'bg-slate-400'}`}>
+          <span className="text-white text-xs font-bold">
+            {esInicial ? '★' : '→'}
+          </span>
+        </div>
+      </div>
+
+      {/* Contenido del evento */}
+      <div className={`flex-1 rounded-xl border p-3 transition-all ${colores.bg}`}>
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              {esInicial ? (
+                <span className="text-sm font-semibold text-slate-700">
+                  {ESTADO_ICON[evento.estadoNuevo]} Vehículo registrado
+                  <span className="ml-1 text-xs font-normal text-slate-500">
+                    (estado: {ESTADO_LABEL[evento.estadoNuevo] ?? evento.estadoNuevo})
+                  </span>
+                </span>
+              ) : (
+                <span className="text-sm font-semibold text-slate-700">
+                  <span className="text-slate-400">{ESTADO_LABEL[evento.estadoAnterior] ?? evento.estadoAnterior}</span>
+                  {' → '}
+                  <span>{ESTADO_ICON[evento.estadoNuevo]} {ESTADO_LABEL[evento.estadoNuevo] ?? evento.estadoNuevo}</span>
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {new Date(evento.fecha).toLocaleString('es-BO', { dateStyle: 'medium', timeStyle: 'short' })}
+              {evento.usuarioNombre && <> · <span className="text-slate-500">{evento.usuarioNombre}</span></>}
+            </p>
+          </div>
+          {evento.motivo && (
+            <button onClick={() => setExpandido(v => !v)}
+              className="text-slate-400 hover:text-slate-600 shrink-0 p-1">
+              {expandido ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            </button>
+          )}
+        </div>
+        {expandido && evento.motivo && (
+          <p className="text-xs text-slate-600 mt-2 pt-2 border-t border-slate-200">
+            {evento.motivo}
+          </p>
+        )}
+      </div>
     </div>
   )
 }

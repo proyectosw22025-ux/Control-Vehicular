@@ -9,6 +9,7 @@ Por qué REST y no GraphQL:
 from django.http import JsonResponse
 from django.views import View
 from rest_framework_simplejwt.authentication import JWTAuthentication
+from django.views.decorators.csrf import csrf_exempt
 
 
 def _autenticar(request):
@@ -82,3 +83,71 @@ class SubirArchivoDocumentoView(View):
             "formato": ext,
             "nombre": archivo.name,
         })
+
+
+class SubirFotoVehiculoView(View):
+    """
+    POST /api/vehiculos/<vehiculo_id>/foto/
+    Sube la foto del vehículo a Cloudinary y actualiza foto_vehiculo URLField.
+    Mismo patrón que SubirFotoPerfilView para evitar InvalidStorageError.
+    """
+    MAX_BYTES = 3 * 1024 * 1024
+    FORMATOS_OK = {"jpg", "jpeg", "png", "webp"}
+
+    def post(self, request, vehiculo_id: int):
+        user = _autenticar(request)
+        if not user:
+            return JsonResponse({"error": "Autenticación requerida"}, status=401)
+
+        archivo = request.FILES.get("foto")
+        if not archivo:
+            return JsonResponse({"error": "Se requiere el campo 'foto'"}, status=400)
+        if archivo.size > self.MAX_BYTES:
+            return JsonResponse({"error": "La foto supera el límite de 3 MB"}, status=413)
+        ext = archivo.name.rsplit(".", 1)[-1].lower()
+        if ext not in self.FORMATOS_OK:
+            return JsonResponse({"error": f"Formato no permitido. Usa: {', '.join(self.FORMATOS_OK)}"}, status=415)
+
+        from apps.vehiculos.models import Vehiculo
+        from apps.usuarios.utils import tiene_rol
+
+        vehiculo = Vehiculo.objects.select_related("propietario").filter(pk=vehiculo_id).first()
+        if not vehiculo:
+            return JsonResponse({"error": "Vehículo no encontrado"}, status=404)
+
+        if vehiculo.propietario_id != user.pk and not tiene_rol(user, "Administrador"):
+            return JsonResponse({"error": "Sin permisos para este vehículo"}, status=403)
+
+        from django.conf import settings as dj_settings
+        import cloudinary
+        import cloudinary.uploader
+
+        cloud_name = dj_settings.CLOUDINARY_STORAGE.get("CLOUD_NAME", "")
+        api_key    = dj_settings.CLOUDINARY_STORAGE.get("API_KEY", "")
+        api_secret = dj_settings.CLOUDINARY_STORAGE.get("API_SECRET", "")
+
+        url = ""
+        if cloud_name and api_key and api_secret:
+            cloudinary.config(cloud_name=cloud_name, api_key=api_key, api_secret=api_secret)
+            result = cloudinary.uploader.upload(
+                archivo,
+                folder="vehiculos/fotos/",
+                public_id=f"vehiculo_{vehiculo_id}",
+                overwrite=True,
+                resource_type="image",
+            )
+            url = result.get("secure_url", "")
+        else:
+            import os
+            from django.conf import settings as s
+            fotos_dir = os.path.join(s.MEDIA_ROOT, "vehiculos", "fotos")
+            os.makedirs(fotos_dir, exist_ok=True)
+            nombre = f"vehiculo_{vehiculo_id}.{ext}"
+            ruta = os.path.join(fotos_dir, nombre)
+            with open(ruta, "wb") as f:
+                for chunk in archivo.chunks():
+                    f.write(chunk)
+            url = f"{s.MEDIA_URL}vehiculos/fotos/{nombre}"
+
+        Vehiculo.objects.filter(pk=vehiculo_id).update(foto_vehiculo=url)
+        return JsonResponse({"url": url, "vehiculo_id": vehiculo_id})
