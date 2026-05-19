@@ -168,6 +168,48 @@ class RegistroAcceso(models.Model):
         return f"{self.get_tipo_display()} - {self.vehiculo} en {self.punto_acceso} ({self.timestamp})"
 
 
+class AlertaAcceso(models.Model):
+    """Anomalías de acceso detectadas por el Celery task diario — Sprint D2."""
+    TIPOS = [
+        ("frecuencia_excesiva",  "Frecuencia excesiva de accesos"),
+        ("horario_inusual",      "Acceso fuera de horario habitual"),
+        ("punto_inusual",        "Punto de acceso inusual"),
+        ("vehiculo_sancionado",  "Vehículo sancionado con acceso reciente"),
+        ("placas_similares",     "Placas similares (posible clonación)"),
+    ]
+    SEVERIDADES = [
+        ("info",        "Informativa"),
+        ("advertencia", "Advertencia"),
+        ("critica",     "Crítica"),
+    ]
+
+    vehiculo       = models.ForeignKey(
+        "vehiculos.Vehiculo", on_delete=models.CASCADE,
+        related_name="alertas_acceso", null=True, blank=True,
+    )
+    tipo_anomalia  = models.CharField(max_length=25, choices=TIPOS)
+    severidad      = models.CharField(max_length=12, choices=SEVERIDADES, default="advertencia")
+    descripcion    = models.TextField()
+    fecha          = models.DateTimeField(auto_now_add=True)
+    fecha_analisis = models.DateField()
+    revisada       = models.BooleanField(default=False)
+    revisada_por   = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="alertas_revisadas",
+    )
+    fecha_revision = models.DateTimeField(null=True, blank=True)
+    datos_extra    = models.JSONField(default=dict)
+
+    class Meta:
+        db_table = "alertas_acceso"
+        ordering = ["-fecha"]
+        indexes  = [models.Index(fields=["revisada", "fecha_analisis"])]
+
+    def __str__(self):
+        placa = self.vehiculo.placa if self.vehiculo else "—"
+        return f"{self.get_tipo_anomalia_display()} · {placa} · {self.fecha_analisis}"
+
+
 class AuditLog(models.Model):
     accion = models.CharField(max_length=60)
     descripcion = models.TextField()

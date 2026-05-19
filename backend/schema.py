@@ -7,6 +7,7 @@ from apps.visitantes.schema import VisitantesQuery, VisitantesMutation
 from apps.multas.schema import MultasQuery, MultasMutation
 from apps.notificaciones.schema import NotificacionesQuery, NotificacionesMutation
 from estadisticas_schema import EstadisticasQuery
+from busqueda_schema import BusquedaQuery
 
 
 @strawberry.type
@@ -19,6 +20,7 @@ class Query(
     MultasQuery,
     NotificacionesQuery,
     EstadisticasQuery,
+    BusquedaQuery,
 ):
     pass
 

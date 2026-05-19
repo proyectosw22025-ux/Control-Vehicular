@@ -30,9 +30,13 @@ app.conf.beat_schedule = {
         "schedule": 14400.0,
     },
     # Diariamente a las 7:00 AM — alertas de SOAT, técnica y circulación próximos a vencer
-    # Detecta documentos que vencen en exactamente 30, 15 o 5 días
     "alertar-documentos-diario": {
         "task": "vehiculos.alertar_documentos_por_vencer",
         "schedule": crontab(hour=7, minute=0),
+    },
+    # Diariamente a las 6:00 AM — detección de anomalías de acceso (Sprint D2)
+    "detectar-anomalias-diario": {
+        "task": "acceso.detectar_anomalias_acceso",
+        "schedule": crontab(hour=6, minute=0),
     },
 }

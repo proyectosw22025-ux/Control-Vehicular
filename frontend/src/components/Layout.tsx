@@ -1,15 +1,17 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, lazy, Suspense } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Users, Car, ParkingSquare,
   DoorOpen, UserCheck, AlertTriangle, Bell, LogOut,
-  Menu, X, UserCircle, BarChart2, ShieldCheck, Shield,
+  Menu, X, UserCircle, BarChart2, ShieldCheck, Shield, Search,
 } from 'lucide-react'
 import { UagrmLogo } from './UagrmLogo'
 import { useQuery } from '@apollo/client'
 import { useAuth } from '../hooks/useAuth'
 import { useNotificaciones, NotifPayload } from '../hooks/useNotificaciones'
 import { CONTEO_NO_LEIDAS_QUERY } from '../graphql/queries/notificaciones'
+
+const BusquedaGlobalModal = lazy(() => import('./BusquedaGlobalModal'))
 
 const NAV_ITEMS = [
   { to: '/',               label: 'Dashboard',      icon: LayoutDashboard, roles: ['all'] },
@@ -48,9 +50,10 @@ function ToastPanel({ toasts, onClose }: { toasts: Toast[]; onClose: (key: numbe
 }
 
 export default function Layout() {
-  const [desktopOpen, setDesktopOpen] = useState(true)
-  const [mobileOpen, setMobileOpen]   = useState(false)
-  const [toasts, setToasts]           = useState<Toast[]>([])
+  const [desktopOpen, setDesktopOpen]   = useState(true)
+  const [mobileOpen, setMobileOpen]     = useState(false)
+  const [toasts, setToasts]             = useState<Toast[]>([])
+  const [busquedaAbierta, setBusqueda]  = useState(false)
 
   const { logout, usuario, roles, esAdmin } = useAuth()
   // Aplicar tema al montar (lee preferencia guardada)
@@ -105,6 +108,18 @@ export default function Layout() {
   }, [])
 
   useNotificaciones(handleNueva)
+
+  // Ctrl+K abre la búsqueda global
+  useEffect(() => {
+    function handleGlobalKey(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault()
+        setBusqueda(v => !v)
+      }
+    }
+    window.addEventListener('keydown', handleGlobalKey)
+    return () => window.removeEventListener('keydown', handleGlobalKey)
+  }, [])
 
   const esUsuarioNormal = ['Estudiante', 'Docente', 'Personal Administrativo'].some(r => roles.includes(r))
   const itemsVisibles = NAV_ITEMS.filter(item =>
@@ -307,6 +322,12 @@ export default function Layout() {
             <Menu size={20} />
           </button>
           <UagrmLogo size={26} variant="completo" className="flex-1" />
+          {/* Búsqueda mobile */}
+          {esAdmin && (
+            <button onClick={() => setBusqueda(true)} className="text-slate-300 hover:text-white">
+              <Search size={18} />
+            </button>
+          )}
           <NavLink to="/notificaciones" className="relative text-slate-300 hover:text-white">
             <Bell size={20} />
             {conteo > 0 && (
@@ -317,12 +338,33 @@ export default function Layout() {
           </NavLink>
         </header>
 
+        {/* Barra de búsqueda desktop — solo admin */}
+        {esAdmin && (
+          <div className="hidden md:flex items-center px-4 py-2 border-b border-slate-200 bg-white/80 dark:bg-slate-900/80 shrink-0">
+            <button
+              onClick={() => setBusqueda(true)}
+              className="flex items-center gap-2 w-full max-w-sm text-sm text-slate-400 bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 transition-colors"
+            >
+              <Search size={14} />
+              <span className="flex-1 text-left">Buscar...</span>
+              <kbd className="text-[10px] font-mono text-slate-400 bg-white border border-slate-300 rounded px-1.5 py-0.5">⌘K</kbd>
+            </button>
+          </div>
+        )}
+
         <main className="flex-1 overflow-auto">
           <Outlet />
         </main>
       </div>
 
       <ToastPanel toasts={toasts} onClose={(key) => setToasts(prev => prev.filter(t => t.key !== key))} />
+
+      {/* Modal de búsqueda global */}
+      {busquedaAbierta && (
+        <Suspense fallback={null}>
+          <BusquedaGlobalModal onClose={() => setBusqueda(false)} />
+        </Suspense>
+      )}
     </div>
   )
 }

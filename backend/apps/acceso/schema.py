@@ -7,7 +7,8 @@ import uuid
 from django.utils import timezone
 from datetime import timedelta
 
-from .models import PuntoAcceso, QrSesion, PaseTemporal, RegistroAcceso, AuditLog
+from .models import PuntoAcceso, QrSesion, PaseTemporal, RegistroAcceso, AuditLog, AlertaAcceso
+from datetime import date
 from .utils import log_audit
 
 
@@ -135,6 +136,25 @@ class CrearPaseTemporalInput:
 # ──────────────────────────────────────────────
 
 @strawberry.type
+class AlertaAccesoType:
+    id: int
+    tipo_anomalia: str
+    severidad: str
+    descripcion: str
+    fecha: datetime
+    fecha_analisis: date
+    revisada: bool
+
+    @strawberry.field
+    def vehiculo_placa(self) -> Optional[str]:
+        return self.vehiculo.placa if self.vehiculo_id else None
+
+    @strawberry.field
+    def vehiculo_id_val(self) -> Optional[int]:
+        return self.vehiculo_id
+
+
+@strawberry.type
 class AccesoQuery:
     @strawberry.field
     def puntos_acceso(self, info: Info) -> List[PuntoAccesoType]:
@@ -176,6 +196,32 @@ class AccesoQuery:
         if not tiene_rol(info.context.request.user, "Administrador"):
             raise Exception("Solo administradores pueden ver el registro de auditoría")
         return list(AuditLog.objects.select_related("usuario")[:limite])
+
+    @strawberry.field
+    def alertas_acceso(
+        self,
+        info: Info,
+        revisadas: bool = False,
+        limite: int = 50,
+    ) -> List[AlertaAccesoType]:
+        """Anomalías de acceso detectadas por el análisis diario — solo admin."""
+        from apps.usuarios.utils import tiene_rol
+        if not tiene_rol(info.context.request.user, "Administrador"):
+            raise Exception("Solo administradores pueden ver las alertas de acceso")
+        return list(
+            AlertaAcceso.objects
+            .filter(revisada=revisadas)
+            .select_related("vehiculo", "revisada_por")
+            .order_by("-fecha")[:limite]
+        )
+
+    @strawberry.field
+    def conteo_alertas_acceso(self, info: Info) -> int:
+        """Número de alertas sin revisar — para badge en Dashboard."""
+        from apps.usuarios.utils import tiene_rol
+        if not tiene_rol(info.context.request.user, "Administrador"):
+            return 0
+        return AlertaAcceso.objects.filter(revisada=False).count()
 
 
 # ──────────────────────────────────────────────
@@ -354,3 +400,19 @@ class AccesoMutation:
         if tipo not in ["entrada", "salida", "ambos"]:
             raise Exception("Tipo inválido. Opciones: entrada, salida, ambos")
         return PuntoAcceso.objects.create(nombre=nombre, tipo=tipo, ubicacion=ubicacion or "")
+
+    @strawberry.mutation
+    def marcar_alerta_revisada(self, info: Info, alerta_id: int) -> AlertaAccesoType:
+        """Marca una alerta de acceso como revisada — solo admin."""
+        from apps.usuarios.utils import tiene_rol
+        admin = info.context.request.user
+        if not tiene_rol(admin, "Administrador"):
+            raise Exception("Solo administradores pueden revisar alertas")
+        alerta = AlertaAcceso.objects.select_related("vehiculo").filter(pk=alerta_id).first()
+        if not alerta:
+            raise Exception("Alerta no encontrada")
+        alerta.revisada = True
+        alerta.revisada_por = admin
+        alerta.fecha_revision = timezone.now()
+        alerta.save(update_fields=["revisada", "revisada_por", "fecha_revision"])
+        return alerta

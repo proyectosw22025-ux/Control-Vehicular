@@ -1,4 +1,4 @@
-import { useQuery, gql } from '@apollo/client'
+import { useQuery, useMutation, gql } from '@apollo/client'
 import { Link } from 'react-router-dom'
 import {
   Car, ParkingSquare, AlertTriangle, UserCheck,
@@ -9,6 +9,21 @@ import {
 import { useAuth } from '../hooks/useAuth'
 import Onboarding from '../components/Onboarding'
 import { VEHICULOS_QUERY } from '../graphql/queries/vehiculos'
+
+const ALERTAS_ACCESO_QUERY = gql`
+  query AlertasDashboard {
+    conteoAlertasAcceso
+    alertasAcceso(revisadas: false, limite: 5) {
+      id tipoAnomalia severidad descripcion vehiculoPlaca
+    }
+  }
+`
+
+const MARCAR_ALERTA = gql`
+  mutation MarcarAlerta($id: Int!) {
+    marcarAlertaRevisada(alertaId: $id) { id revisada }
+  }
+`
 
 const DASHBOARD_QUERY = gql`
   query DashboardStats {
@@ -153,6 +168,17 @@ export default function Dashboard() {
   const mostrarStats = esAdmin || esGuardia
   const { data, loading } = useQuery(DASHBOARD_QUERY, { skip: !mostrarStats })
 
+  const { data: alertasData, refetch: refetchAlertas } = useQuery(ALERTAS_ACCESO_QUERY, {
+    skip: !esAdmin,
+    fetchPolicy: 'cache-and-network',
+    pollInterval: 120_000,
+  })
+  const [marcarAlerta] = useMutation(MARCAR_ALERTA, {
+    onCompleted: () => refetchAlertas(),
+  })
+  const conteoAlertas: number = alertasData?.conteoAlertasAcceso ?? 0
+  const alertasPendientes: any[] = alertasData?.alertasAcceso ?? []
+
   const esResidente = tieneRol('Estudiante', 'Docente', 'Personal Administrativo')
 
   // Query de vehículos propios — solo para residentes
@@ -185,9 +211,18 @@ export default function Dashboard() {
           <p className="text-slate-400 text-xs sm:text-sm mt-1 capitalize animate-fade-slide-up"
             style={{ animationDelay: '0.15s' }}>{fechaHoy}</p>
         </div>
-        <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400 bg-white rounded-lg px-3 py-2 shadow-sm border border-slate-100 shrink-0">
-          <LayoutDashboard size={14} />
-          Sistema Vehicular UAGRM
+        <div className="flex items-center gap-2 shrink-0">
+          {esAdmin && conteoAlertas > 0 && (
+            <a href="#alertas-acceso"
+              className="flex items-center gap-1.5 bg-amber-50 border border-amber-300 text-amber-700 text-xs font-semibold px-3 py-2 rounded-lg hover:bg-amber-100 transition-colors animate-pulse-slow">
+              <AlertTriangle size={13} />
+              ⚠️ {conteoAlertas} alerta{conteoAlertas !== 1 ? 's' : ''}
+            </a>
+          )}
+          <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400 bg-white rounded-lg px-3 py-2 shadow-sm border border-slate-100">
+            <LayoutDashboard size={14} />
+            Sistema Vehicular UAGRM
+          </div>
         </div>
       </div>
 
@@ -341,6 +376,42 @@ export default function Dashboard() {
             </div>
           </div>
         )
+      )}
+
+      {/* ── Alertas de acceso — solo admin ── */}
+      {esAdmin && alertasPendientes.length > 0 && (
+        <div id="alertas-acceso" className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle size={16} className="text-amber-600" />
+            <h3 className="text-sm font-bold text-amber-800">
+              Alertas de acceso — {conteoAlertas} pendiente{conteoAlertas !== 1 ? 's' : ''}
+            </h3>
+          </div>
+          <div className="space-y-2">
+            {alertasPendientes.map((a: any) => (
+              <div key={a.id} className={`flex items-start gap-3 bg-white rounded-xl px-3 py-2.5 border ${
+                a.severidad === 'critica' ? 'border-red-200' : 'border-amber-200'
+              }`}>
+                <span className="text-lg shrink-0 mt-0.5">
+                  {a.severidad === 'critica' ? '🚨' : a.severidad === 'advertencia' ? '⚠️' : 'ℹ️'}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-slate-700 truncate">
+                    {a.vehiculoPlaca && <span className="font-mono mr-1">{a.vehiculoPlaca} ·</span>}
+                    {a.descripcion}
+                  </p>
+                </div>
+                <button
+                  onClick={() => marcarAlerta({ variables: { id: a.id } })}
+                  className="text-xs text-slate-400 hover:text-slate-600 shrink-0 px-2 py-1 rounded hover:bg-slate-100 transition-colors"
+                  title="Marcar como revisada"
+                >
+                  ✓
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* ── Acceso rápido a módulos ── */}
