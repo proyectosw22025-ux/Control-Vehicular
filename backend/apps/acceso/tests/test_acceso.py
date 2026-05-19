@@ -102,6 +102,12 @@ def test_acceso_genera_audit_log(gql_guardia, vehiculo_activo, punto_acceso):
 
 @pytest.mark.django_db
 def test_acceso_manual_exitoso(gql_guardia, vehiculo_activo, punto_acceso):
+    # Primero registrar entrada para que la salida sea válida
+    graphql(gql_guardia, REGISTRAR_MANUAL, {
+        "puntoId": punto_acceso.id,
+        "placa": vehiculo_activo.placa,
+        "tipo": "entrada",
+    })
     r = graphql(gql_guardia, REGISTRAR_MANUAL, {
         "puntoId": punto_acceso.id,
         "placa": vehiculo_activo.placa,
@@ -193,3 +199,51 @@ def test_entrada_duplicada_manual_bloqueada(gql_guardia, vehiculo_activo, punto_
     })
     assert "errors" in r
     assert "ya está dentro" in r["errors"][0]["message"]
+
+
+# ── Nuevos tests: salida inválida ──────────────────────────────────────────
+
+@pytest.mark.django_db
+def test_salida_sin_entrada_previa_bloqueada(gql_guardia, vehiculo_activo, punto_acceso):
+    """No se puede registrar salida si el vehículo nunca ingresó."""
+    r = graphql(gql_guardia, REGISTRAR_MANUAL, {
+        "puntoId": punto_acceso.id, "placa": vehiculo_activo.placa, "tipo": "salida",
+    })
+    assert "errors" in r
+    assert "sin una entrada previa" in r["errors"][0]["message"]
+
+
+@pytest.mark.django_db
+def test_salida_duplicada_manual_bloqueada(gql_guardia, vehiculo_activo, punto_acceso):
+    """ENT → SAL → SAL: la segunda salida debe bloquearse."""
+    graphql(gql_guardia, REGISTRAR_MANUAL, {
+        "puntoId": punto_acceso.id, "placa": vehiculo_activo.placa, "tipo": "entrada",
+    })
+    graphql(gql_guardia, REGISTRAR_MANUAL, {
+        "puntoId": punto_acceso.id, "placa": vehiculo_activo.placa, "tipo": "salida",
+    })
+    r = graphql(gql_guardia, REGISTRAR_MANUAL, {
+        "puntoId": punto_acceso.id, "placa": vehiculo_activo.placa, "tipo": "salida",
+    })
+    assert "errors" in r
+    assert "ya está fuera" in r["errors"][0]["message"]
+
+
+@pytest.mark.django_db
+def test_salida_qr_sin_entrada_bloqueada(gql_guardia, vehiculo_activo, punto_acceso):
+    """Salida vía QR sin entrada previa también debe bloquearse."""
+    r = graphql(gql_guardia, REGISTRAR_ACCESO, {
+        "puntoId": punto_acceso.id, "codigo": vehiculo_activo.codigo_qr, "tipo": "salida",
+    })
+    assert "errors" in r
+    assert "sin una entrada previa" in r["errors"][0]["message"]
+
+
+@pytest.mark.django_db
+def test_flujo_completo_entrada_salida_entrada(gql_guardia, vehiculo_activo, punto_acceso):
+    """ENT → SAL → ENT → SAL: flujo completo correcto sin errores."""
+    for tipo in ["entrada", "salida", "entrada", "salida"]:
+        r = graphql(gql_guardia, REGISTRAR_MANUAL, {
+            "puntoId": punto_acceso.id, "placa": vehiculo_activo.placa, "tipo": tipo,
+        })
+        assert "errors" not in r, f"Falló en paso '{tipo}': {r.get('errors')}"

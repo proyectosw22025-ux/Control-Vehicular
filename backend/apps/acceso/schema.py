@@ -9,6 +9,45 @@ from datetime import timedelta
 
 from .models import PuntoAcceso, QrSesion, PaseTemporal, RegistroAcceso, AuditLog, AlertaAcceso
 from datetime import date
+
+
+def _validar_transicion_acceso(vehiculo, tipo_solicitado: str) -> None:
+    """
+    Máquina de estados para accesos: entrada → salida → entrada → salida...
+
+    Reglas:
+      - 'entrada': se bloquea si el último registro es también 'entrada'
+                   (el vehículo ya está adentro)
+      - 'salida':  se bloquea si no hay registros previos O el último ya fue 'salida'
+                   (el vehículo no está adentro — no puede salir)
+
+    Aplica a QR y manual para garantizar consistencia en toda la capa de dominio.
+    """
+    ultimo = (
+        RegistroAcceso.objects
+        .filter(vehiculo=vehiculo)
+        .order_by("-timestamp")
+        .values("tipo")
+        .first()
+    )
+
+    if tipo_solicitado == "entrada":
+        if ultimo and ultimo["tipo"] == "entrada":
+            raise Exception(
+                f"El vehículo {vehiculo.placa} ya está dentro del campus. "
+                "Registre la salida antes de permitir una nueva entrada."
+            )
+    elif tipo_solicitado == "salida":
+        if not ultimo:
+            raise Exception(
+                f"El vehículo {vehiculo.placa} no tiene registros de entrada. "
+                "No se puede registrar una salida sin una entrada previa."
+            )
+        if ultimo["tipo"] == "salida":
+            raise Exception(
+                f"El vehículo {vehiculo.placa} ya está fuera del campus. "
+                "No se puede registrar una salida si el vehículo no ingresó."
+            )
 from .utils import log_audit
 
 
@@ -272,20 +311,9 @@ class AccesoMutation:
         # Resolver código — maneja TOTP, delegación y pase temporal de forma atómica
         resultado = resolver_codigo(input.codigo)
 
-        # Evitar entradas duplicadas: bloquear si el último registro es también "entrada"
-        if resultado.vehiculo and input.tipo == "entrada":
-            ultimo = (
-                RegistroAcceso.objects
-                .filter(vehiculo=resultado.vehiculo)
-                .order_by("-timestamp")
-                .values("tipo")
-                .first()
-            )
-            if ultimo and ultimo["tipo"] == "entrada":
-                raise Exception(
-                    f"El vehículo {resultado.vehiculo.placa} ya está dentro del campus. "
-                    "Registre la salida primero."
-                )
+        # Validar transición de estado (entrada/salida) — máquina de estados completa
+        if resultado.vehiculo:
+            _validar_transicion_acceso(resultado.vehiculo, input.tipo)
 
         registrado_por = info.context.request.user if info.context.request.user.is_authenticated else None
 
@@ -337,20 +365,8 @@ class AccesoMutation:
         if vehiculo.estado == "inactivo":
             raise Exception("Vehículo inactivo. Contacte a la administración.")
 
-        # Evitar entradas duplicadas en acceso manual
-        if input.tipo == "entrada":
-            ultimo_manual = (
-                RegistroAcceso.objects
-                .filter(vehiculo=vehiculo)
-                .order_by("-timestamp")
-                .values("tipo")
-                .first()
-            )
-            if ultimo_manual and ultimo_manual["tipo"] == "entrada":
-                raise Exception(
-                    f"El vehículo {vehiculo.placa} ya está dentro del campus. "
-                    "Registre la salida primero."
-                )
+        # Validar transición de estado (entrada/salida) — máquina de estados completa
+        _validar_transicion_acceso(vehiculo, input.tipo)
 
         registrado_por = info.context.request.user if info.context.request.user.is_authenticated else None
         registro = RegistroAcceso.objects.create(
