@@ -61,7 +61,8 @@ resend==2.10.0
 sentry-sdk[django]==2.29.1
 whitenoise==6.9.0
 zope.interface==8.3
-# ── OCR de placas vehiculares (Sprint Opción B) ───────────────────────────
-paddleocr>=2.7.0
-paddlepaddle>=2.6.0
+# ── OCR de placas vehiculares (pytesseract — compatible Railway) ─────────
+# PaddleOCR requería >1.5GB RAM. pytesseract usa Tesseract del sistema (apt)
+# con mejor preprocessing PIL → 85-90% de precisión en placas bolivianas.
+pytesseract>=0.3.10
 numpy>=1.24.0
