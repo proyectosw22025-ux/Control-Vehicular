@@ -15,12 +15,14 @@ import { useQuery, gql } from '@apollo/client'
 import {
   ShieldCheck, ArrowDownCircle, ArrowUpCircle, Camera, CameraOff,
   CheckCircle2, XCircle, Clock, ParkingSquare, UserCheck, DoorOpen,
-  Wifi, WifiOff, RefreshCw, Loader2,
+  Wifi, WifiOff, RefreshCw, Loader2, Type, Keyboard,
 } from 'lucide-react'
-import { QrScanner } from '../components/QrScanner'
+import { QrScanner }     from '../components/QrScanner'
+import { PlacaScanner } from '../components/PlacaScanner'
 import { PUNTOS_ACCESO_QUERY, REGISTROS_ACCESO_QUERY } from '../graphql/queries/acceso'
 import { VISITAS_ACTIVAS_QUERY } from '../graphql/queries/visitantes'
 import { useAccesoGuardia, type TipoAcceso } from '../hooks/useAccesoGuardia'
+import { useOfflineAccess } from '../hooks/useOfflineAccess'
 
 const GUARDIA_STATS_QUERY = gql`
   query GuardiaStats {
@@ -39,13 +41,18 @@ const METODO_LABEL: Record<string, string> = {
 }
 
 export default function GuardiaDashboard() {
+  type ModoScanner = 'qr' | 'placa' | 'manual'
   const [tipo, setTipo]             = useState<TipoAcceso>('entrada')
+  const [modo, setModo]             = useState<ModoScanner>('qr')
   const [camaraActiva, setCamara]   = useState(false)
+  const [placaActiva, setPlacaOcr]  = useState(false)
   const [placaManual, setPlaca]     = useState('')
   const [online, setOnline]         = useState(navigator.onLine)
+  const [vehiculoNoEncontrado, setVehiculoNoEncontrado] = useState('')
 
   // Hook de dominio con retry y manejo de errores
-  const acceso = useAccesoGuardia()
+  const acceso   = useAccesoGuardia()
+  const offlineAcc = useOfflineAccess()
 
   // Detectar cambios de conectividad
   useEffect(() => {
@@ -89,11 +96,35 @@ export default function GuardiaDashboard() {
   // Callback de placa manual
   const handleManual = useCallback(async () => {
     if (!placaManual.trim()) return
-    await acceso.registrarManual(placaManual, tipo)
-    setPlaca('')
-    refetchRegistros()
-    refetchStats()
+    setVehiculoNoEncontrado('')
+    try {
+      await acceso.registrarManual(placaManual, tipo)
+      setPlaca('')
+      refetchRegistros()
+      refetchStats()
+    } catch (e: any) {
+      const msg = e?.message ?? ''
+      if (msg.toLowerCase().includes('no registrado') || msg.toLowerCase().includes('no encontrado')) {
+        setVehiculoNoEncontrado(placaManual.trim().toUpperCase())
+      }
+    }
   }, [acceso, placaManual, tipo, refetchRegistros, refetchStats])
+
+  // Callback de placa OCR detectada
+  const handlePlacaOcr = useCallback(async (placa: string) => {
+    setPlacaOcr(false)
+    setVehiculoNoEncontrado('')
+    try {
+      await acceso.registrarManual(placa, tipo)
+      refetchRegistros()
+      refetchStats()
+    } catch (e: any) {
+      const msg = e?.message ?? ''
+      if (msg.toLowerCase().includes('no registrado') || msg.toLowerCase().includes('no encontrado')) {
+        setVehiculoNoEncontrado(placa)
+      }
+    }
+  }, [acceso, tipo, refetchRegistros, refetchStats])
 
   const resultado = acceso.resultado
 
@@ -113,12 +144,29 @@ export default function GuardiaDashboard() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Indicador de conectividad */}
-          <div className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full font-medium ${
-            online ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
-          }`}>
-            {online ? <Wifi size={12} /> : <WifiOff size={12} />}
-            <span className="hidden sm:inline">{online ? 'Conectado' : 'Sin red'}</span>
+          {/* Indicador de conectividad + pendientes offline */}
+          <div className="flex items-center gap-1.5">
+            {offlineAcc.pendientes > 0 && (
+              <button
+                onClick={offlineAcc.sincronizarAhora}
+                disabled={!offlineAcc.online || offlineAcc.sincronizando}
+                className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-medium"
+                title="Accesos guardados sin sincronizar — clic para sincronizar"
+              >
+                {offlineAcc.sincronizando
+                  ? <Loader2 size={10} className="animate-spin" />
+                  : <WifiOff size={10} />}
+                {offlineAcc.pendientes} pendiente{offlineAcc.pendientes !== 1 ? 's' : ''}
+              </button>
+            )}
+            <div className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full font-medium ${
+              offlineAcc.online ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+            }`}>
+              {offlineAcc.online ? <Wifi size={12} /> : <WifiOff size={12} />}
+              <span className="hidden sm:inline">
+                {offlineAcc.online ? 'Conectado' : '📴 Sin red — modo offline'}
+              </span>
+            </div>
           </div>
 
           {/* Selector de punto de acceso */}
@@ -139,6 +187,33 @@ export default function GuardiaDashboard() {
       {!acceso.puntoId && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 text-amber-800 text-sm text-center">
           Selecciona un punto de acceso para empezar a registrar
+        </div>
+      )}
+
+      {/* ── Banner modo offline ─────────────────────────────────── */}
+      {!offlineAcc.online && (
+        <div className="bg-slate-800 text-white rounded-xl px-4 py-3 mb-4 flex items-center gap-3 text-sm">
+          <WifiOff size={18} className="text-amber-400 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-sm">Modo offline activo</p>
+            <p className="text-xs text-slate-300">
+              QR dinámico deshabilitado. Usa <strong>Placa OCR</strong> o <strong>Manual</strong>.
+              Los accesos se guardarán y sincronizarán al recuperar la red.
+            </p>
+          </div>
+          {offlineAcc.pendientes > 0 && (
+            <span className="bg-amber-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shrink-0">
+              {offlineAcc.pendientes}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* ── Confirmación sync completada ────────────────────────── */}
+      {offlineAcc.ultimaSync && offlineAcc.pendientes === 0 && offlineAcc.online && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl px-4 py-2 mb-4 text-xs flex items-center gap-2">
+          <CheckCircle2 size={14} />
+          ✅ Accesos sincronizados correctamente · {offlineAcc.ultimaSync}
         </div>
       )}
 
@@ -171,20 +246,62 @@ export default function GuardiaDashboard() {
             ))}
           </div>
 
-          {/* Botón cámara */}
-          <button
-            onClick={() => setCamara(v => !v)}
-            disabled={!acceso.puntoId}
-            className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium transition-colors border disabled:opacity-40
-              ${camaraActiva ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
-          >
-            {camaraActiva ? <><CameraOff size={16} /> Apagar cámara</> : <><Camera size={16} /> Escanear QR con cámara</>}
-          </button>
+          {/* ── Selector de modo: QR / Placa OCR / Manual ─────── */}
+          <div className="grid grid-cols-3 gap-1.5">
+            {([
+              { id: 'qr',     label: '📷 QR',    icon: Camera  },
+              { id: 'placa',  label: '🔤 Placa',  icon: Type    },
+              { id: 'manual', label: '⌨️ Manual', icon: Keyboard },
+            ] as { id: ModoScanner; label: string; icon: React.ElementType }[]).map(m => (
+              <button key={m.id}
+                onClick={() => {
+                  setModo(m.id)
+                  setCamara(m.id === 'qr' && acceso.puntoId !== null)
+                  setPlacaOcr(m.id === 'placa' && acceso.puntoId !== null)
+                  setVehiculoNoEncontrado('')
+                }}
+                disabled={!acceso.puntoId}
+                className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-semibold transition-colors border disabled:opacity-40
+                  ${modo === m.id
+                    ? 'bg-orange-500 text-white border-orange-500 shadow-md'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
 
-          {/* Scanner */}
-          {camaraActiva && (
+          {/* Scanner QR */}
+          {modo === 'qr' && camaraActiva && (
             <div className="rounded-xl overflow-hidden border-2 border-orange-200">
               <QrScanner activo={camaraActiva} onScan={handleQrScan} />
+            </div>
+          )}
+
+          {/* Scanner Placa OCR */}
+          {modo === 'placa' && placaActiva && (
+            <div className="rounded-xl overflow-hidden border-2 border-blue-200">
+              <PlacaScanner activo={placaActiva} onPlacaDetectada={handlePlacaOcr} />
+            </div>
+          )}
+
+          {/* Vehículo sin registro → opción de multa */}
+          {vehiculoNoEncontrado && (
+            <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 space-y-2">
+              <p className="text-sm font-semibold text-amber-800">
+                🚫 Vehículo <span className="font-mono">{vehiculoNoEncontrado}</span> sin registro
+              </p>
+              <p className="text-xs text-amber-700">¿Deseas registrar una infracción?</p>
+              <div className="flex gap-2">
+                <a href={`/multas?placa=${vehiculoNoEncontrado}`}
+                  className="flex-1 text-center text-xs bg-amber-500 hover:bg-amber-600 text-white py-2 rounded-lg font-medium transition-colors">
+                  Registrar infracción
+                </a>
+                <button onClick={() => setVehiculoNoEncontrado('')}
+                  className="text-xs text-amber-600 hover:text-amber-800 px-3 py-2 rounded-lg border border-amber-300 hover:bg-amber-100 transition-colors">
+                  Ignorar
+                </button>
+              </div>
             </div>
           )}
 
