@@ -74,11 +74,12 @@ def enviar_notificacion(usuario, titulo: str, mensaje: str, tipo_codigo: str | N
             async_to_sync(channel_layer.group_send)(
                 f"notificaciones_usuario_{usuario.pk}",
                 {
-                    "type": "notificacion_nueva",
-                    "id": notif.id,
-                    "titulo": titulo,
-                    "mensaje": mensaje,
-                    "fecha": notif.fecha.isoformat(),
+                    "type":       "notificacion_nueva",
+                    "id":         notif.id,
+                    "titulo":     titulo,
+                    "mensaje":    mensaje,
+                    "fecha":      notif.fecha.isoformat(),
+                    "tipo_codigo": tipo_codigo or "",  # clave para el frontend
                 },
             )
         except Exception:

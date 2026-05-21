@@ -7,6 +7,7 @@ export interface NotifPayload {
   titulo: string
   mensaje: string
   fecha: string
+  tipoCodigo?: string   // permite distinguir notificaciones especiales en el frontend
 }
 
 export function useNotificaciones(onNueva?: (n: NotifPayload) => void) {
@@ -38,7 +39,13 @@ export function useNotificaciones(onNueva?: (n: NotifPayload) => void) {
           client.refetchQueries({ include: [CONTEO_NO_LEIDAS_QUERY, MIS_NOTIFICACIONES_QUERY] })
         }
         if (data.tipo === 'nueva_notificacion') {
-          onNuevaRef.current?.({ id: data.id, titulo: data.titulo, mensaje: data.mensaje, fecha: data.fecha })
+          onNuevaRef.current?.({
+            id:         data.id,
+            titulo:     data.titulo,
+            mensaje:    data.mensaje,
+            fecha:      data.fecha,
+            tipoCodigo: data.tipo_codigo ?? '',
+          })
         }
       } catch { /* ignorar mensajes malformados */ }
     }

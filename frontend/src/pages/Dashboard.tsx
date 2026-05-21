@@ -4,11 +4,12 @@ import {
   Car, ParkingSquare, AlertTriangle, UserCheck,
   Users, DoorOpen, Bell, TrendingUp, ShieldAlert,
   LayoutDashboard, Clock, ShieldCheck, ArrowRight,
-  CheckCircle2, XCircle, AlertCircle, QrCode,
+  CheckCircle2, XCircle, AlertCircle, QrCode, Navigation,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import Onboarding from '../components/Onboarding'
 import { VEHICULOS_QUERY } from '../graphql/queries/vehiculos'
+import { SESION_ACTIVA_VEHICULO_QUERY } from '../graphql/queries/parqueos'
 
 const ALERTAS_ACCESO_QUERY = gql`
   query AlertasDashboard {
@@ -352,6 +353,11 @@ export default function Dashboard() {
         </Link>
       )}
 
+      {/* ── Mi vehículo en parqueo (sesión activa) ── */}
+      {esResidente && misVehiculos.length > 0 && (
+        <MiSesionActivaWidget vehiculoId={misVehiculos[0].id} placa={misVehiculos[0].placa} />
+      )}
+
       {/* ── Vehículos propios del residente ── */}
       {esResidente && (
         misVehiculos.length === 0 ? (
@@ -435,6 +441,67 @@ export default function Dashboard() {
         </div>
       </div>
 
+    </div>
+  )
+}
+
+// ── Widget: Mi sesión activa de parqueo ───────────────────
+function MiSesionActivaWidget({ vehiculoId, placa }: { vehiculoId: number; placa: string }) {
+  const { data, loading } = useQuery(SESION_ACTIVA_VEHICULO_QUERY, {
+    variables: { vehiculoId },
+    pollInterval: 30_000,   // actualiza cada 30 segundos
+    fetchPolicy: 'cache-and-network',
+  })
+  const sesion = data?.sesionActivaVehiculo
+  if (loading && !data) return null
+  if (!sesion) return null   // sin sesión activa — no mostrar nada
+
+  const zona   = sesion.espacio?.zona?.nombre ?? '—'
+  const espacio = sesion.espacio?.numero ?? '—'
+  const minutos = sesion.duracionMinutos ?? 0
+  const horas   = Math.floor(minutos / 60)
+  const mins    = minutos % 60
+  const tiempoStr = horas > 0 ? `${horas}h ${mins}m` : `${mins} min`
+
+  return (
+    <div className="bg-white border-2 border-violet-200 rounded-2xl p-4 shadow-sm">
+      {/* Cabecera */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <div className="bg-violet-500 text-white p-1.5 rounded-lg">
+            <ParkingSquare size={16} />
+          </div>
+          <span className="font-bold text-slate-800 text-sm">Mi vehículo está parqueado</span>
+        </div>
+        <span className="flex items-center gap-1 text-xs text-violet-600 font-semibold bg-violet-50 px-2 py-0.5 rounded-full">
+          <Clock size={11} /> {tiempoStr}
+        </span>
+      </div>
+
+      {/* Detalle */}
+      <div className="grid grid-cols-2 gap-3 mb-3">
+        <div className="bg-slate-50 rounded-xl p-3">
+          <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-0.5">Vehículo</p>
+          <p className="font-mono font-bold text-slate-800">{placa}</p>
+        </div>
+        <div className="bg-violet-50 rounded-xl p-3">
+          <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-0.5">Ubicación</p>
+          <p className="font-semibold text-violet-800 text-sm">{zona}</p>
+          <p className="text-xs text-violet-600">Espacio #{espacio}</p>
+        </div>
+      </div>
+
+      {/* Acciones */}
+      <div className="flex gap-2">
+        <Link to="/parqueo-demo"
+          className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-violet-500 hover:bg-violet-600 text-white rounded-xl text-xs font-bold transition-colors">
+          <Navigation size={12} /> Ver en mapa
+        </Link>
+        <Link to={`/vehiculos`}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2 border border-slate-200 text-slate-600 rounded-xl text-xs font-medium hover:bg-slate-50 transition-colors">
+          <Car size={12} /> Ver historial
+        </Link>
+      </div>
     </div>
   )
 }

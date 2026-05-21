@@ -344,6 +344,14 @@ class AccesoMutation:
                 mensaje=f"{resultado.vehiculo.placa} registró {input.tipo} en {punto.nombre}.",
                 tipo_codigo="acceso_vehiculo",
             )
+            # Notificación especial de guía de parqueo — solo en entradas
+            if input.tipo == "entrada":
+                enviar_notificacion(
+                    usuario=propietario,
+                    titulo=f"🏫 Bienvenido al campus — {resultado.vehiculo.placa}",
+                    mensaje="¿Deseas orientación para encontrar un lugar de estacionamiento disponible?",
+                    tipo_codigo="orientacion_parqueo",
+                )
 
         return registro
 

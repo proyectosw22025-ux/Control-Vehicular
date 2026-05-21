@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, lazy, Suspense } from 'react'
-import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
+import { NavLink, Outlet, useNavigate, useLocation, Link } from 'react-router-dom'
 import {
   LayoutDashboard, Users, Car, ParkingSquare,
   DoorOpen, UserCheck, AlertTriangle, Bell, LogOut,
@@ -56,6 +56,7 @@ export default function Layout() {
   const [mobileOpen, setMobileOpen]     = useState(false)
   const [toasts, setToasts]             = useState<Toast[]>([])
   const [busquedaAbierta, setBusqueda]  = useState(false)
+  const [guiaParqueo, setGuiaParqueo]   = useState(false)  // modal orientacion_parqueo
 
   const { logout, usuario, roles, esAdmin } = useAuth()
   // Aplicar tema al montar (lee preferencia guardada)
@@ -104,6 +105,11 @@ export default function Layout() {
   const conteo: number = conteoData?.conteoNoLeidas ?? 0
 
   const handleNueva = useCallback((n: NotifPayload) => {
+    // Notificación especial: ofrecer guía de parqueo → modal YES/NO, no toast
+    if (n.tipoCodigo === 'orientacion_parqueo') {
+      setGuiaParqueo(true)
+      return
+    }
     const key = Date.now() + Math.random()
     setToasts(prev => [...prev, { ...n, key }])
     setTimeout(() => setToasts(prev => prev.filter(t => t.key !== key)), 6000)
@@ -366,6 +372,42 @@ export default function Layout() {
         <Suspense fallback={null}>
           <BusquedaGlobalModal onClose={() => setBusqueda(false)} />
         </Suspense>
+      )}
+
+      {/* ── Modal: orientación de parqueo post-escaneo QR ─────────── */}
+      {guiaParqueo && (
+        <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-2xl p-6 max-w-sm w-full animate-flip-modal">
+            <div className="text-center mb-5">
+              <span className="text-5xl block mb-3">🏫</span>
+              <h2 className="font-black text-xl text-slate-800">¡Bienvenido al campus UAGRM!</h2>
+              <p className="text-slate-500 text-sm mt-1">Tu ingreso fue registrado</p>
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-5 text-center">
+              <p className="font-bold text-amber-800 text-sm">🅿 ¿Deseas orientación para encontrar estacionamiento?</p>
+              <p className="text-amber-600 text-xs mt-1">El sistema te guía hasta una zona disponible</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => { setGuiaParqueo(false); navigate('/parqueo-demo') }}
+                className="flex flex-col items-center gap-1.5 py-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-bold text-sm transition-colors shadow-lg"
+              >
+                <span className="text-2xl">✅</span>
+                Sí, guíame
+              </button>
+              <button
+                onClick={() => setGuiaParqueo(false)}
+                className="flex flex-col items-center gap-1.5 py-4 border-2 border-slate-200 text-slate-600 rounded-2xl font-medium text-sm hover:bg-slate-50 transition-colors"
+              >
+                <span className="text-2xl">🚗</span>
+                No, gracias
+              </button>
+            </div>
+            <p className="text-center text-[10px] text-slate-400 mt-3">
+              Si eliges "No", el guardia registrará tu parqueo al llegar a la zona
+            </p>
+          </div>
+        </div>
       )}
     </div>
   )

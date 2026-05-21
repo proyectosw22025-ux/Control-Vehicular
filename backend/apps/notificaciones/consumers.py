@@ -37,11 +37,12 @@ class NotificacionConsumer(AsyncWebsocketConsumer):
 
     async def notificacion_nueva(self, event):
         await self.send(json.dumps({
-            "tipo": "nueva_notificacion",
-            "id": event["id"],
-            "titulo": event["titulo"],
-            "mensaje": event["mensaje"],
-            "fecha": event["fecha"],
+            "tipo":       "nueva_notificacion",
+            "id":         event["id"],
+            "titulo":     event["titulo"],
+            "mensaje":    event["mensaje"],
+            "fecha":      event["fecha"],
+            "tipo_codigo": event.get("tipo_codigo", ""),  # forwarded al cliente
         }))
 
     @database_sync_to_async
