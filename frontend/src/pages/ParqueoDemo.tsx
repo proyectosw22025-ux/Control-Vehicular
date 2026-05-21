@@ -20,31 +20,42 @@ import { ZONAS_QUERY, ESPACIOS_POR_ZONA_QUERY } from '../graphql/queries/parqueo
 import { VEHICULOS_QUERY } from '../graphql/queries/vehiculos'
 import { INICIAR_SESION_MUTATION } from '../graphql/mutations/parqueos'
 
-// ── Coordenadas reales UAGRM confirmadas por el usuario ───────────────────
-// Centro del campus: -17.775468, -63.196007
-// Las zonas P se estiman dentro del contorno universitario.
-// Para ajuste fino usar "⚙ Configurar zonas" → clic en el mapa → Guardar.
+// ── Coordenadas GPS exactas — verificadas en campo por el usuario ──────────
+// Centro campus: -17.775468, -63.196007
+// 7 puntos P confirmados dentro del contorno UAGRM:
 const CAMPUS_CENTRO: [number, number] = [-17.775468, -63.196007]
 
+// Todos los puntos P reales del campus (para mostrar en el mapa)
+const TODOS_LOS_P: [number, number][] = [
+  [-17.77301822153669,  -63.19795575180268],  // P1 — noroeste (Estadio área)
+  [-17.77485723307645,  -63.19709744495157],  // P2 — central norte
+  [-17.775592832410638, -63.19814350638387],  // P3 — oeste central
+  [-17.776476569253845, -63.197419309978244], // P4 — central sur
+  [-17.774959399845905, -63.19565978093347],  // P5 — centro este
+  [-17.775107541533966, -63.19314923339397],  // P6 — noreste (Mód.250 área)
+  [-17.77716036098754,  -63.1939319724439],   // P7 — sur este
+]
+
+// Agrupados en 3 zonas geográficas para el flujo demo:
+//   Zona A (noreste, Módulo 250/INEGAS): P5, P6 → centroide ~(-17.7750, -63.1944)
+//   Zona B (central, La Poza / Estadio): P2, P3, P4 → centroide ~(-17.7754, -63.1976)
+//   Zona C (noroeste, Estadio / Bienestar): P1, P7 → centroide ~(-17.7751, -63.1960)
 const ZONAS_DEFAULT = [
   {
-    id: 'A', nombre: 'Zona A', sub: 'Bloque Norte (Módulo 250 — INEGAS)',
-    // P norte del campus, próximo a Av. Busch — área módulos 250/251
-    coords: [-17.7718, -63.1930] as [number, number],
+    id: 'A', nombre: 'Zona A', sub: 'Módulo 250 — Área noreste',
+    coords: [-17.77506, -63.19443] as [number, number],  // centroide P5+P6
     color: '#3b82f6', libres: 12, total: 40,
     roles: 'Docentes / Administrativos',
   },
   {
-    id: 'B', nombre: 'Zona B', sub: 'Bloque Central (La Poza — Estadio)',
-    // P central del campus, zona La Poza de las Antas / Estadio Universitario
-    coords: [-17.7755, -63.1975] as [number, number],
+    id: 'B', nombre: 'Zona B', sub: 'La Poza — Bloque Central',
+    coords: [-17.77511, -63.19753] as [number, number],  // centroide P2+P3+P4
     color: '#22c55e', libres: 25, total: 80,
     roles: 'Todos los usuarios',
   },
   {
-    id: 'C', nombre: 'Zona C', sub: 'Bloque Sur (Fac. Politécnica / Contaduría)',
-    // P sur del campus, zona facultades sur
-    coords: [-17.7788, -63.1952] as [number, number],
+    id: 'C', nombre: 'Zona C', sub: 'Estadio — Dirección Bienestar',
+    coords: [-17.77509, -63.19594] as [number, number],  // centroide P1+P7
     color: '#f59e0b', libres: 8, total: 50,
     roles: 'Todos los usuarios',
   },
@@ -73,36 +84,56 @@ function guardarZonas(zonas: Zona[]) {
   localStorage.setItem(LS_KEY, JSON.stringify(obj))
 }
 
+// ── Interpolar ruta para movimiento suave ─────────────────────────────────
+// Añade sub-puntos entre cada waypoint de OSRM → el vehículo se mueve
+// fluidamente sin saltos bruscos entre coordenadas distantes.
+function interpolarRuta(puntos: [number,number][], factor = 5): [number,number][] {
+  if (puntos.length < 2) return puntos
+  const resultado: [number,number][] = []
+  for (let i = 0; i < puntos.length - 1; i++) {
+    resultado.push(puntos[i])
+    for (let j = 1; j < factor; j++) {
+      const t = j / factor
+      resultado.push([
+        puntos[i][0] + (puntos[i+1][0] - puntos[i][0]) * t,
+        puntos[i][1] + (puntos[i+1][1] - puntos[i][1]) * t,
+      ] as [number,number])
+    }
+  }
+  resultado.push(puntos[puntos.length - 1])
+  return resultado
+}
+
 // ── OSRM — routing real por calles (sin API key) ─────────────────────────
 async function obtenerRutaOSRM(
   entrada: [number,number],
   destino: [number,number],
-): Promise<{ puntos: [number,number][]; duracionSeg: number | null }> {
+): Promise<{ puntos: [number,number][]; duracionSeg: number | null; esReal: boolean }> {
   const url =
     `https://router.project-osrm.org/route/v1/driving/` +
     `${entrada[1]},${entrada[0]};${destino[1]},${destino[0]}` +
     `?geometries=geojson&overview=full&steps=false`
   try {
-    const resp  = await fetch(url, { signal: AbortSignal.timeout(6000) })
-    const data  = await resp.json()
-    const ruta  = data?.routes?.[0]
+    const resp = await fetch(url, { signal: AbortSignal.timeout(6000) })
+    const data = await resp.json()
+    const ruta = data?.routes?.[0]
     if (data.code === 'Ok' && ruta?.geometry?.coordinates?.length) {
+      const base = ruta.geometry.coordinates.map(
+        ([lng, lat]: [number,number]) => [lat, lng] as [number,number]
+      )
       return {
-        puntos: ruta.geometry.coordinates.map(
-          ([lng, lat]: [number,number]) => [lat, lng] as [number,number]
-        ),
+        puntos:      interpolarRuta(base, 5),   // x5 sub-puntos para suavidad
         duracionSeg: Math.round(ruta.duration),
+        esReal:      true,
       }
     }
   } catch { /* fallback */ }
-  // Fallback lineal
-  return {
-    puntos: Array.from({ length: 61 }, (_, i) => [
-      entrada[0] + (destino[0] - entrada[0]) * i / 60,
-      entrada[1] + (destino[1] - entrada[1]) * i / 60,
-    ] as [number,number]),
-    duracionSeg: null,
-  }
+  // Fallback: línea recta interpolada
+  const base = Array.from({ length: 25 }, (_, i) => [
+    entrada[0] + (destino[0] - entrada[0]) * i / 24,
+    entrada[1] + (destino[1] - entrada[1]) * i / 24,
+  ] as [number,number])
+  return { puntos: interpolarRuta(base, 5), duracionSeg: null, esReal: false }
 }
 
 type FlowState = 'inicio' | 'cargando_ruta' | 'en_ruta' | 'confirmando' | 'parqueado' | 'completado'
@@ -184,6 +215,21 @@ function MapaLeaflet({
 
         mapRef.current = map
 
+        // Marcar los 7 puntos P verificados en campo (pequeños)
+        TODOS_LOS_P.forEach((coords, i) => {
+          const iconP = L.divIcon({
+            html: `<div style="background:white;color:#1e40af;border:2px solid #1e40af;border-radius:4px;
+                               font-size:10px;font-weight:900;width:20px;height:20px;
+                               display:flex;align-items:center;justify-content:center;
+                               box-shadow:0 1px 4px rgba(0,0,0,0.3)">P</div>`,
+            className: '', iconSize: [20,20], iconAnchor: [10,10],
+          })
+          L.marker(coords, { icon: iconP, zIndexOffset: 200 })
+            .addTo(map)
+            .bindPopup(`<b>Parqueo P${i+1}</b><br>Zona de estacionamiento verificada<br>
+                        <small>${coords[0].toFixed(5)}, ${coords[1].toFixed(5)}</small>`)
+        })
+
         // Dibujar marcadores de zonas
         dibujarZonas(L, map, zonas, zonaMarksRef, onZonaClick)
       })
@@ -240,17 +286,20 @@ function MapaLeaflet({
       }
 
       let idx = 0
-      const paso = Math.max(1, Math.floor(rutaPuntos.length / 80))
+      // Velocidad realista: 150ms por punto interpolado.
+      // Con interpolarRuta(x5), cada punto real de OSRM se divide en 5.
+      // Ejemplo: 60 puntos OSRM × 5 = 300 sub-puntos × 150ms = 45 segundos
+      // Equivale a ~12-15 km/h dentro del campus — velocidad natural de vehículo.
       animRef.current = setInterval(() => {
         if (idx >= rutaPuntos.length) {
           clearInterval(animRef.current!)
-          if (zonaDestino) mapRef.current?.flyTo(zonaDestino.coords, 18, { duration: 1 })
+          if (zonaDestino) mapRef.current?.flyTo(zonaDestino.coords, 18, { duration: 1.5 })
           onLlegada()
           return
         }
         vehicleRef.current?.setLatLng(rutaPuntos[idx])
-        idx += paso
-      }, 60)
+        idx += 1   // avanzar de 1 en 1 — sin skip para movimiento fluido
+      }, 150)   // 150ms — movimiento controlado tipo vehículo en campus
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rutaPuntos, flowState])
@@ -291,9 +340,9 @@ export default function ParqueoDemo() {
   const navigate    = useNavigate()
 
   const [zonas, setZonas]         = useState<Zona[]>(cargarZonas)
-  // Entrada principal del campus — norte, sobre Av. Busch
-  // Ajustada respecto al centro confirmado: -17.775468, -63.196007
-  const [entrada]                 = useState<[number,number]>([-17.7700, -63.1960])
+  // Entrada principal — Av. Busch, portería norte del campus
+  // ~500m al norte del centro confirmado (-17.7755)
+  const [entrada]                 = useState<[number,number]>([-17.7695, -63.1960])
   const [flow, setFlow]           = useState<FlowState>('inicio')
   const [zonaDestino, setZonaD]   = useState<Zona | null>(null)
   const [rutaPuntos, setRuta]     = useState<[number,number][]>([])
@@ -378,9 +427,11 @@ export default function ParqueoDemo() {
     if (!horaEntrada) setHoraE(new Date().toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' }))
     setZonaD(zona); setFlow('cargando_ruta'); setRuta([]); setTiempoR(null)
 
-    const { puntos, duracionSeg } = await obtenerRutaOSRM(entrada, zona.coords)
+    const { puntos, duracionSeg, esReal } = await obtenerRutaOSRM(entrada, zona.coords)
     setTiempoR(duracionSeg)
     setRuta(puntos)
+    if (!esReal) console.info('[ParqueoDemo] OSRM no disponible — usando ruta estimada')
+
     setFlow('en_ruta')
   }, [flow, horaEntrada, modoConfig, entrada])
 
