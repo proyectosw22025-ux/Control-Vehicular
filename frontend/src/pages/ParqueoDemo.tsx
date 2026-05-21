@@ -20,24 +20,31 @@ import { ZONAS_QUERY, ESPACIOS_POR_ZONA_QUERY } from '../graphql/queries/parqueo
 import { VEHICULOS_QUERY } from '../graphql/queries/vehiculos'
 import { INICIAR_SESION_MUTATION } from '../graphql/mutations/parqueos'
 
-// ── Zonas con posiciones por defecto (se sobreescriben desde localStorage) ─
+// ── Coordenadas reales UAGRM confirmadas por el usuario ───────────────────
+// Centro del campus: -17.775468, -63.196007
+// Las zonas P se estiman dentro del contorno universitario.
+// Para ajuste fino usar "⚙ Configurar zonas" → clic en el mapa → Guardar.
+const CAMPUS_CENTRO: [number, number] = [-17.775468, -63.196007]
+
 const ZONAS_DEFAULT = [
   {
-    id: 'A', nombre: 'Zona A', sub: 'Bloque Norte (Módulo 250)',
-    // Ajustar desde el modo ⚙ Configurar
-    coords: [-17.7878, -63.1845] as [number, number],
+    id: 'A', nombre: 'Zona A', sub: 'Bloque Norte (Módulo 250 — INEGAS)',
+    // P norte del campus, próximo a Av. Busch — área módulos 250/251
+    coords: [-17.7718, -63.1930] as [number, number],
     color: '#3b82f6', libres: 12, total: 40,
     roles: 'Docentes / Administrativos',
   },
   {
-    id: 'B', nombre: 'Zona B', sub: 'Bloque Central (La Poza)',
-    coords: [-17.7908, -63.1878] as [number, number],
+    id: 'B', nombre: 'Zona B', sub: 'Bloque Central (La Poza — Estadio)',
+    // P central del campus, zona La Poza de las Antas / Estadio Universitario
+    coords: [-17.7755, -63.1975] as [number, number],
     color: '#22c55e', libres: 25, total: 80,
     roles: 'Todos los usuarios',
   },
   {
-    id: 'C', nombre: 'Zona C', sub: 'Bloque Sur (Fac. Politécnica)',
-    coords: [-17.7938, -63.1855] as [number, number],
+    id: 'C', nombre: 'Zona C', sub: 'Bloque Sur (Fac. Politécnica / Contaduría)',
+    // P sur del campus, zona facultades sur
+    coords: [-17.7788, -63.1952] as [number, number],
     color: '#f59e0b', libres: 8, total: 50,
     roles: 'Todos los usuarios',
   },
@@ -45,7 +52,8 @@ const ZONAS_DEFAULT = [
 
 type Zona = { id: string; nombre: string; sub: string; coords: [number,number]; color: string; libres: number; total: number; roles: string }
 
-const LS_KEY = 'uagrm_zonas_coords_v1'
+// v2 de la clave — invalida coordenadas antiguas incorrectas
+const LS_KEY = 'uagrm_zonas_coords_v2'
 
 function cargarZonas(): Zona[] {
   try {
@@ -139,29 +147,17 @@ function MapaLeaflet({
           shadowUrl:     'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
         })
 
-        // Centro inicial estimado mientras Nominatim responde
-        const map = L.map(divRef.current!, { center: [-17.791, -63.185], zoom: 16, zoomControl: true })
+        // Centro confirmado por coordenadas reales del campus UAGRM
+        const map = L.map(divRef.current!, {
+          center: CAMPUS_CENTRO,
+          zoom:   17,   // zoom 17 centra el campus completo
+          zoomControl: true,
+        })
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '© OpenStreetMap · © UAGRM Santa Cruz',
+          attribution: '© OpenStreetMap contributors — Campus UAGRM Santa Cruz, Bolivia',
           maxZoom: 19,
         }).addTo(map)
         setTimeout(() => map.invalidateSize(), 200)
-
-        // Nominatim: busca la UAGRM y centra el mapa exactamente
-        try {
-          const r = await fetch(
-            'https://nominatim.openstreetmap.org/search' +
-            '?q=Universidad+Aut%C3%B3noma+Gabriel+Ren%C3%A9+Moreno+Santa+Cruz+Bolivia' +
-            '&format=json&limit=1&addressdetails=0',
-            { headers: { 'Accept-Language': 'es' } }
-          )
-          const [res] = await r.json()
-          if (res) {
-            const lat = parseFloat(res.lat)
-            const lon = parseFloat(res.lon)
-            map.setView([lat, lon], 16)
-          }
-        } catch { /* usa el centro inicial */ }
 
         // Marcador de entrada
         const iconEntrada = L.divIcon({
@@ -295,7 +291,9 @@ export default function ParqueoDemo() {
   const navigate    = useNavigate()
 
   const [zonas, setZonas]         = useState<Zona[]>(cargarZonas)
-  const [entrada]                 = useState<[number,number]>([-17.7858, -63.1848])
+  // Entrada principal del campus — norte, sobre Av. Busch
+  // Ajustada respecto al centro confirmado: -17.775468, -63.196007
+  const [entrada]                 = useState<[number,number]>([-17.7700, -63.1960])
   const [flow, setFlow]           = useState<FlowState>('inicio')
   const [zonaDestino, setZonaD]   = useState<Zona | null>(null)
   const [rutaPuntos, setRuta]     = useState<[number,number][]>([])
