@@ -101,10 +101,23 @@ class EspacioParqueoType:
     def placa_vehiculo_activo(self) -> Optional[str]:
         """
         Placa del vehículo que ocupa este espacio ahora mismo.
-        Evita N+1: el valor es anotado por mapa_parqueo() en un solo query
-        de sesiones activas y guardado como atributo transitorio _placa_activa.
+        Si fue anotado por mapa_parqueo() usa el atributo transitorio _placa_activa.
+        Si no (ej. llamado desde espacios_por_zona), hace una query directa.
         """
-        return getattr(self, "_placa_activa", None)
+        anotado = getattr(self, "_placa_activa", None)
+        if anotado is not None:
+            return anotado
+        sesion = SesionParqueo.objects.filter(espacio_id=self.pk, estado="activa").first()
+        return sesion.vehiculo.placa if sesion else None
+
+    @strawberry.field
+    def sesion_activa_id(self) -> Optional[int]:
+        """ID de la sesión activa para cerrarla desde el mapa o la vista de espacios."""
+        anotado = getattr(self, "_sesion_activa_id", None)
+        if anotado is not None:
+            return anotado
+        sesion = SesionParqueo.objects.filter(espacio_id=self.pk, estado="activa").first()
+        return sesion.pk if sesion else None
 
 
 @strawberry.type

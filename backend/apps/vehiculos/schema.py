@@ -126,6 +126,19 @@ class VehiculoType:
         return f"{self.propietario.nombre} {self.propietario.apellido}"
 
     @strawberry.field
+    def propietario_ci(self) -> str:
+        return self.propietario.ci
+
+    @strawberry.field
+    def propietario_roles(self) -> List[str]:
+        """Roles del propietario para validación de categoría de espacio."""
+        from apps.usuarios.models import UsuarioRol
+        return list(
+            UsuarioRol.objects.filter(usuario_id=self.propietario_id)
+            .values_list("rol__nombre", flat=True)
+        )
+
+    @strawberry.field
     def documentos(self) -> List[DocumentoVehiculoType]:
         return list(self.documentos.all())
 

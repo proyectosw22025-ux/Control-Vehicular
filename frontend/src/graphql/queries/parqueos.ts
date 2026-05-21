@@ -23,8 +23,10 @@ export const ESPACIOS_POR_ZONA_QUERY = gql`
       numero
       estado
       ubicacionReferencia
+      placaVehiculoActivo
+      sesionActivaId
       zona { id nombre }
-      categoria { id nombre color }
+      categoria { id nombre color esDiscapacidad }
     }
   }
 `
