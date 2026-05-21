@@ -1,12 +1,13 @@
 /**
- * ParqueoDemo v4 — Guía de parqueo con mapa REAL del campus UAGRM.
+ * ParqueoDemo v5 — Campus UAGRM con vehículo realista por tipo.
  *
- * Solución definitiva para coordenadas:
- *   - Modo ⚙ Configurar Zonas: el admin hace clic en el mapa real
- *     para posicionar cada zona P exactamente donde aparece en el campus.
- *   - Las posiciones se guardan en localStorage y persisten entre sesiones.
- *   - Al abrir, el mapa se centra automáticamente en la UAGRM vía Nominatim.
- *   - Routing real por calles via OSRM (sin API key).
+ * Mejoras v5:
+ *   - 8 puntos P verificados en campo (P8 nuevo: -17.7774, -63.1962)
+ *   - SVG top-down realista por tipo de vehículo (auto, moto, camioneta, bus, bici)
+ *   - Vehículo rota automáticamente en la dirección del movimiento (bearing GPS)
+ *   - Línea de ruta SÓLIDA con gradiente de color (sin línea punteada)
+ *   - Velocidad calibrada: 100ms/sub-punto → ~30-40 seg cruzar el campus (~15 km/h)
+ *   - Icono del vehículo se actualiza al seleccionar el vehículo propio
  */
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
@@ -20,221 +21,287 @@ import { ZONAS_QUERY, ESPACIOS_POR_ZONA_QUERY } from '../graphql/queries/parqueo
 import { VEHICULOS_QUERY } from '../graphql/queries/vehiculos'
 import { INICIAR_SESION_MUTATION } from '../graphql/mutations/parqueos'
 
-// ── Coordenadas GPS exactas — verificadas en campo por el usuario ──────────
-// Centro campus: -17.775468, -63.196007
-// 7 puntos P confirmados dentro del contorno UAGRM:
+// ── Coordenadas exactas verificadas en campo ──────────────────────────────
 const CAMPUS_CENTRO: [number, number] = [-17.775468, -63.196007]
 
-// Todos los puntos P reales del campus (para mostrar en el mapa)
+// 8 puntos P reales dentro del contorno UAGRM
 const TODOS_LOS_P: [number, number][] = [
-  [-17.77301822153669,  -63.19795575180268],  // P1 — noroeste (Estadio área)
-  [-17.77485723307645,  -63.19709744495157],  // P2 — central norte
-  [-17.775592832410638, -63.19814350638387],  // P3 — oeste central
-  [-17.776476569253845, -63.197419309978244], // P4 — central sur
-  [-17.774959399845905, -63.19565978093347],  // P5 — centro este
-  [-17.775107541533966, -63.19314923339397],  // P6 — noreste (Mód.250 área)
-  [-17.77716036098754,  -63.1939319724439],   // P7 — sur este
+  [-17.77301822153669,  -63.19795575180268],   // P1 noroeste
+  [-17.77485723307645,  -63.19709744495157],   // P2 central norte
+  [-17.775592832410638, -63.19814350638387],   // P3 oeste central
+  [-17.776476569253845, -63.197419309978244],  // P4 central sur
+  [-17.774959399845905, -63.19565978093347],   // P5 centro este
+  [-17.775107541533966, -63.19314923339397],   // P6 noreste Mód.250
+  [-17.77716036098754,  -63.1939319724439],    // P7 sur este
+  [-17.777404365444593, -63.1961688456745],    // P8 sur central ← NUEVO
 ]
 
-// Agrupados en 3 zonas geográficas para el flujo demo:
-//   Zona A (noreste, Módulo 250/INEGAS): P5, P6 → centroide ~(-17.7750, -63.1944)
-//   Zona B (central, La Poza / Estadio): P2, P3, P4 → centroide ~(-17.7754, -63.1976)
-//   Zona C (noroeste, Estadio / Bienestar): P1, P7 → centroide ~(-17.7751, -63.1960)
+// Zonas agrupadas (centroides calculados de los 8 puntos):
+//   A (noreste): P2, P5, P6
+//   B (oeste/central): P1, P3
+//   C (sur): P4, P7, P8
 const ZONAS_DEFAULT = [
   {
-    id: 'A', nombre: 'Zona A', sub: 'Módulo 250 — Área noreste',
-    coords: [-17.77506, -63.19443] as [number, number],  // centroide P5+P6
+    id: 'A', nombre: 'Zona A', sub: 'Módulo 250 — Noreste',
+    // centroide P2+P5+P6
+    coords: [-17.77497, -63.19530] as [number,number],
     color: '#3b82f6', libres: 12, total: 40,
     roles: 'Docentes / Administrativos',
   },
   {
-    id: 'B', nombre: 'Zona B', sub: 'La Poza — Bloque Central',
-    coords: [-17.77511, -63.19753] as [number, number],  // centroide P2+P3+P4
+    id: 'B', nombre: 'Zona B', sub: 'Estadio / La Poza — Oeste',
+    // centroide P1+P3
+    coords: [-17.77431, -63.19805] as [number,number],
     color: '#22c55e', libres: 25, total: 80,
     roles: 'Todos los usuarios',
   },
   {
-    id: 'C', nombre: 'Zona C', sub: 'Estadio — Dirección Bienestar',
-    coords: [-17.77509, -63.19594] as [number, number],  // centroide P1+P7
+    id: 'C', nombre: 'Zona C', sub: 'Fac. Politécnica — Sur',
+    // centroide P4+P7+P8
+    coords: [-17.77701, -63.19584] as [number,number],
     color: '#f59e0b', libres: 8, total: 50,
     roles: 'Todos los usuarios',
   },
 ] as const
 
-type Zona = { id: string; nombre: string; sub: string; coords: [number,number]; color: string; libres: number; total: number; roles: string }
+type Zona = { id:string; nombre:string; sub:string; coords:[number,number]; color:string; libres:number; total:number; roles:string }
 
-// v2 de la clave — invalida coordenadas antiguas incorrectas
-const LS_KEY = 'uagrm_zonas_coords_v2'
-
-function cargarZonas(): Zona[] {
-  try {
-    const saved = localStorage.getItem(LS_KEY)
-    if (!saved) return ZONAS_DEFAULT.map(z => ({ ...z }))
-    const parsed = JSON.parse(saved) as Record<string, [number,number]>
-    return ZONAS_DEFAULT.map(z => ({
-      ...z,
-      coords: parsed[z.id] ?? z.coords,
-    }))
-  } catch { return ZONAS_DEFAULT.map(z => ({ ...z })) }
+// ── SVG top-down realistas por tipo de vehículo ───────────────────────────
+// El triángulo amarillo superior indica la dirección de avance.
+const VEHICLE_SVG: Record<string, { svg: string; w: number; h: number }> = {
+  'Automóvil': {
+    w: 28, h: 50,
+    svg: `<svg width="28" height="50" viewBox="0 0 28 50" xmlns="http://www.w3.org/2000/svg">
+      <defs><filter id="sh"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-opacity="0.45"/></filter></defs>
+      <g filter="url(#sh)">
+        <rect x="3" y="8" width="22" height="34" rx="7" fill="#2563eb"/>
+        <rect x="5" y="10" width="18" height="13" rx="4" fill="#93c5fd" opacity="0.85"/>
+        <rect x="5" y="29" width="18" height="11" rx="4" fill="#93c5fd" opacity="0.55"/>
+        <rect x="0"  y="11" width="4" height="9" rx="2" fill="#111827"/>
+        <rect x="24" y="11" width="4" height="9" rx="2" fill="#111827"/>
+        <rect x="0"  y="30" width="4" height="9" rx="2" fill="#111827"/>
+        <rect x="24" y="30" width="4" height="9" rx="2" fill="#111827"/>
+        <line x1="5" y1="24" x2="23" y2="24" stroke="#1d4ed8" stroke-width="1.5" opacity="0.6"/>
+      </g>
+      <polygon points="14,2 9,9 19,9" fill="#fbbf24" opacity="0.95"/>
+    </svg>`,
+  },
+  'Motocicleta': {
+    w: 18, h: 44,
+    svg: `<svg width="18" height="44" viewBox="0 0 18 44" xmlns="http://www.w3.org/2000/svg">
+      <defs><filter id="sh"><feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-opacity="0.4"/></filter></defs>
+      <g filter="url(#sh)">
+        <ellipse cx="9" cy="7" rx="5" ry="6" fill="#111827"/>
+        <rect x="5" y="11" width="8" height="22" rx="4" fill="#7c3aed"/>
+        <ellipse cx="9" cy="37" rx="5" ry="6" fill="#111827"/>
+        <ellipse cx="9" cy="7"  rx="2.5" ry="3" fill="#374151"/>
+        <ellipse cx="9" cy="37" rx="2.5" ry="3" fill="#374151"/>
+      </g>
+      <polygon points="9,2 6,7 12,7" fill="#fbbf24" opacity="0.95"/>
+    </svg>`,
+  },
+  'Camioneta': {
+    w: 32, h: 54,
+    svg: `<svg width="32" height="54" viewBox="0 0 32 54" xmlns="http://www.w3.org/2000/svg">
+      <defs><filter id="sh"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-opacity="0.45"/></filter></defs>
+      <g filter="url(#sh)">
+        <rect x="2" y="8" width="28" height="38" rx="6" fill="#0891b2"/>
+        <rect x="4" y="10" width="24" height="14" rx="4" fill="#a5f3fc" opacity="0.8"/>
+        <rect x="4" y="30" width="24" height="12" rx="4" fill="#a5f3fc" opacity="0.45"/>
+        <rect x="0"  y="12" width="4" height="11" rx="2" fill="#111827"/>
+        <rect x="28" y="12" width="4" height="11" rx="2" fill="#111827"/>
+        <rect x="0"  y="33" width="4" height="11" rx="2" fill="#111827"/>
+        <rect x="28" y="33" width="4" height="11" rx="2" fill="#111827"/>
+        <line x1="4" y1="25" x2="28" y2="25" stroke="#0e7490" stroke-width="1.5" opacity="0.5"/>
+      </g>
+      <polygon points="16,2 11,9 21,9" fill="#fbbf24" opacity="0.95"/>
+    </svg>`,
+  },
+  'Minibús': {
+    w: 36, h: 58,
+    svg: `<svg width="36" height="58" viewBox="0 0 36 58" xmlns="http://www.w3.org/2000/svg">
+      <defs><filter id="sh"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-opacity="0.4"/></filter></defs>
+      <g filter="url(#sh)">
+        <rect x="2" y="7" width="32" height="44" rx="5" fill="#059669"/>
+        <rect x="4" y="9" width="28" height="16" rx="3" fill="#a7f3d0" opacity="0.8"/>
+        <rect x="4" y="29" width="28" height="7" rx="2" fill="#a7f3d0" opacity="0.4"/>
+        <rect x="4" y="39" width="28" height="7" rx="2" fill="#a7f3d0" opacity="0.4"/>
+        <rect x="0"  y="12" width="4" height="12" rx="2" fill="#111827"/>
+        <rect x="32" y="12" width="4" height="12" rx="2" fill="#111827"/>
+        <rect x="0"  y="38" width="4" height="11" rx="2" fill="#111827"/>
+        <rect x="32" y="38" width="4" height="11" rx="2" fill="#111827"/>
+      </g>
+      <polygon points="18,2 13,8 23,8" fill="#fbbf24" opacity="0.95"/>
+    </svg>`,
+  },
+  'Bicicleta': {
+    w: 20, h: 42,
+    svg: `<svg width="20" height="42" viewBox="0 0 20 42" xmlns="http://www.w3.org/2000/svg">
+      <defs><filter id="sh"><feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-opacity="0.3"/></filter></defs>
+      <g filter="url(#sh)">
+        <circle cx="10" cy="6"  r="5" fill="none" stroke="#374151" stroke-width="2"/>
+        <rect x="7" y="10" width="6" height="22" rx="3" fill="#dc2626"/>
+        <circle cx="10" cy="36" r="5" fill="none" stroke="#374151" stroke-width="2"/>
+        <circle cx="10" cy="6"  r="2" fill="#374151"/>
+        <circle cx="10" cy="36" r="2" fill="#374151"/>
+      </g>
+      <polygon points="10,1 7,6 13,6" fill="#fbbf24" opacity="0.95"/>
+    </svg>`,
+  },
 }
 
-function guardarZonas(zonas: Zona[]) {
-  const obj: Record<string, [number,number]> = {}
-  zonas.forEach(z => { obj[z.id] = z.coords })
-  localStorage.setItem(LS_KEY, JSON.stringify(obj))
+function getVehicleSvg(tipoNombre: string) {
+  return VEHICLE_SVG[tipoNombre] ?? VEHICLE_SVG['Automóvil']
 }
 
-// ── Interpolar ruta para movimiento suave ─────────────────────────────────
-// Añade sub-puntos entre cada waypoint de OSRM → el vehículo se mueve
-// fluidamente sin saltos bruscos entre coordenadas distantes.
-function interpolarRuta(puntos: [number,number][], factor = 5): [number,number][] {
-  if (puntos.length < 2) return puntos
-  const resultado: [number,number][] = []
-  for (let i = 0; i < puntos.length - 1; i++) {
-    resultado.push(puntos[i])
+// ── Cálculo de bearing (dirección de movimiento) ──────────────────────────
+function calcularBearing(a: [number,number], b: [number,number]): number {
+  const toR = (d: number) => d * Math.PI / 180
+  const dL  = toR(b[1] - a[1])
+  const y   = Math.sin(dL) * Math.cos(toR(b[0]))
+  const x   = Math.cos(toR(a[0])) * Math.sin(toR(b[0])) -
+              Math.sin(toR(a[0])) * Math.cos(toR(b[0])) * Math.cos(dL)
+  return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360
+}
+
+// ── Interpolación + OSRM ──────────────────────────────────────────────────
+function interpolarRuta(pts: [number,number][], factor = 5): [number,number][] {
+  if (pts.length < 2) return pts
+  const res: [number,number][] = []
+  for (let i = 0; i < pts.length - 1; i++) {
+    res.push(pts[i])
     for (let j = 1; j < factor; j++) {
       const t = j / factor
-      resultado.push([
-        puntos[i][0] + (puntos[i+1][0] - puntos[i][0]) * t,
-        puntos[i][1] + (puntos[i+1][1] - puntos[i][1]) * t,
-      ] as [number,number])
+      res.push([pts[i][0] + (pts[i+1][0]-pts[i][0])*t, pts[i][1] + (pts[i+1][1]-pts[i][1])*t])
     }
   }
-  resultado.push(puntos[puntos.length - 1])
-  return resultado
+  res.push(pts[pts.length - 1])
+  return res
 }
 
-// ── OSRM — routing real por calles (sin API key) ─────────────────────────
 async function obtenerRutaOSRM(
-  entrada: [number,number],
-  destino: [number,number],
-): Promise<{ puntos: [number,number][]; duracionSeg: number | null; esReal: boolean }> {
-  const url =
-    `https://router.project-osrm.org/route/v1/driving/` +
-    `${entrada[1]},${entrada[0]};${destino[1]},${destino[0]}` +
-    `?geometries=geojson&overview=full&steps=false`
+  entrada: [number,number], destino: [number,number],
+): Promise<{ puntos: [number,number][]; duracionSeg: number|null; esReal: boolean }> {
+  const url = `https://router.project-osrm.org/route/v1/driving/${entrada[1]},${entrada[0]};${destino[1]},${destino[0]}?geometries=geojson&overview=full&steps=false`
   try {
     const resp = await fetch(url, { signal: AbortSignal.timeout(6000) })
     const data = await resp.json()
     const ruta = data?.routes?.[0]
     if (data.code === 'Ok' && ruta?.geometry?.coordinates?.length) {
-      const base = ruta.geometry.coordinates.map(
-        ([lng, lat]: [number,number]) => [lat, lng] as [number,number]
-      )
       return {
-        puntos:      interpolarRuta(base, 5),   // x5 sub-puntos para suavidad
+        puntos:      interpolarRuta(ruta.geometry.coordinates.map(([lng,lat]:[number,number]) => [lat,lng] as [number,number]), 5),
         duracionSeg: Math.round(ruta.duration),
         esReal:      true,
       }
     }
-  } catch { /* fallback */ }
-  // Fallback: línea recta interpolada
+  } catch { /**/ }
   const base = Array.from({ length: 25 }, (_, i) => [
-    entrada[0] + (destino[0] - entrada[0]) * i / 24,
-    entrada[1] + (destino[1] - entrada[1]) * i / 24,
+    entrada[0] + (destino[0]-entrada[0])*i/24,
+    entrada[1] + (destino[1]-entrada[1])*i/24,
   ] as [number,number])
   return { puntos: interpolarRuta(base, 5), duracionSeg: null, esReal: false }
 }
 
-type FlowState = 'inicio' | 'cargando_ruta' | 'en_ruta' | 'confirmando' | 'parqueado' | 'completado'
-type ConfigZona = 'A' | 'B' | 'C' | null
+// ── localStorage ──────────────────────────────────────────────────────────
+const LS_KEY = 'uagrm_zonas_coords_v3'  // v3 invalida coords antiguas
 
-// ── Mapa Leaflet ─────────────────────────────────────────────────────────
+function cargarZonas(): Zona[] {
+  try {
+    const saved = localStorage.getItem(LS_KEY)
+    if (!saved) return ZONAS_DEFAULT.map(z => ({ ...z }))
+    const parsed = JSON.parse(saved) as Record<string,[number,number]>
+    return ZONAS_DEFAULT.map(z => ({ ...z, coords: parsed[z.id] ?? z.coords }))
+  } catch { return ZONAS_DEFAULT.map(z => ({ ...z })) }
+}
+function guardarZonas(zonas: Zona[]) {
+  const obj: Record<string,[number,number]> = {}
+  zonas.forEach(z => { obj[z.id] = z.coords })
+  localStorage.setItem(LS_KEY, JSON.stringify(obj))
+}
+
+type FlowState = 'inicio'|'cargando_ruta'|'en_ruta'|'confirmando'|'parqueado'|'completado'
+type ConfigZona = 'A'|'B'|'C'|null
+
+// ── Componente Leaflet ────────────────────────────────────────────────────
 function MapaLeaflet({
   zonas, entrada, zonaDestino, flowState, rutaPuntos,
-  modoConfig, zonaConfig,
+  modoConfig, zonaConfig, tipoVehiculo,
   onZonaClick, onLlegada, onMapClick,
 }: {
-  zonas:       Zona[]
-  entrada:     [number,number]
-  zonaDestino: Zona | null
-  flowState:   FlowState
-  rutaPuntos:  [number,number][]
-  modoConfig:  boolean
-  zonaConfig:  ConfigZona
-  onZonaClick: (z: Zona) => void
-  onLlegada:   () => void
-  onMapClick:  (lat: number, lng: number) => void
+  zonas: Zona[]; entrada: [number,number]; zonaDestino: Zona|null
+  flowState: FlowState; rutaPuntos: [number,number][]
+  modoConfig: boolean; zonaConfig: ConfigZona; tipoVehiculo: string
+  onZonaClick: (z:Zona) => void; onLlegada: () => void; onMapClick: (lat:number,lng:number)=>void
 }) {
-  const mapRef     = useRef<any>(null)
-  const vehicleRef = useRef<any>(null)
-  const lineaRef   = useRef<any>(null)
-  const zonaMarksRef = useRef<Record<string, any>>({})
-  const animRef    = useRef<ReturnType<typeof setInterval> | null>(null)
-  const divRef     = useRef<HTMLDivElement>(null)
+  const mapRef      = useRef<any>(null)
+  const vehicleRef  = useRef<any>(null)
+  const lineaRef    = useRef<any>(null)
+  const zonaMarksRef = useRef<Record<string,any>>({})
+  const animRef     = useRef<ReturnType<typeof setInterval>|null>(null)
+  const divRef      = useRef<HTMLDivElement>(null)
 
-  // Inicializar mapa + Nominatim para centrar en UAGRM real
+  function crearIconoVehiculo(L: any, tipo: string, bearing = 0) {
+    const { svg, w, h } = getVehicleSvg(tipo)
+    return L.divIcon({
+      html: `<div style="transform:rotate(${bearing}deg);transform-origin:center;width:${w}px;height:${h}px;
+                         filter:drop-shadow(0 3px 6px rgba(0,0,0,0.5))">${svg}</div>`,
+      className: '', iconSize: [w, h], iconAnchor: [w/2, h/2],
+    })
+  }
+
+  // ── Init mapa ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (mapRef.current || !divRef.current) return
-
     const t = setTimeout(() => {
       if (!divRef.current || mapRef.current) return
-
-      import('leaflet').then(async L => {
+      import('leaflet').then(L => {
         delete (L.Icon.Default.prototype as any)._getIconUrl
         L.Icon.Default.mergeOptions({
           iconUrl:       'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
           iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
           shadowUrl:     'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
         })
-
-        // Centro confirmado por coordenadas reales del campus UAGRM
-        const map = L.map(divRef.current!, {
-          center: CAMPUS_CENTRO,
-          zoom:   17,   // zoom 17 centra el campus completo
-          zoomControl: true,
-        })
+        const map = L.map(divRef.current!, { center: CAMPUS_CENTRO, zoom: 17, zoomControl: true })
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '© OpenStreetMap contributors — Campus UAGRM Santa Cruz, Bolivia',
+          attribution: '© OpenStreetMap — Campus UAGRM Santa Cruz, Bolivia',
           maxZoom: 19,
         }).addTo(map)
-        setTimeout(() => map.invalidateSize(), 200)
+        setTimeout(() => map.invalidateSize(), 250)
 
-        // Marcador de entrada
+        // Entrada
         const iconEntrada = L.divIcon({
-          html: `<div style="background:#1e40af;color:white;border-radius:50%;width:40px;height:40px;
+          html: `<div style="background:#1e40af;color:white;border-radius:50%;width:38px;height:38px;
                    display:flex;align-items:center;justify-content:center;font-size:20px;
-                   border:3px solid white;box-shadow:0 3px 12px rgba(0,0,0,0.5)">🏫</div>`,
-          className: '', iconSize: [40,40], iconAnchor: [20,20],
+                   border:3px solid white;box-shadow:0 3px 10px rgba(0,0,0,0.5)">🏫</div>`,
+          className: '', iconSize: [38,38], iconAnchor: [19,19],
         })
-        L.marker(entrada, { icon: iconEntrada })
-          .addTo(map)
-          .bindPopup('<b>Entrada Principal — Av. Busch</b><br>Control de acceso QR')
+        L.marker(entrada, { icon: iconEntrada }).addTo(map)
+          .bindPopup('<b>Entrada Principal — Av. Busch</b><br>Control QR')
 
-        // Vehículo
-        const iconCar = L.divIcon({
-          html: `<div style="font-size:28px;filter:drop-shadow(0 2px 6px rgba(0,0,0,0.6))">🚗</div>`,
-          className: '', iconSize: [32,32], iconAnchor: [16,16],
-        })
-        vehicleRef.current = L.marker(entrada, { icon: iconCar, zIndexOffset: 1000 }).addTo(map)
-
-        // Click en el mapa (modo configuración)
-        map.on('click', (e: any) => {
-          onMapClick(e.latlng.lat, e.latlng.lng)
-        })
-
-        mapRef.current = map
-
-        // Marcar los 7 puntos P verificados en campo (pequeños)
+        // 8 puntos P verificados
         TODOS_LOS_P.forEach((coords, i) => {
           const iconP = L.divIcon({
             html: `<div style="background:white;color:#1e40af;border:2px solid #1e40af;border-radius:4px;
-                               font-size:10px;font-weight:900;width:20px;height:20px;
-                               display:flex;align-items:center;justify-content:center;
-                               box-shadow:0 1px 4px rgba(0,0,0,0.3)">P</div>`,
-            className: '', iconSize: [20,20], iconAnchor: [10,10],
+                     font-size:10px;font-weight:900;width:22px;height:22px;
+                     display:flex;align-items:center;justify-content:center;
+                     box-shadow:0 2px 5px rgba(0,0,0,0.3)">P</div>`,
+            className: '', iconSize: [22,22], iconAnchor: [11,11],
           })
-          L.marker(coords, { icon: iconP, zIndexOffset: 200 })
-            .addTo(map)
-            .bindPopup(`<b>Parqueo P${i+1}</b><br>Zona de estacionamiento verificada<br>
-                        <small>${coords[0].toFixed(5)}, ${coords[1].toFixed(5)}</small>`)
+          L.marker(coords, { icon: iconP, zIndexOffset: 300 }).addTo(map)
+            .bindPopup(`<b>Parqueo P${i+1}</b><br><small>${coords[0].toFixed(5)}, ${coords[1].toFixed(5)}</small>`)
         })
 
-        // Dibujar marcadores de zonas
+        // Vehículo inicial
+        vehicleRef.current = L.marker(entrada, {
+          icon: crearIconoVehiculo(L, 'Automóvil', 0),
+          zIndexOffset: 1000,
+        }).addTo(map)
+
+        map.on('click', (e: any) => onMapClick(e.latlng.lat, e.latlng.lng))
+        mapRef.current = map
         dibujarZonas(L, map, zonas, zonaMarksRef, onZonaClick)
       })
     }, 80)
-
     return () => {
       clearTimeout(t)
       if (animRef.current) clearInterval(animRef.current)
@@ -244,11 +311,19 @@ function MapaLeaflet({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Redibujar zonas cuando cambien (modo config las mueve)
+  // Actualizar ícono cuando cambia el tipo de vehículo
+  useEffect(() => {
+    if (!vehicleRef.current || !mapRef.current) return
+    import('leaflet').then(L => {
+      vehicleRef.current.setIcon(crearIconoVehiculo(L, tipoVehiculo, 0))
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tipoVehiculo])
+
+  // Redibujar zonas
   useEffect(() => {
     if (!mapRef.current) return
     import('leaflet').then(L => {
-      // Remover marcadores anteriores
       Object.values(zonaMarksRef.current).forEach((m: any) => m.remove())
       zonaMarksRef.current = {}
       dibujarZonas(L, mapRef.current, zonas, zonaMarksRef, onZonaClick)
@@ -256,40 +331,40 @@ function MapaLeaflet({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zonas])
 
-  // Cursor de configuración
+  // Cursor crosshair en modo config
   useEffect(() => {
     if (!mapRef.current) return
-    const c = mapRef.current.getContainer()
-    if (modoConfig && zonaConfig) {
-      c.style.cursor = 'crosshair'
-    } else {
-      c.style.cursor = ''
-    }
+    mapRef.current.getContainer().style.cursor = (modoConfig && zonaConfig) ? 'crosshair' : ''
   }, [modoConfig, zonaConfig])
 
-  // Animar ruta
+  // ── Animar ruta con rotación del vehículo ─────────────────────────────
   useEffect(() => {
     if (!rutaPuntos.length || flowState !== 'en_ruta' || !mapRef.current || !vehicleRef.current) return
     import('leaflet').then(L => {
-      if (lineaRef.current) { lineaRef.current.remove(); lineaRef.current = null }
-      if (animRef.current)  { clearInterval(animRef.current); animRef.current = null }
+      if (lineaRef.current)  { lineaRef.current.remove();  lineaRef.current = null }
+      if (animRef.current)   { clearInterval(animRef.current); animRef.current = null }
 
+      // Línea SÓLIDA (sin dashArray) — azul/color de zona con opacidad alta
       lineaRef.current = L.polyline(rutaPuntos, {
-        color: zonaDestino?.color ?? '#3b82f6', weight: 5, opacity: 0.85, dashArray: '12 6',
+        color:  zonaDestino?.color ?? '#3b82f6',
+        weight: 6,
+        opacity: 0.9,
+        // Sin dashArray → línea sólida
+        lineJoin: 'round',
+        lineCap:  'round',
       }).addTo(mapRef.current)
 
+      // Vista de la ruta completa
       if (zonaDestino) {
         mapRef.current.flyToBounds(
           L.latLngBounds([entrada, zonaDestino.coords]),
-          { padding: [60,60], duration: 1.2, maxZoom: 17 }
+          { padding: [70, 70], duration: 1.5, maxZoom: 18 }
         )
       }
 
       let idx = 0
-      // Velocidad realista: 150ms por punto interpolado.
-      // Con interpolarRuta(x5), cada punto real de OSRM se divide en 5.
-      // Ejemplo: 60 puntos OSRM × 5 = 300 sub-puntos × 150ms = 45 segundos
-      // Equivale a ~12-15 km/h dentro del campus — velocidad natural de vehículo.
+      // 100ms/sub-punto con x5 interpolación:
+      // ~60 waypoints OSRM × 5 = 300 sub-puntos × 100ms = 30 segundos (~15 km/h campus)
       animRef.current = setInterval(() => {
         if (idx >= rutaPuntos.length) {
           clearInterval(animRef.current!)
@@ -298,108 +373,89 @@ function MapaLeaflet({
           return
         }
         vehicleRef.current?.setLatLng(rutaPuntos[idx])
-        idx += 1   // avanzar de 1 en 1 — sin skip para movimiento fluido
-      }, 150)   // 150ms — movimiento controlado tipo vehículo en campus
+
+        // Rotar el vehículo en la dirección de movimiento
+        const nextIdx = Math.min(idx + 3, rutaPuntos.length - 1)
+        if (rutaPuntos[nextIdx]) {
+          const bearing = calcularBearing(rutaPuntos[idx], rutaPuntos[nextIdx])
+          const el = vehicleRef.current?.getElement()
+          if (el) {
+            const inner = el.querySelector('div') as HTMLElement | null
+            if (inner) inner.style.transform = `rotate(${bearing}deg)`
+          }
+        }
+        idx += 1
+      }, 100)
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rutaPuntos, flowState])
 
-  return (
-    <div ref={divRef} style={{ position: 'absolute', inset: 0, minHeight: 400 }} />
-  )
+  return <div ref={divRef} style={{ position:'absolute', inset:0, minHeight:400 }} />
 }
 
-function dibujarZonas(
-  L: any, map: any, zonas: Zona[],
-  marksRef: React.MutableRefObject<Record<string, any>>,
-  onZonaClick: (z: Zona) => void,
-) {
+function dibujarZonas(L:any, map:any, zonas:Zona[], ref:React.MutableRefObject<Record<string,any>>, onClick:(z:Zona)=>void) {
   zonas.forEach(zona => {
     const icon = L.divIcon({
-      html: `<div style="background:${zona.color};color:white;border-radius:12px;
-               padding:5px 10px;font-weight:900;font-size:12px;cursor:pointer;
-               box-shadow:0 3px 12px rgba(0,0,0,0.4);white-space:nowrap;
-               border:2px solid rgba(255,255,255,0.9)">
-               🅿 Zona ${zona.id} · ${zona.libres} libres
-             </div>`,
+      html: `<div style="background:${zona.color};color:white;border-radius:12px;padding:5px 10px;
+               font-weight:900;font-size:12px;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,0.4);
+               white-space:nowrap;border:2px solid rgba(255,255,255,0.9)">
+               🅿 Zona ${zona.id} · ${zona.libres} libres</div>`,
       className: '', iconSize: [130,30], iconAnchor: [65,15],
     })
-    const marker = L.marker(zona.coords, { icon, zIndexOffset: 500 })
-      .addTo(map)
-      .on('click', () => onZonaClick(zona))
-      .bindPopup(`<b>${zona.nombre}</b><br>${zona.sub}<br>
-                  <span style="color:green">${zona.libres} libres</span><br>
-                  <small>${zona.roles}</small>`)
-    marksRef.current[zona.id] = marker
+    const m = L.marker(zona.coords, { icon, zIndexOffset: 600 }).addTo(map)
+      .on('click', () => onClick(zona))
+      .bindPopup(`<b>${zona.nombre}</b><br>${zona.sub}<br><span style="color:green">${zona.libres} libres</span><br><small>${zona.roles}</small>`)
+    ref.current[zona.id] = m
   })
 }
 
-// ── Componente principal ───────────────────────────────────────────────────
+// ── Componente principal ──────────────────────────────────────────────────
 export default function ParqueoDemo() {
   const { esAdmin } = useAuth()
-  const navigate    = useNavigate()
+  const navigate = useNavigate()
 
-  const [zonas, setZonas]         = useState<Zona[]>(cargarZonas)
-  // Entrada principal — Av. Busch, portería norte del campus
-  // ~500m al norte del centro confirmado (-17.7755)
-  const [entrada]                 = useState<[number,number]>([-17.7695, -63.1960])
-  const [flow, setFlow]           = useState<FlowState>('inicio')
-  const [zonaDestino, setZonaD]   = useState<Zona | null>(null)
-  const [rutaPuntos, setRuta]     = useState<[number,number][]>([])
-  const [vehiculoSelId, setVehId] = useState<number | null>(null)
-  const [segundos, setSegundos]   = useState(0)
-  const [horaEntrada, setHoraE]   = useState('')
-  const [horaSalida, setHoraS]    = useState('')
-  const [msg, setMsg]             = useState('')
-  const [tiempoRuta, setTiempoR]  = useState<number | null>(null)
+  const [zonas, setZonas]           = useState<Zona[]>(cargarZonas)
+  const [entrada]                   = useState<[number,number]>([-17.7695, -63.1960])
+  const [flow, setFlow]             = useState<FlowState>('inicio')
+  const [zonaDestino, setZonaD]     = useState<Zona|null>(null)
+  const [rutaPuntos, setRuta]       = useState<[number,number][]>([])
+  const [vehiculoSelId, setVehId]   = useState<number|null>(null)
+  const [tipoVehiculo, setTipoV]    = useState('Automóvil')  // sincronizado con el vehículo elegido
+  const [segundos, setSegundos]     = useState(0)
+  const [horaEntrada, setHoraE]     = useState('')
+  const [horaSalida, setHoraS]      = useState('')
+  const [msg, setMsg]               = useState('')
+  const [tiempoRuta, setTiempoR]    = useState<number|null>(null)
 
-  // ── Modo configuración ────────────────────────────────────────────────
+  // Config zonas
   const [modoConfig, setModoConfig] = useState(false)
   const [zonaConfig, setZonaConfig] = useState<ConfigZona>(null)
   const [zonasTmp, setZonasTmp]     = useState<Zona[]>([])
   const [guardado, setGuardado]     = useState(false)
 
-  function entrarConfig() {
-    setModoConfig(true)
-    setZonasTmp(zonas.map(z => ({ ...z })))
-    setZonaConfig('A')
-  }
-
+  function entrarConfig() { setModoConfig(true); setZonasTmp(zonas.map(z=>({...z}))); setZonaConfig('A') }
   function salirConfig(guardar: boolean) {
-    if (guardar) {
-      guardarZonas(zonasTmp)
-      setZonas(zonasTmp)
-      setGuardado(true)
-      setTimeout(() => setGuardado(false), 3000)
-    }
-    setModoConfig(false)
-    setZonaConfig(null)
+    if (guardar) { guardarZonas(zonasTmp); setZonas(zonasTmp); setGuardado(true); setTimeout(()=>setGuardado(false),3000) }
+    setModoConfig(false); setZonaConfig(null)
   }
-
-  const handleMapClick = useCallback((lat: number, lng: number) => {
+  const handleMapClick = useCallback((lat:number, lng:number) => {
     if (!modoConfig || !zonaConfig) return
-    setZonasTmp(prev => prev.map(z =>
-      z.id === zonaConfig ? { ...z, coords: [lat, lng] as [number,number] } : z
-    ))
-    // Avanzar automáticamente a la siguiente zona
+    setZonasTmp(prev => prev.map(z => z.id===zonaConfig ? {...z,coords:[lat,lng] as [number,number]} : z))
     const ids = ['A','B','C']
     const idx = ids.indexOf(zonaConfig)
-    setZonaConfig(idx < ids.length - 1 ? ids[idx+1] as ConfigZona : null)
+    setZonaConfig(idx < 2 ? ids[idx+1] as ConfigZona : null)
   }, [modoConfig, zonaConfig])
 
-  // ── Queries ───────────────────────────────────────────────────────────
+  // Queries
   const { data: zonasData } = useQuery(ZONAS_QUERY, { variables: { soloActivas: true } })
-  const { data: vehData }   = useQuery(VEHICULOS_QUERY, { variables: { estado: 'activo', porPagina: 50 } })
+  const { data: vehData }   = useQuery(VEHICULOS_QUERY, { variables: { estado:'activo', porPagina:50 } })
   const { data: espData }   = useQuery(ESPACIOS_POR_ZONA_QUERY, {
     variables: { zonaId: (() => {
       if (!zonaDestino || !zonasData?.zonas?.length) return null
-      const z = (zonasData.zonas as any[]).find(z =>
-        z.nombre.includes(`Zona ${zonaDestino.id}`) || z.nombre.toLowerCase().includes('bloque')
-      )
+      const z = (zonasData.zonas as any[]).find(z => z.nombre.includes(`Zona ${zonaDestino.id}`))
       return z?.id ?? zonasData.zonas[0]?.id ?? null
     })() },
-    skip: !zonaDestino || !zonasData,
-    fetchPolicy: 'network-only',
+    skip: !zonaDestino || !zonasData, fetchPolicy: 'network-only',
   })
 
   const [iniciarSesion, { loading: lSesion }] = useMutation(INICIAR_SESION_MUTATION, {
@@ -412,288 +468,236 @@ export default function ParqueoDemo() {
   })
 
   const vehiculos  = vehData?.vehiculos?.items ?? []
-  const primerEsp  = (espData?.espaciosPorZona ?? []).find((e: any) => e.estado === 'disponible')
-  const vehSel     = vehiculos.find((v: any) => v.id === vehiculoSelId)
+  const primerEsp  = (espData?.espaciosPorZona ?? []).find((e:any) => e.estado==='disponible')
+  const vehSel     = vehiculos.find((v:any) => v.id===vehiculoSelId)
 
   useEffect(() => {
     if (flow !== 'parqueado') return
-    const t = setInterval(() => setSegundos(s => s + 1), 1000)
+    const t = setInterval(() => setSegundos(s=>s+1), 1000)
     return () => clearInterval(t)
   }, [flow])
 
   const handleZonaClick = useCallback(async (zona: Zona) => {
-    if (modoConfig) return // en modo config el click va al mapa
-    if (flow === 'confirmando' || flow === 'parqueado' || flow === 'completado') return
-    if (!horaEntrada) setHoraE(new Date().toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' }))
+    if (modoConfig) return
+    if (flow==='confirmando'||flow==='parqueado'||flow==='completado') return
+    if (!horaEntrada) setHoraE(new Date().toLocaleTimeString('es-BO',{hour:'2-digit',minute:'2-digit'}))
     setZonaD(zona); setFlow('cargando_ruta'); setRuta([]); setTiempoR(null)
-
-    const { puntos, duracionSeg, esReal } = await obtenerRutaOSRM(entrada, zona.coords)
-    setTiempoR(duracionSeg)
-    setRuta(puntos)
-    if (!esReal) console.info('[ParqueoDemo] OSRM no disponible — usando ruta estimada')
-
-    setFlow('en_ruta')
+    const { puntos, duracionSeg } = await obtenerRutaOSRM(entrada, zona.coords)
+    setTiempoR(duracionSeg); setRuta(puntos); setFlow('en_ruta')
   }, [flow, horaEntrada, modoConfig, entrada])
 
   const handleLlegada = useCallback(() => setFlow('confirmando'), [])
+
+  // Al seleccionar vehículo → actualizar tipo para el icono del mapa
+  function handleVehiculoChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const id  = e.target.value ? parseInt(e.target.value) : null
+    setVehId(id)
+    const v = vehiculos.find((v:any) => v.id===id)
+    setTipoV(v?.tipo?.nombre ?? 'Automóvil')
+  }
 
   function confirmar() {
     if (!vehiculoSelId || !primerEsp) { setMsg('Selecciona tu vehículo'); return }
     iniciarSesion({ variables: { input: { espacioId: primerEsp.id, vehiculoId: vehiculoSelId } } })
   }
-
   function simularSalida() {
-    setHoraS(new Date().toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' }))
+    setHoraS(new Date().toLocaleTimeString('es-BO',{hour:'2-digit',minute:'2-digit'}))
     setFlow('completado')
   }
-
   function reiniciar() {
     setFlow('inicio'); setZonaD(null); setRuta([]); setVehId(null)
-    setSegundos(0); setHoraE(''); setHoraS(''); setMsg(''); setTiempoR(null)
+    setSegundos(0); setHoraE(''); setHoraS(''); setMsg(''); setTiempoR(null); setTipoV('Automóvil')
   }
 
-  const min = Math.floor(segundos / 60)
-  const sec = segundos % 60
+  const min=Math.floor(segundos/60), sec=segundos%60
   const zonasActivas = modoConfig ? zonasTmp : zonas
 
   return (
-    <div className="flex flex-col bg-slate-900 overflow-hidden" style={{ height: '100%' }}>
-
+    <div className="flex flex-col bg-slate-900 overflow-hidden" style={{height:'100%'}}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2.5 shrink-0"
-        style={{ background: 'linear-gradient(90deg, #061840 0%, #0a2a6e 100%)' }}>
+        style={{background:'linear-gradient(90deg,#061840 0%,#0a2a6e 100%)'}}>
         <div className="flex items-center gap-3">
-          <div className="bg-orange-500 p-2 rounded-xl"><Navigation size={18} /></div>
+          <div className="bg-orange-500 p-2 rounded-xl"><Navigation size={18}/></div>
           <div>
             <h1 className="font-bold text-white text-sm">Guía de Parqueo — Campus UAGRM</h1>
             <p className="text-blue-300 text-xs flex items-center gap-2">
               <span className="bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded animate-pulse">DEMO</span>
-              <Wifi size={10} /> OpenStreetMap + OSRM · Santa Cruz, Bolivia
+              <Wifi size={10}/> OSM + OSRM · 8 puntos P verificados · Santa Cruz, Bolivia
             </p>
           </div>
         </div>
         <div className="flex gap-2 items-center">
-          {guardado && <span className="text-xs text-emerald-400 font-medium">✓ Zonas guardadas</span>}
+          {guardado && <span className="text-xs text-emerald-400">✓ Guardado</span>}
           {!modoConfig && esAdmin && (
             <button onClick={entrarConfig}
-              className="flex items-center gap-1 text-xs text-amber-300 hover:text-white border border-amber-600 px-3 py-1.5 rounded-lg transition-colors">
-              <Settings size={12} /> Configurar zonas
+              className="flex items-center gap-1 text-xs text-amber-300 hover:text-white border border-amber-600 px-3 py-1.5 rounded-lg">
+              <Settings size={12}/> Configurar
             </button>
           )}
-          <button onClick={() => navigate('/parqueos')}
-            className="text-xs text-blue-300 hover:text-white border border-blue-600 px-3 py-1.5 rounded-lg">
-            Parqueos →
-          </button>
-          <button onClick={reiniciar}
-            className="flex items-center gap-1 text-xs text-blue-200 hover:text-white border border-blue-600 px-3 py-1.5 rounded-lg">
-            <RotateCcw size={12} /> Reiniciar
+          <button onClick={()=>navigate('/parqueos')} className="text-xs text-blue-300 hover:text-white border border-blue-600 px-3 py-1.5 rounded-lg">Parqueos →</button>
+          <button onClick={reiniciar} className="flex items-center gap-1 text-xs text-blue-200 hover:text-white border border-blue-600 px-3 py-1.5 rounded-lg">
+            <RotateCcw size={12}/> Reiniciar
           </button>
         </div>
       </div>
 
-      <div className="flex overflow-hidden" style={{ flex: 1 }}>
-
-        {/* Panel lateral */}
+      <div className="flex overflow-hidden" style={{flex:1}}>
+        {/* Panel */}
         <div className="w-72 shrink-0 bg-white overflow-y-auto border-r border-slate-200 p-4 space-y-3">
 
-          {/* ── MODO CONFIGURACIÓN ─────────────────────────────────── */}
           {modoConfig ? (
             <div className="space-y-3">
               <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4">
-                <p className="font-bold text-amber-800 text-sm flex items-center gap-2">
-                  <Settings size={14} /> Configurar Zonas de Parqueo
-                </p>
-                <p className="text-xs text-amber-700 mt-1">
-                  Haz clic en el mapa <strong>exactamente donde está el parqueo P</strong> del campus UAGRM.
-                </p>
+                <p className="font-bold text-amber-800 text-sm flex items-center gap-2"><Settings size={14}/>Configurar Zonas</p>
+                <p className="text-xs text-amber-700 mt-1">Toca el mapa donde está cada P del campus.</p>
               </div>
-
-              {/* Selector de zona a configurar */}
-              <div className="space-y-2">
-                {(['A','B','C'] as const).map(id => {
-                  const z = zonasTmp.find(z => z.id === id)!
-                  const activa = zonaConfig === id
-                  return (
-                    <button key={id} onClick={() => setZonaConfig(id)}
-                      className={`w-full text-left rounded-xl p-3 border-2 transition-all ${
-                        activa ? 'border-current shadow-md' : 'border-slate-200 hover:border-slate-300'
-                      }`}
-                      style={{ borderColor: activa ? z.color : undefined, background: activa ? z.color + '15' : undefined }}>
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-black shrink-0"
-                          style={{ background: z.color }}>{id}</div>
-                        <div className="flex-1">
-                          <p className="font-semibold text-slate-800 text-xs">{z.nombre}</p>
-                          <p className="text-[10px] text-slate-500">
-                            {activa ? '👆 Toca en el mapa para posicionar' : `${z.coords[0].toFixed(4)}, ${z.coords[1].toFixed(4)}`}
-                          </p>
-                        </div>
-                        {activa && <span className="text-xs bg-amber-400 text-white px-2 py-0.5 rounded-full font-bold">ACTIVA</span>}
+              {(['A','B','C'] as const).map(id => {
+                const z = zonasTmp.find(z=>z.id===id)!
+                const activa = zonaConfig===id
+                return (
+                  <button key={id} onClick={()=>setZonaConfig(id)}
+                    className={`w-full text-left rounded-xl p-3 border-2 transition-all ${activa?'shadow-md':'border-slate-200'}`}
+                    style={{borderColor:activa?z.color:undefined,background:activa?z.color+'15':undefined}}>
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-black shrink-0" style={{background:z.color}}>{id}</div>
+                      <div className="flex-1">
+                        <p className="font-semibold text-slate-800 text-xs">{z.nombre}</p>
+                        <p className="text-[10px] text-slate-500">{activa?'👆 Toca en el mapa':z.coords.map(c=>c.toFixed(4)).join(', ')}</p>
                       </div>
-                    </button>
-                  )
-                })}
-              </div>
-
-              {!zonaConfig && (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-700">
-                  ✅ Las 3 zonas están posicionadas. Guarda los cambios.
-                </div>
-              )}
-
+                      {activa && <span className="text-[10px] bg-amber-400 text-white px-1.5 py-0.5 rounded-full font-bold">ACTIVA</span>}
+                    </div>
+                  </button>
+                )
+              })}
               <div className="flex gap-2">
-                <button onClick={() => salirConfig(false)}
-                  className="flex-1 flex items-center justify-center gap-1 py-2.5 border border-slate-300 text-slate-600 rounded-xl text-sm hover:bg-slate-50">
-                  <X size={13} /> Cancelar
-                </button>
-                <button onClick={() => salirConfig(true)}
-                  className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold text-sm">
-                  <Save size={13} /> Guardar
-                </button>
-              </div>
-
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700">
-                <p className="font-semibold mb-1">¿Cómo encontrar la ubicación exacta?</p>
-                <ol className="list-decimal list-inside space-y-1">
-                  <li>Abre Google Maps → busca UAGRM Santa Cruz</li>
-                  <li>Clic derecho en la zona P → "¿Qué hay aquí?"</li>
-                  <li>Copia las coordenadas</li>
-                  <li>O simplemente haz clic en este mapa donde están los P</li>
-                </ol>
+                <button onClick={()=>salirConfig(false)} className="flex-1 flex items-center justify-center gap-1 py-2.5 border border-slate-300 text-slate-600 rounded-xl text-sm"><X size={12}/>Cancelar</button>
+                <button onClick={()=>salirConfig(true)} className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold text-sm"><Save size={12}/>Guardar</button>
               </div>
             </div>
-
           ) : (
-            /* ── MODO DEMO NORMAL ─────────────────────────────────── */
             <>
               {/* Estado */}
-              <div className={`rounded-2xl p-3 text-xs border ${
-                flow === 'parqueado'     ? 'bg-emerald-50 border-emerald-300' :
-                flow === 'confirmando'   ? 'bg-amber-50 border-amber-300' :
-                flow === 'en_ruta'       ? 'bg-blue-50 border-blue-300' :
-                flow === 'cargando_ruta' ? 'bg-slate-50 border-slate-200' :
-                'bg-violet-50 border-violet-200'
-              }`}>
+              <div className={`rounded-2xl p-3 text-xs border ${flow==='parqueado'?'bg-emerald-50 border-emerald-300':flow==='confirmando'?'bg-amber-50 border-amber-300':flow==='en_ruta'?'bg-blue-50 border-blue-300':flow==='cargando_ruta'?'bg-slate-50 border-slate-200':'bg-violet-50 border-violet-200'}`}>
                 <p className="font-bold text-sm mb-0.5">
-                  {flow === 'inicio'         && '🏫 Toca una zona en el mapa'}
-                  {flow === 'cargando_ruta'  && '🗺 Calculando ruta OSRM...'}
-                  {flow === 'en_ruta'        && '🚗 Navegando al campus'}
-                  {flow === 'confirmando'    && '📍 ¡Llegaste a la zona!'}
-                  {flow === 'parqueado'      && '✅ Vehículo parqueado'}
-                  {flow === 'completado'     && '🏁 Demo completado'}
+                  {flow==='inicio'&&'🏫 Toca una zona en el mapa'}
+                  {flow==='cargando_ruta'&&'🗺 Calculando ruta real...'}
+                  {flow==='en_ruta'&&`🚗 Navegando · ${tipoVehiculo}`}
+                  {flow==='confirmando'&&'📍 ¡Llegaste!'}
+                  {flow==='parqueado'&&`✅ Parqueado — ${tipoVehiculo}`}
+                  {flow==='completado'&&'🏁 Demo completado'}
                 </p>
-                {horaEntrada && <p className="text-slate-500">Entrada: {horaEntrada}</p>}
-                {zonaDestino && <p className="text-slate-600">→ {zonaDestino.nombre}</p>}
-                {flow === 'en_ruta' && tiempoRuta && (
-                  <p className="text-blue-600 font-medium">⏱ ~{Math.ceil(tiempoRuta/60)} min (OSRM)</p>
-                )}
-                {flow === 'parqueado' && (
-                  <p className="font-mono text-orange-500 font-bold text-base mt-1">
-                    ⏱ {String(min).padStart(2,'0')}:{String(sec).padStart(2,'0')}
-                  </p>
-                )}
+                {horaEntrada&&<p className="text-slate-500">Entrada: {horaEntrada}</p>}
+                {zonaDestino&&<p className="text-slate-600">→ {zonaDestino.nombre}</p>}
+                {flow==='en_ruta'&&tiempoRuta&&<p className="text-blue-600 font-medium">⏱ ~{Math.ceil(tiempoRuta/60)} min estimado (OSRM)</p>}
+                {flow==='parqueado'&&<p className="font-mono text-orange-500 font-bold text-base mt-1">⏱ {String(min).padStart(2,'0')}:{String(sec).padStart(2,'0')}</p>}
               </div>
 
-              {/* Cargando */}
-              {flow === 'cargando_ruta' && (
+              {flow==='cargando_ruta'&&(
                 <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl p-4">
-                  <Loader2 size={18} className="text-blue-500 animate-spin shrink-0" />
+                  <Loader2 size={18} className="text-blue-500 animate-spin shrink-0"/>
                   <p className="text-sm text-blue-700">Calculando ruta por calles reales...</p>
                 </div>
               )}
 
-              {/* Zonas */}
-              {(flow === 'inicio' || flow === 'en_ruta') && (
+              {(flow==='inicio'||flow==='en_ruta')&&(
                 <div className="space-y-2">
                   <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Zonas del campus</p>
-                  {zonas.map(zona => (
-                    <button key={zona.id} onClick={() => handleZonaClick(zona)}
-                      className={`w-full text-left rounded-xl border-2 p-3 transition-all hover:shadow-md ${
-                        zonaDestino?.id === zona.id ? 'shadow-md' : 'border-slate-200'
-                      }`}
-                      style={{ borderColor: zonaDestino?.id === zona.id ? zona.color : undefined }}>
+                  {zonas.map(zona=>(
+                    <button key={zona.id} onClick={()=>handleZonaClick(zona)}
+                      className={`w-full text-left rounded-xl border-2 p-3 transition-all hover:shadow-md ${zonaDestino?.id===zona.id?'shadow-md':'border-slate-200'}`}
+                      style={{borderColor:zonaDestino?.id===zona.id?zona.color:undefined}}>
                       <div className="flex items-center gap-2 mb-0.5">
-                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-black shrink-0"
-                          style={{ background: zona.color }}>{zona.id}</div>
+                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-black shrink-0" style={{background:zona.color}}>{zona.id}</div>
                         <span className="font-semibold text-slate-800 text-sm">{zona.nombre}</span>
-                        <span className="ml-auto text-xs font-bold" style={{ color: zona.color }}>{zona.libres} libres</span>
+                        <span className="ml-auto text-xs font-bold" style={{color:zona.color}}>{zona.libres} libres</span>
                       </div>
                       <p className="text-xs text-slate-500 pl-8">{zona.sub}</p>
                     </button>
                   ))}
-                  {flow === 'inicio' && (
-                    <button onClick={() => handleZonaClick(zonas[1])}
-                      className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl text-sm mt-2">
+                  {flow==='inicio'&&(
+                    <button onClick={()=>handleZonaClick(zonas[1])}
+                      className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl text-sm mt-1">
                       🏫 Simular entrada — Av. Busch
                     </button>
                   )}
                 </div>
               )}
 
-              {/* Confirmación */}
-              {flow === 'confirmando' && zonaDestino && (
+              {flow==='confirmando'&&zonaDestino&&(
                 <div className="space-y-3">
                   <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 text-center">
                     <p className="text-2xl mb-1">📍</p>
                     <p className="font-bold text-amber-800">¡Llegaste a Zona {zonaDestino.id}!</p>
                     <p className="text-xs text-amber-600">{zonaDestino.sub}</p>
                   </div>
-                  <select value={vehiculoSelId ?? ''} onChange={e => setVehId(e.target.value ? parseInt(e.target.value) : null)}
-                    className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
-                    <option value="">Selecciona tu vehículo...</option>
-                    {vehiculos.map((v: any) => <option key={v.id} value={v.id}>{v.placa} — {v.marca} {v.modelo}</option>)}
-                  </select>
-                  {primerEsp ? (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Tu vehículo</label>
+                    <select value={vehiculoSelId??''} onChange={handleVehiculoChange}
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
+                      <option value="">Seleccionar...</option>
+                      {vehiculos.map((v:any)=>(
+                        <option key={v.id} value={v.id}>
+                          {v.placa} · {v.tipo?.nombre} — {v.marca} {v.modelo}
+                        </option>
+                      ))}
+                    </select>
+                    {/* Muestra el icono del tipo seleccionado */}
+                    {vehiculoSelId && (
+                      <div className="flex items-center gap-2 mt-2 bg-slate-50 rounded-xl px-3 py-2">
+                        <div dangerouslySetInnerHTML={{ __html: getVehicleSvg(tipoVehiculo).svg }}
+                          style={{ width: getVehicleSvg(tipoVehiculo).w, height: getVehicleSvg(tipoVehiculo).h, flexShrink: 0 }} />
+                        <div>
+                          <p className="text-xs font-semibold text-slate-700">{vehSel?.tipo?.nombre ?? tipoVehiculo}</p>
+                          <p className="text-[10px] text-slate-500">El mapa muestra este ícono</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {primerEsp?(
                     <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2 text-xs text-emerald-700">
-                      Espacio disponible: <strong>#{primerEsp.numero}</strong> · {primerEsp.zona?.nombre}
+                      Espacio: <strong>#{primerEsp.numero}</strong> · {primerEsp.zona?.nombre}
                     </div>
-                  ) : (
-                    <div className="bg-red-50 border border-red-200 rounded-xl p-2 text-xs text-red-600">Sin espacios disponibles en esta zona</div>
+                  ):(
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-2 text-xs text-red-600">Sin espacios disponibles</div>
                   )}
-                  {msg && <div className={`rounded-xl p-2 text-xs ${msg.startsWith('✅') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>{msg}</div>}
+                  {msg&&<div className={`rounded-xl p-2 text-xs ${msg.startsWith('✅')?'bg-emerald-50 text-emerald-700':'bg-red-50 text-red-700'}`}>{msg}</div>}
                   <div className="flex gap-2">
-                    <button onClick={() => { setZonaD(null); setRuta([]); setFlow('en_ruta') }}
-                      className="flex-1 flex items-center justify-center gap-1 py-2.5 border-2 border-slate-200 text-slate-600 rounded-xl text-sm">
-                      <XCircle size={13} /> Cambiar
-                    </button>
-                    <button onClick={confirmar} disabled={lSesion || !vehiculoSelId || !primerEsp}
+                    <button onClick={()=>{setZonaD(null);setRuta([]);setFlow('en_ruta')}}
+                      className="flex-1 flex items-center justify-center gap-1 py-2.5 border-2 border-slate-200 text-slate-600 rounded-xl text-sm"><XCircle size={13}/>Cambiar</button>
+                    <button onClick={confirmar} disabled={lSesion||!vehiculoSelId||!primerEsp}
                       className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold text-sm disabled:opacity-40">
-                      {lSesion ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
-                      Confirmar
+                      {lSesion?<Loader2 size={13} className="animate-spin"/>:<CheckCircle2 size={13}/>}Confirmar
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* Parqueado */}
-              {flow === 'parqueado' && (
+              {flow==='parqueado'&&(
                 <div className="space-y-3">
                   <div className="bg-slate-800 text-white rounded-2xl p-4">
-                    <p className="font-mono font-black text-xl">{vehSel?.placa ?? '—'}</p>
-                    <p className="text-slate-300 text-sm">{zonaDestino?.nombre}</p>
-                    <p className="font-mono text-orange-400 font-bold text-lg mt-2">
-                      ⏱ {String(min).padStart(2,'0')}:{String(sec).padStart(2,'0')}
-                    </p>
+                    <p className="font-mono font-black text-xl">{vehSel?.placa??'—'}</p>
+                    <p className="text-slate-300 text-sm">{tipoVehiculo} · {zonaDestino?.nombre}</p>
+                    <p className="font-mono text-orange-400 font-bold text-lg mt-2">⏱ {String(min).padStart(2,'0')}:{String(sec).padStart(2,'0')}</p>
                   </div>
-                  {msg && <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2 text-xs text-emerald-700">{msg}</div>}
-                  <button onClick={() => navigate('/parqueos')} className="w-full py-3 bg-violet-500 hover:bg-violet-600 text-white rounded-xl font-bold text-sm">Ver en Parqueos →</button>
+                  {msg&&<div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2 text-xs text-emerald-700">{msg}</div>}
+                  <button onClick={()=>navigate('/parqueos')} className="w-full py-3 bg-violet-500 hover:bg-violet-600 text-white rounded-xl font-bold text-sm">Ver en Parqueos →</button>
                   <button onClick={simularSalida} className="w-full flex items-center justify-center gap-2 py-2.5 border border-slate-300 text-slate-600 rounded-xl text-sm">
-                    <Car size={13} /> Simular salida
+                    <Car size={13}/>Simular salida
                   </button>
                 </div>
               )}
 
-              {/* Completado */}
-              {flow === 'completado' && (
+              {flow==='completado'&&(
                 <div className="space-y-3">
                   <div className="text-center py-4"><p className="text-4xl">✅</p><p className="font-bold text-slate-800 mt-1">Demo completado</p></div>
                   <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-1.5 text-sm">
-                    {[['Vehículo', vehSel?.placa, 'font-mono font-bold'], ['Zona', zonaDestino?.nombre, ''], ['Entrada', horaEntrada, 'text-emerald-600'], ['Salida', horaSalida, 'text-red-500'], ['Tiempo', `${String(min).padStart(2,'0')}:${String(sec).padStart(2,'0')} min`, 'text-orange-500 font-bold']].map(([k,v,cls]) => (
-                      <div key={k} className="flex justify-between"><span className="text-slate-500">{k}</span><span className={String(cls)}>{String(v ?? '—')}</span></div>
+                    {[['Vehículo',vehSel?.placa,'font-mono font-bold'],['Tipo',tipoVehiculo,''],['Zona',zonaDestino?.nombre,''],['Entrada',horaEntrada,'text-emerald-600'],['Salida',horaSalida,'text-red-500'],['Tiempo',`${String(min).padStart(2,'0')}:${String(sec).padStart(2,'0')} min`,'text-orange-500 font-bold']].map(([k,v,cls])=>(
+                      <div key={k} className="flex justify-between"><span className="text-slate-500">{k}</span><span className={String(cls??'')}>{String(v??'—')}</span></div>
                     ))}
                   </div>
                   <button onClick={reiniciar} className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm">
-                    <RotateCcw size={13} /> Repetir demo
+                    <RotateCcw size={13}/>Repetir demo
                   </button>
                 </div>
               )}
@@ -702,54 +706,42 @@ export default function ParqueoDemo() {
         </div>
 
         {/* Mapa */}
-        <div className="relative" style={{ flex: 1 }}>
+        <div className="relative" style={{flex:1}}>
           <MapaLeaflet
-            zonas={zonasActivas}
-            entrada={entrada}
-            zonaDestino={zonaDestino}
-            flowState={flow}
-            rutaPuntos={rutaPuntos}
-            modoConfig={modoConfig}
-            zonaConfig={zonaConfig}
-            onZonaClick={handleZonaClick}
-            onLlegada={handleLlegada}
-            onMapClick={handleMapClick}
+            zonas={zonasActivas} entrada={entrada} zonaDestino={zonaDestino}
+            flowState={flow} rutaPuntos={rutaPuntos}
+            modoConfig={modoConfig} zonaConfig={zonaConfig} tipoVehiculo={tipoVehiculo}
+            onZonaClick={handleZonaClick} onLlegada={handleLlegada} onMapClick={handleMapClick}
           />
-
-          {/* Overlays */}
-          {modoConfig && zonaConfig && (
+          {modoConfig&&zonaConfig&&(
             <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000]
               bg-amber-500 text-white rounded-xl px-4 py-2 text-sm font-bold shadow-lg flex items-center gap-2">
-              <MapPin size={14} className="animate-bounce" />
-              Haz clic donde está la Zona {zonaConfig} en el campus
+              <MapPin size={14} className="animate-bounce"/>Toca donde está la Zona {zonaConfig} en el campus
             </div>
           )}
-          {flow === 'cargando_ruta' && (
+          {flow==='cargando_ruta'&&(
             <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000]
               bg-white/95 rounded-xl px-4 py-2 flex items-center gap-2 text-sm shadow-lg">
-              <Loader2 size={13} className="animate-spin text-blue-500" /> Calculando ruta OSRM...
+              <Loader2 size={13} className="animate-spin text-blue-500"/>Calculando ruta OSRM...
             </div>
           )}
-          {flow === 'en_ruta' && zonaDestino && (
+          {flow==='en_ruta'&&zonaDestino&&(
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000]
               bg-blue-700/90 text-white rounded-xl px-4 py-2 flex items-center gap-2 text-sm shadow-lg">
-              <Navigation size={13} className="animate-pulse" />
-              Zona {zonaDestino.id}
-              {tiempoRuta && <span className="text-blue-200">· ~{Math.ceil(tiempoRuta/60)} min</span>}
+              <Navigation size={13} className="animate-pulse"/>
+              Zona {zonaDestino.id} {tiempoRuta&&`· ~${Math.ceil(tiempoRuta/60)} min`}
             </div>
           )}
-          {flow === 'parqueado' && (
+          {flow==='parqueado'&&(
             <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000]
               bg-emerald-700/90 text-white rounded-xl px-4 py-2 flex items-center gap-2 text-sm shadow-lg">
-              <CheckCircle2 size={13} /> Zona {zonaDestino?.id} · {String(min).padStart(2,'0')}:{String(sec).padStart(2,'0')}
+              <CheckCircle2 size={13}/>Zona {zonaDestino?.id} · {String(min).padStart(2,'0')}:{String(sec).padStart(2,'0')}
             </div>
           )}
-          {flow === 'inicio' && (
-            <div className="absolute top-3 left-3 z-[1000]
-              bg-white/90 rounded-xl px-3 py-2 text-xs shadow-md border border-slate-200 max-w-[220px]">
-              <p className="font-semibold">🗺 Campus UAGRM — Santa Cruz</p>
-              <p className="text-slate-500 mt-0.5">Toca 🅿 para guiar al parqueo</p>
-              {esAdmin && <p className="text-amber-600 mt-1">⚙ Usa "Configurar zonas" para ajustar posiciones</p>}
+          {flow==='inicio'&&(
+            <div className="absolute top-3 left-3 z-[1000] bg-white/90 rounded-xl px-3 py-2 text-xs shadow-md border border-slate-200 max-w-[230px]">
+              <p className="font-semibold">🗺 Campus UAGRM · 8 zonas P verificadas</p>
+              <p className="text-slate-500 mt-0.5">Toca 🅿 o una zona para navegar</p>
             </div>
           )}
         </div>
