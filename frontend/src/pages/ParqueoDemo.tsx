@@ -219,7 +219,7 @@ function guardarZonas(zonas: Zona[]) {
   localStorage.setItem(LS_KEY, JSON.stringify(obj))
 }
 
-type FlowState = 'inicio'|'cargando_ruta'|'en_ruta'|'confirmando'|'parqueado'|'completado'
+type FlowState = 'bienvenida'|'inicio'|'cargando_ruta'|'en_ruta'|'confirmando'|'parqueado'|'completado'
 type ConfigZona = 'A'|'B'|'C'|null
 
 // ── Componente Leaflet ────────────────────────────────────────────────────
@@ -416,7 +416,7 @@ export default function ParqueoDemo() {
 
   const [zonas, setZonas]           = useState<Zona[]>(cargarZonas)
   const [entrada]                   = useState<[number,number]>([-17.7695, -63.1960])
-  const [flow, setFlow]             = useState<FlowState>('inicio')
+  const [flow, setFlow]             = useState<FlowState>('bienvenida')
   const [zonaDestino, setZonaD]     = useState<Zona|null>(null)
   const [rutaPuntos, setRuta]       = useState<[number,number][]>([])
   const [vehiculoSelId, setVehId]   = useState<number|null>(null)
@@ -508,7 +508,7 @@ export default function ParqueoDemo() {
     setFlow('completado')
   }
   function reiniciar() {
-    setFlow('inicio'); setZonaD(null); setRuta([]); setVehId(null)
+    setFlow('bienvenida'); setZonaD(null); setRuta([]); setVehId(null)
     setSegundos(0); setHoraE(''); setHoraS(''); setMsg(''); setTiempoR(null); setTipoV('Automóvil')
   }
 
@@ -580,10 +580,45 @@ export default function ParqueoDemo() {
             </div>
           ) : (
             <>
-              {/* Estado */}
+              {/* ── BIENVENIDA ── */}
+              {flow === 'bienvenida' && (
+                <div className="space-y-4">
+                  <div className="bg-gradient-to-br from-blue-50 to-violet-50 border border-blue-200 rounded-2xl p-5 text-center">
+                    <div className="text-4xl mb-2">🏫</div>
+                    <p className="font-black text-slate-800 text-base">¡Bienvenido al campus UAGRM!</p>
+                    <p className="text-slate-500 text-xs mt-1">Tu ingreso fue registrado exitosamente</p>
+                    <div className="mt-3 bg-white/80 rounded-xl px-3 py-2 text-xs border border-slate-200">
+                      <p className="font-semibold text-slate-700">{usuario?.nombreCompleto ?? 'Estudiante'}</p>
+                      <p className="text-slate-400">{new Date().toLocaleTimeString('es-BO',{hour:'2-digit',minute:'2-digit'})}</p>
+                    </div>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-center">
+                    <p className="font-bold text-amber-800 text-sm mb-1">🅿 ¿Necesitas orientación para encontrar estacionamiento?</p>
+                    <p className="text-xs text-amber-700">El sistema puede guiarte a una zona disponible</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button onClick={() => setFlow('inicio')}
+                      className="flex flex-col items-center gap-1.5 py-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-bold text-sm transition-colors shadow-lg">
+                      <span className="text-2xl">✅</span>
+                      Sí, guíame
+                    </button>
+                    <button onClick={() => window.history.back()}
+                      className="flex flex-col items-center gap-1.5 py-4 border-2 border-slate-200 text-slate-600 rounded-2xl font-medium text-sm hover:bg-slate-50 transition-colors">
+                      <span className="text-2xl">🚗</span>
+                      No, gracias
+                    </button>
+                  </div>
+                  <p className="text-center text-[10px] text-slate-400">
+                    Si eliges "No", el guardia confirmará tu parqueo al llegar
+                  </p>
+                </div>
+              )}
+
+              {/* ── ESTADO (para todos los pasos excepto bienvenida) ── */}
+              {flow !== 'bienvenida' && (
               <div className={`rounded-2xl p-3 text-xs border ${flow==='parqueado'?'bg-emerald-50 border-emerald-300':flow==='confirmando'?'bg-amber-50 border-amber-300':flow==='en_ruta'?'bg-blue-50 border-blue-300':flow==='cargando_ruta'?'bg-slate-50 border-slate-200':'bg-violet-50 border-violet-200'}`}>
                 <p className="font-bold text-sm mb-0.5">
-                  {flow==='inicio'&&'🏫 Toca una zona en el mapa'}
+                  {flow==='inicio'&&'🅿 Elige una zona en el mapa'}
                   {flow==='cargando_ruta'&&'🗺 Calculando ruta real...'}
                   {flow==='en_ruta'&&`🚗 Navegando · ${tipoVehiculo}`}
                   {flow==='confirmando'&&'📍 ¡Llegaste!'}
@@ -595,6 +630,7 @@ export default function ParqueoDemo() {
                 {flow==='en_ruta'&&tiempoRuta&&<p className="text-blue-600 font-medium">⏱ ~{Math.ceil(tiempoRuta/60)} min estimado (OSRM)</p>}
                 {flow==='parqueado'&&<p className="font-mono text-orange-500 font-bold text-base mt-1">⏱ {String(min).padStart(2,'0')}:{String(sec).padStart(2,'0')}</p>}
               </div>
+              )}
 
               {flow==='cargando_ruta'&&(
                 <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl p-4">

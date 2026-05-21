@@ -376,12 +376,19 @@ class ParqueosMutation:
         user = info.context.request.user
         if not user.is_authenticated:
             raise Exception("Autenticación requerida")
-        if not tiene_rol(user, "Administrador") and not tiene_rol(user, "Guardia"):
-            raise Exception("Solo guardias y administradores pueden iniciar sesiones de parqueo")
 
         vehiculo = Vehiculo.objects.filter(pk=input.vehiculo_id).first()
         if not vehiculo:
             raise Exception("Vehículo no encontrado")
+
+        es_personal = tiene_rol(user, "Administrador") or tiene_rol(user, "Guardia")
+        # El propietario puede registrar SOLO su propio vehículo.
+        # Admin y Guardia pueden registrar cualquier vehículo.
+        if not es_personal and vehiculo.propietario_id != user.pk:
+            raise Exception(
+                "Solo puedes iniciar una sesión de parqueo para tu propio vehículo. "
+                "Si necesitas ayuda, solicítala al guardia de turno."
+            )
 
         ESTADOS_BLOQUEADOS = {
             "sancionado": "Vehículo sancionado. Regularice sus multas antes de estacionar.",
@@ -426,19 +433,23 @@ class ParqueosMutation:
         user = info.context.request.user
         if not user.is_authenticated:
             raise Exception("Autenticación requerida")
-        if not tiene_rol(user, "Administrador") and not tiene_rol(user, "Guardia"):
-            raise Exception("Solo guardias y administradores pueden cerrar sesiones de parqueo")
 
         with transaction.atomic():
             sesion = (
                 SesionParqueo.objects
                 .select_for_update()
-                .select_related("espacio__zona", "vehiculo")
+                .select_related("espacio__zona", "vehiculo__propietario")
                 .filter(pk=sesion_id, estado="activa")
                 .first()
             )
             if not sesion:
                 raise Exception("Sesión activa no encontrada")
+
+            # Admin/Guardia pueden cerrar cualquier sesión.
+            # El propietario solo puede cerrar la sesión de su propio vehículo.
+            es_personal = tiene_rol(user, "Administrador") or tiene_rol(user, "Guardia")
+            if not es_personal and sesion.vehiculo.propietario_id != user.pk:
+                raise Exception("Solo puedes cerrar la sesión de parqueo de tu propio vehículo.")
             sesion.hora_salida = timezone.now()
             sesion.estado = "cerrada"
             sesion.save(update_fields=["hora_salida", "estado"])

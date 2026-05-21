@@ -347,6 +347,21 @@ export default function GuardiaDashboard() {
             </div>
           )}
 
+          {/* ── Sugerencia de guía de parqueo tras entrada exitosa ── */}
+          {resultado?.ok && tipo === 'entrada' && (
+            <div className="bg-violet-50 border border-violet-200 rounded-xl p-3 flex items-center gap-3">
+              <span className="text-xl shrink-0">🅿</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-violet-800">¿El propietario necesita orientación de parqueo?</p>
+                <p className="text-[10px] text-violet-600">Puede usar la guía interactiva del campus</p>
+              </div>
+              <a href="/parqueo-demo"
+                className="shrink-0 text-xs bg-violet-500 hover:bg-violet-600 text-white px-3 py-1.5 rounded-lg font-medium transition-colors whitespace-nowrap">
+                Ver guía →
+              </a>
+            </div>
+          )}
+
           {/* Indicador de reintento */}
           {acceso.conexion.reintentando && (
             <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
