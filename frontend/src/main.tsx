@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import * as Sentry from '@sentry/react'
 import App from './App'
 import './index.css'
+import 'leaflet/dist/leaflet.css'
 
 const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN
 

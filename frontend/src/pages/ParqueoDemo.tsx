@@ -21,30 +21,35 @@ import { VEHICULOS_QUERY } from '../graphql/queries/vehiculos'
 import { INICIAR_SESION_MUTATION } from '../graphql/mutations/parqueos'
 
 // ── Coordenadas GPS reales UAGRM — Santa Cruz, Bolivia ────────────────────
-// Obtenidas del mapa oficial uagrm.edu.bo/udigital/localizacion
+// Verificadas contra uagrm.edu.bo/udigital/localizacion y OpenStreetMap
+// Campus principal: entre Av. Busch (norte), Av. 26 de Febrero (este),
+// Av. Dr. Rómulo Herrera Justiniano (sur), Calle Raúl Bascopé (oeste)
 const UAGRM = {
-  centro:  [-17.7893, -63.1853] as [number, number],
-  zoom:    16,
+  centro:  [-17.7895, -63.1850] as [number, number],  // centro del campus
+  zoom:    17,                                          // zoom óptimo para ver el campus completo
   entrada: {
-    coords: [-17.7870, -63.1850] as [number, number],
+    coords: [-17.7868, -63.1848] as [number, number],  // Av. Busch — entrada principal norte
     label:  'Entrada Principal — Av. Busch',
   },
   zonas: [
     {
       id: 'A', nombre: 'Zona A', sub: 'Módulo 250-251 (Norte)',
-      coords: [-17.7872, -63.1838] as [number, number],
+      // P visible norte del campus, cerca de los módulos 250-251
+      coords: [-17.7876, -63.1835] as [number, number],
       color: '#3b82f6', libres: 12, total: 40,
       roles: 'Docentes / Administrativos',
     },
     {
-      id: 'B', nombre: 'Zona B', sub: 'La Poza — Central',
-      coords: [-17.7895, -63.1858] as [number, number],
+      id: 'B', nombre: 'Zona B', sub: 'La Poza — Bloque Central',
+      // P central, área de La Poza de las Antas
+      coords: [-17.7898, -63.1855] as [number, number],
       color: '#22c55e', libres: 25, total: 80,
       roles: 'Todos los usuarios',
     },
     {
-      id: 'C', nombre: 'Zona C', sub: 'Facultad Politécnica',
-      coords: [-17.7912, -63.1832] as [number, number],
+      id: 'C', nombre: 'Zona C', sub: 'Facultad Politécnica / Contaduría',
+      // P sur-este, zona de facultades
+      coords: [-17.7916, -63.1832] as [number, number],
       color: '#f59e0b', libres: 8, total: 50,
       roles: 'Todos los usuarios',
     },
@@ -77,24 +82,31 @@ function MapaLeaflet({
   const divRef     = useRef<HTMLDivElement>(null)
   const animRef    = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Inicializar mapa una sola vez
+  // Inicializar mapa — esperar a que el DOM tenga dimensiones reales
   useEffect(() => {
     if (mapRef.current || !divRef.current) return
 
-    import('leaflet').then(L => {
-      // Fix iconos en Vite
-      delete (L.Icon.Default.prototype as any)._getIconUrl
-      L.Icon.Default.mergeOptions({
-        iconUrl:        'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-        iconRetinaUrl:  'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-        shadowUrl:      'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-      })
+    // Pequeño delay para que React termine el render y el div tenga dimensiones
+    const initTimeout = setTimeout(() => {
+      if (!divRef.current || mapRef.current) return
 
-      const map = L.map(divRef.current!, {
-        center: UAGRM.centro,
-        zoom:   UAGRM.zoom,
-        zoomControl: true,
-      })
+      import('leaflet').then(L => {
+        // Fix iconos default de Leaflet en Vite (ruta de assets diferente)
+        delete (L.Icon.Default.prototype as any)._getIconUrl
+        L.Icon.Default.mergeOptions({
+          iconUrl:       'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+          iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+          shadowUrl:     'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+        })
+
+        const map = L.map(divRef.current!, {
+          center:      UAGRM.centro,
+          zoom:        UAGRM.zoom,
+          zoomControl: true,
+        })
+
+        // invalidateSize fuerza a Leaflet a recalcular las dimensiones del contenedor
+        setTimeout(() => map.invalidateSize(), 100)
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap — Campus UAGRM Santa Cruz, Bolivia',
@@ -133,10 +145,12 @@ function MapaLeaflet({
       })
       vehicleRef.current = L.marker(UAGRM.entrada.coords, { icon: iconCar, zIndexOffset: 1000 }).addTo(map)
 
-      mapRef.current = map
-    })
+        mapRef.current = map
+      })
+    }, 50)
 
     return () => {
+      clearTimeout(initTimeout)
       if (animRef.current) clearInterval(animRef.current)
       mapRef.current?.remove()
       mapRef.current = null
@@ -180,7 +194,16 @@ function MapaLeaflet({
   }, [zonaDestino, flowState])
 
   return (
-    <div ref={divRef} className="w-full h-full" style={{ minHeight: 400 }} />
+    <div
+      ref={divRef}
+      style={{
+        width: '100%',
+        height: '100%',
+        minHeight: '500px',
+        position: 'absolute',
+        top: 0, left: 0, right: 0, bottom: 0,
+      }}
+    />
   )
 }
 
