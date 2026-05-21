@@ -9,7 +9,7 @@ from apps.reportes.views import (
     VehiculosPDFView, SesionesPDFView, VisitasPDFView, MultasPDFView,
 )
 from apps.vehiculos.views import SubirArchivoDocumentoView, SubirFotoVehiculoView
-from apps.vehiculos.ocr_view import OcrPlacaView
+from apps.vehiculos.ocr_view import OcrPlacaView, OcrDiagnosticoView
 from apps.usuarios.views import SubirFotoPerfilView
 
 urlpatterns = [
@@ -26,6 +26,8 @@ urlpatterns = [
          csrf_exempt(SubirFotoVehiculoView.as_view()), name="subir_foto_vehiculo"),
     path("api/ocr/placa/",
          csrf_exempt(OcrPlacaView.as_view()), name="ocr_placa"),
+    path("api/ocr/diagnostico/",
+         csrf_exempt(OcrDiagnosticoView.as_view()), name="ocr_diagnostico"),
     path("api/perfil/foto/",
          csrf_exempt(SubirFotoPerfilView.as_view()), name="subir_foto_perfil"),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
