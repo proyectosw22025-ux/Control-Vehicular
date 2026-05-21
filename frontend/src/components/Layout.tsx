@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Users, Car, ParkingSquare,
   DoorOpen, UserCheck, AlertTriangle, Bell, LogOut,
-  Menu, X, UserCircle, BarChart2, ShieldCheck, Shield, Search,
+  Menu, X, UserCircle, BarChart2, ShieldCheck, Shield, Search, Navigation,
 } from 'lucide-react'
 import { UagrmLogo } from './UagrmLogo'
 import { useQuery } from '@apollo/client'
@@ -25,6 +25,7 @@ const NAV_ITEMS = [
   { to: '/notificaciones', label: 'Notificaciones', icon: Bell,            roles: ['all'] },
   { to: '/reportes',       label: 'Reportes',       icon: BarChart2,       roles: ['Administrador'] },
   { to: '/auditoria',      label: 'Auditoría',      icon: Shield,          roles: ['Administrador'] },
+  { to: '/parqueo-demo',  label: 'Guía Parqueo 🔴DEMO', icon: Navigation, roles: ['all'] },
 ]
 
 interface Toast extends NotifPayload { key: number }
