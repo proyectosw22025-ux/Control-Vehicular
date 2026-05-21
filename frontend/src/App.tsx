@@ -18,7 +18,8 @@ import Reportes from './pages/Reportes'
 import GuardiaDashboard from './pages/GuardiaDashboard'
 import HistorialVehiculo from './pages/HistorialVehiculo'
 import Auditoria from './pages/Auditoria'
-import ParqueoDemo from './pages/ParqueoDemo'
+import ParqueoDemo    from './pages/ParqueoDemo'
+import RastreoEnVivo  from './pages/RastreoEnVivo'
 
 export default function App() {
   return (
@@ -48,7 +49,8 @@ export default function App() {
             <Route path="guardia" element={<PrivateRoute roles={['Administrador', 'Guardia']}><GuardiaDashboard /></PrivateRoute>} />
             <Route path="vehiculos/:vehiculoId/historial" element={<HistorialVehiculo />} />
             <Route path="auditoria" element={<PrivateRoute roles={['Administrador']}><Auditoria /></PrivateRoute>} />
-            <Route path="parqueo-demo" element={<ParqueoDemo />} />
+            <Route path="parqueo-demo"   element={<ParqueoDemo />} />
+            <Route path="rastreo-en-vivo" element={<RastreoEnVivo />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -10,6 +10,7 @@ from apps.reportes.views import (
 )
 from apps.vehiculos.views import SubirArchivoDocumentoView, SubirFotoVehiculoView
 from apps.vehiculos.ocr_view import OcrPlacaView, OcrDiagnosticoView
+from apps.acceso.rastreo_views import ActualizarUbicacionView
 from apps.usuarios.views import SubirFotoPerfilView
 
 urlpatterns = [
@@ -28,6 +29,11 @@ urlpatterns = [
          csrf_exempt(OcrPlacaView.as_view()), name="ocr_placa"),
     path("api/ocr/diagnostico/",
          csrf_exempt(OcrDiagnosticoView.as_view()), name="ocr_diagnostico"),
+    # Rastreo GPS en tiempo real — telemetría vehicular
+    path("api/rastreo/ubicacion/",
+         csrf_exempt(ActualizarUbicacionView.as_view()), name="rastreo_ubicacion"),
+    path("api/rastreo/ubicacion/<int:vehiculo_id>/",
+         csrf_exempt(ActualizarUbicacionView.as_view()), name="rastreo_salida"),
     path("api/perfil/foto/",
          csrf_exempt(SubirFotoPerfilView.as_view()), name="subir_foto_perfil"),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

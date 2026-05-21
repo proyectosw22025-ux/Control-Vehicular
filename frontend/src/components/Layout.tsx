@@ -25,7 +25,8 @@ const NAV_ITEMS = [
   { to: '/notificaciones', label: 'Notificaciones', icon: Bell,            roles: ['all'] },
   { to: '/reportes',       label: 'Reportes',       icon: BarChart2,       roles: ['Administrador'] },
   { to: '/auditoria',      label: 'Auditoría',      icon: Shield,          roles: ['Administrador'] },
-  { to: '/parqueo-demo',  label: 'Guía Parqueo 🔴DEMO', icon: Navigation, roles: ['all'] },
+  { to: '/parqueo-demo',    label: 'Guía Parqueo 🔴DEMO', icon: Navigation, roles: ['all'] },
+  { to: '/rastreo-en-vivo', label: '📡 Rastreo en Vivo',   icon: Navigation, roles: ['all'] },
 ]
 
 interface Toast extends NotifPayload { key: number }

@@ -411,7 +411,7 @@ function dibujarZonas(L:any, map:any, zonas:Zona[], ref:React.MutableRefObject<R
 
 // ── Componente principal ──────────────────────────────────────────────────
 export default function ParqueoDemo() {
-  const { esAdmin } = useAuth()
+  const { esAdmin, usuario } = useAuth()
   const navigate = useNavigate()
 
   const [zonas, setZonas]           = useState<Zona[]>(cargarZonas)
@@ -448,7 +448,10 @@ export default function ParqueoDemo() {
 
   // Queries
   const { data: zonasData } = useQuery(ZONAS_QUERY, { variables: { soloActivas: true } })
-  const { data: vehData }   = useQuery(VEHICULOS_QUERY, { variables: { estado:'activo', porPagina:50 } })
+  // Bug fix: estudiante solo ve SUS propios vehículos, no todos los del sistema
+  const { data: vehData }   = useQuery(VEHICULOS_QUERY, {
+    variables: { propietarioId: esAdmin ? undefined : usuario.id, estado:'activo', porPagina:50 },
+  })
   const { data: espData }   = useQuery(ESPACIOS_POR_ZONA_QUERY, {
     variables: { zonaId: (() => {
       if (!zonaDestino || !zonasData?.zonas?.length) return null

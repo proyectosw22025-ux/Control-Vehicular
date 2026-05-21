@@ -168,6 +168,29 @@ class RegistroAcceso(models.Model):
         return f"{self.get_tipo_display()} - {self.vehiculo} en {self.punto_acceso} ({self.timestamp})"
 
 
+class UbicacionVehiculo(models.Model):
+    """
+    Última posición GPS conocida de un vehículo dentro del campus.
+    Actualizada en tiempo real vía POST /api/rastreo/ubicacion/.
+    Se usa para el mapa de rastreo en vivo del módulo de Telemetría.
+    """
+    vehiculo  = models.OneToOneField(
+        "vehiculos.Vehiculo", on_delete=models.CASCADE, related_name="ubicacion_actual"
+    )
+    latitud   = models.DecimalField(max_digits=12, decimal_places=8)
+    longitud  = models.DecimalField(max_digits=12, decimal_places=8)
+    velocidad = models.FloatField(default=0.0)   # km/h estimada por el GPS
+    timestamp = models.DateTimeField(auto_now=True)
+    activo    = models.BooleanField(default=True)  # False cuando sale del campus
+
+    class Meta:
+        db_table = "ubicaciones_vehiculo"
+        ordering = ["-timestamp"]
+
+    def __str__(self):
+        return f"{self.vehiculo.placa} @ ({self.latitud}, {self.longitud})"
+
+
 class AlertaAcceso(models.Model):
     """Anomalías de acceso detectadas por el Celery task diario — Sprint D2."""
     TIPOS = [

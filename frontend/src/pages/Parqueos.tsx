@@ -44,7 +44,7 @@ function compatibilidadCategoria(categoriaNombre: string, roles: string[]): 'ok'
 type Tab = 'zonas' | 'espacios' | 'activas' | 'historial' | 'mapa'
 
 export default function Parqueos() {
-  const { esAdmin, esGuardia } = useAuth()
+  const { esAdmin, esGuardia, usuario } = useAuth()
   const toast = useToast()
   const esPersonal = esAdmin || esGuardia
 
@@ -62,7 +62,15 @@ export default function Parqueos() {
   const { data: zonasData,    refetch: refetchZonas }    = useQuery(ZONAS_QUERY, { variables: { soloActivas: false }, fetchPolicy: 'cache-and-network' })
   const { data: espaciosData, refetch: refetchEspacios } = useQuery(ESPACIOS_POR_ZONA_QUERY, { variables: { zonaId: zonaSelId }, skip: !zonaSelId })
   const { data: categoriasData }  = useQuery(CATEGORIAS_ESPACIO_QUERY)
-  const { data: vehiculosData }   = useQuery(VEHICULOS_QUERY, { variables: { estado: 'activo', porPagina: 200 } })
+  // Admin/Guardia ven todos los vehículos (para asignar espacios).
+  // Otros roles solo ven los suyos (historial personal de parqueo).
+  const esPersonalFlag = esAdmin || esGuardia
+  const { data: vehiculosData } = useQuery(VEHICULOS_QUERY, {
+    variables: {
+      propietarioId: esPersonalFlag ? undefined : usuario?.id,
+      estado: 'activo', porPagina: 200,
+    },
+  })
   const { data: historialData }   = useQuery(HISTORIAL_SESIONES_QUERY, { variables: { vehiculoId: vehiculoHistId, limite: 15 }, skip: !vehiculoHistId })
   const { data: sesionesData,     refetch: refetchActivas } = useQuery(SESIONES_ACTIVAS_QUERY, { fetchPolicy: 'cache-and-network', skip: tab !== 'activas' })
   const { data: mapaData }        = useQuery(MAPA_PARQUEO_QUERY, { pollInterval: 15_000, fetchPolicy: 'cache-and-network', skip: tab !== 'mapa' })
