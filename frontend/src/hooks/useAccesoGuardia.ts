@@ -55,6 +55,9 @@ export function useAccesoGuardia() {
   })
   const timerResultado = useRef<ReturnType<typeof setTimeout> | null>(null)
   const puntoIdRef     = useRef<number | null>(puntoIdState)
+  // Ref síncrono para prevenir doble-ejecución antes del re-render.
+  // `procesando` es estado (asincrónico) y no es suficiente como guard.
+  const enEjecucionRef = useRef(false)
 
   // Limpia el resultado después de N segundos
   // Éxito = 3000ms (guardia procesa la placa en 2s) | Error = 7000ms (necesita más tiempo para leer)
@@ -104,9 +107,14 @@ export function useAccesoGuardia() {
   // ── Registrar acceso por QR ───────────────────────────────────────────────
 
   const registrarQr = useCallback(async (codigo: string, tipo: TipoAcceso) => {
+    // Guard síncrono: evita doble-registro si el scanner dispara antes del re-render
+    if (enEjecucionRef.current) return
+    enEjecucionRef.current = true
+
     const puntoId = puntoIdRef.current
     if (!puntoId) {
       mostrarResultado({ ok: false, mensaje: 'Selecciona un punto de acceso primero' })
+      enEjecucionRef.current = false
       return
     }
     if (!navigator.onLine) {
@@ -114,11 +122,12 @@ export function useAccesoGuardia() {
         ok: false,
         mensaje: 'Sin conexión a internet. El acceso no pudo registrarse.',
       }, 8000)
+      enEjecucionRef.current = false
       return
     }
 
     setProcesando(true)
-    setProcesandoQr(true)  // feedback visual inmediato mientras va a la red
+    setProcesandoQr(true)
     try {
       const { data } = await ejecutarConRetry(() =>
         mutarQr({ variables: { input: { puntoAccesoId: puntoId, codigo, tipo } } })
@@ -137,16 +146,21 @@ export function useAccesoGuardia() {
       setProcesando(false)
       setProcesandoQr(false)
       setConexion(c => ({ ...c, reintentando: false, intentos: 0 }))
+      enEjecucionRef.current = false
     }
   }, [mutarQr])
 
   // ── Registrar acceso manual por placa ────────────────────────────────────
 
   const registrarManual = useCallback(async (placa: string, tipo: TipoAcceso) => {
+    if (enEjecucionRef.current) return
+    enEjecucionRef.current = true
+
     const puntoId = puntoIdRef.current
-    if (!puntoId || !placa.trim()) return
+    if (!puntoId || !placa.trim()) { enEjecucionRef.current = false; return }
     if (!navigator.onLine) {
       mostrarResultado({ ok: false, mensaje: 'Sin conexión. Acceso no registrado.' }, 8000)
+      enEjecucionRef.current = false
       return
     }
 
@@ -172,6 +186,7 @@ export function useAccesoGuardia() {
     } finally {
       setProcesando(false)
       setConexion(c => ({ ...c, reintentando: false, intentos: 0 }))
+      enEjecucionRef.current = false
     }
   }, [mutarManual])
 

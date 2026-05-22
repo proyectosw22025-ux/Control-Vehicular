@@ -51,8 +51,14 @@ export default function GuardiaDashboard() {
   const [vehiculoNoEncontrado, setVehiculoNoEncontrado] = useState('')
 
   // Hook de dominio con retry y manejo de errores
-  const acceso   = useAccesoGuardia()
+  const acceso     = useAccesoGuardia()
   const offlineAcc = useOfflineAccess()
+
+  // Destructurar las funciones estables del hook para que los callbacks
+  // de useCallback no dependan del objeto acceso completo.
+  // acceso.registrarQr y acceso.registrarManual son estables (useCallback interno),
+  // pero el objeto `acceso` cambia de referencia en cada render.
+  const { registrarQr, registrarManual } = acceso
 
   // Detectar cambios de conectividad
   useEffect(() => {
@@ -85,20 +91,20 @@ export default function GuardiaDashboard() {
   const visitasPendientes = todasVisitas.filter((v: any) => v.estado === 'pendiente')
   const visitasActivas    = todasVisitas.filter((v: any) => v.estado === 'activa')
 
-  // Callback de escaneo QR — cierra cámara y registra
+  // Callback de escaneo QR — depende de registrarQr (estable) no de acceso (objeto)
   const handleQrScan = useCallback(async (codigo: string) => {
     setCamara(false)
-    await acceso.registrarQr(codigo, tipo)
+    await registrarQr(codigo, tipo)
     refetchRegistros()
     refetchStats()
-  }, [acceso, tipo, refetchRegistros, refetchStats])
+  }, [registrarQr, tipo, refetchRegistros, refetchStats])
 
-  // Callback de placa manual
+  // Callback de placa manual — depende de registrarManual (estable)
   const handleManual = useCallback(async () => {
     if (!placaManual.trim()) return
     setVehiculoNoEncontrado('')
     try {
-      await acceso.registrarManual(placaManual, tipo)
+      await registrarManual(placaManual, tipo)
       setPlaca('')
       refetchRegistros()
       refetchStats()
@@ -108,14 +114,14 @@ export default function GuardiaDashboard() {
         setVehiculoNoEncontrado(placaManual.trim().toUpperCase())
       }
     }
-  }, [acceso, placaManual, tipo, refetchRegistros, refetchStats])
+  }, [registrarManual, placaManual, tipo, refetchRegistros, refetchStats])
 
-  // Callback de placa OCR detectada
+  // Callback de placa OCR detectada — depende de registrarManual (estable)
   const handlePlacaOcr = useCallback(async (placa: string) => {
     setPlacaOcr(false)
     setVehiculoNoEncontrado('')
     try {
-      await acceso.registrarManual(placa, tipo)
+      await registrarManual(placa, tipo)
       refetchRegistros()
       refetchStats()
     } catch (e: any) {
@@ -124,7 +130,7 @@ export default function GuardiaDashboard() {
         setVehiculoNoEncontrado(placa)
       }
     }
-  }, [acceso, tipo, refetchRegistros, refetchStats])
+  }, [registrarManual, tipo, refetchRegistros, refetchStats])
 
   const resultado = acceso.resultado
 
