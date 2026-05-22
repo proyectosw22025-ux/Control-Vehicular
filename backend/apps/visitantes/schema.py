@@ -17,7 +17,7 @@ from datetime import datetime
 from django.db import transaction
 from django.utils import timezone
 
-from .models import TipoVisita, Visitante, Visita
+from .models import TipoVisita, Visitante, Visita, DependenciaUAGRM
 
 
 # ── Types ──────────────────────────────────────────────────────────────────
@@ -29,6 +29,16 @@ class TipoVisitaType:
     descripcion: str
     requiere_vehiculo: bool
     duracion_esperada_horas: int
+
+
+@strawberry.type
+class DependenciaType:
+    id: int
+    nombre: str
+    codigo: str
+    descripcion: str
+    ubicacion: str
+    activo: bool
 
 
 @strawberry.type
@@ -65,8 +75,14 @@ class VisitaType:
         return self.visitante
 
     @strawberry.field
-    def anfitrion_nombre(self) -> str:
+    def anfitrion_nombre(self) -> Optional[str]:
+        if not self.anfitrion:
+            return None
         return f"{self.anfitrion.nombre} {self.anfitrion.apellido}"
+
+    @strawberry.field
+    def dependencia(self) -> Optional[DependenciaType]:
+        return self.dependencia
 
     @strawberry.field
     def tipo_visita(self) -> Optional[TipoVisitaType]:
@@ -103,10 +119,33 @@ class CrearVisitanteInput:
 @strawberry.input
 class RegistrarVisitaInput:
     visitante_id: int
-    anfitrion_id: int
     motivo: str
+    # Destino: anfitrion_id O dependencia_id — al menos uno es obligatorio
+    anfitrion_id:   Optional[int] = None
+    dependencia_id: Optional[int] = None
     tipo_visita_id: Optional[int] = None
-    vehiculo_id: Optional[int] = None
+    vehiculo_id:    Optional[int] = None
+    placa_vehiculo_visitante: Optional[str] = ""
+    num_acompanantes: Optional[int] = 0
+
+
+@strawberry.input
+class RegistrarVisitaRapidaInput:
+    """
+    Registro exprés: crea el visitante si no existe, registra la visita
+    e inicia el ingreso en una sola operación (sin estado 'pendiente').
+    Diseñado para el guardia en momentos de alta afluencia.
+    """
+    ci: str
+    nombre: str
+    apellido: str
+    procedencia: Optional[str] = ""
+    telefono: Optional[str] = ""
+    # Destino
+    anfitrion_id:   Optional[int] = None
+    dependencia_id: Optional[int] = None
+    tipo_visita_id: Optional[int] = None
+    motivo: str = "Consulta / trámite general"
     placa_vehiculo_visitante: Optional[str] = ""
     num_acompanantes: Optional[int] = 0
 
@@ -218,6 +257,16 @@ class VisitantesQuery:
     @strawberry.field
     def tipos_visita(self) -> List[TipoVisitaType]:
         return list(TipoVisita.objects.all().order_by("nombre"))
+
+    @strawberry.field
+    def dependencias_uagrm(self, buscar: Optional[str] = None) -> List[DependenciaType]:
+        """Lista de dependencias activas para el selector de destino."""
+        qs = DependenciaUAGRM.objects.filter(activo=True).order_by("nombre")
+        if buscar:
+            from django.db.models import Q
+            b = buscar.strip()
+            qs = qs.filter(Q(nombre__icontains=b) | Q(codigo__icontains=b) | Q(descripcion__icontains=b))
+        return list(qs)
 
     @strawberry.field
     def visitas_historial(
@@ -364,12 +413,27 @@ class VisitantesMutation:
         if not motivo:
             raise Exception("El motivo de la visita es obligatorio")
 
+        if not input.anfitrion_id and not input.dependencia_id:
+            raise Exception(
+                "Debes especificar a quién visita (anfitrión) o a qué dependencia se dirige. "
+                "Si el visitante no conoce a nadie, selecciona la dependencia o área de destino."
+            )
+
         visitante = Visitante.objects.filter(pk=input.visitante_id).first()
-        anfitrion  = Usuario.objects.filter(pk=input.anfitrion_id).first()
         if not visitante:
             raise Exception("Visitante no encontrado")
-        if not anfitrion:
-            raise Exception("Anfitrión no encontrado")
+
+        anfitrion = None
+        if input.anfitrion_id:
+            anfitrion = Usuario.objects.filter(pk=input.anfitrion_id).first()
+            if not anfitrion:
+                raise Exception("Anfitrión no encontrado")
+
+        dependencia = None
+        if input.dependencia_id:
+            dependencia = DependenciaUAGRM.objects.filter(pk=input.dependencia_id).first()
+            if not dependencia:
+                raise Exception("Dependencia no encontrada")
 
         tipo_visita = None
         if input.tipo_visita_id:
@@ -400,29 +464,41 @@ class VisitantesMutation:
                 .first()
             )
             if en_curso:
-                anf = f"{en_curso.anfitrion.nombre} {en_curso.anfitrion.apellido}"
+                destino_actual = (
+                    f"{en_curso.anfitrion.nombre} {en_curso.anfitrion.apellido}"
+                    if en_curso.anfitrion else
+                    (en_curso.dependencia.nombre if en_curso.dependencia else "destino desconocido")
+                )
                 raise Exception(
                     f"{visitante.nombre} {visitante.apellido} ya tiene una visita "
-                    f"en estado '{en_curso.estado}' con {anf}. "
+                    f"en estado '{en_curso.estado}' con {destino_actual}. "
                     f"Finaliza o cancela esa visita antes de registrar una nueva."
                 )
 
             visita = Visita.objects.create(
-                visitante=visitante, anfitrion=anfitrion,
-                tipo_visita=tipo_visita, vehiculo=vehiculo,
+                visitante=visitante,
+                anfitrion=anfitrion,
+                dependencia=dependencia,
+                tipo_visita=tipo_visita,
+                vehiculo=vehiculo,
                 motivo=motivo,
                 placa_vehiculo_visitante=placa_externa,
                 num_acompanantes=max(0, input.num_acompanantes or 0),
             )
+            destino_log = (
+                f"{anfitrion.nombre} {anfitrion.apellido}" if anfitrion
+                else (dependencia.nombre if dependencia else "sin destino")
+            )
             detalle_vehiculo = f" · vehículo: {placa_externa}" if placa_externa else ""
             log_audit(
                 user, "visita_registrada",
-                f"Visita de {visitante.nombre} {visitante.apellido} → {anfitrion.nombre} {anfitrion.apellido}{detalle_vehiculo}",
+                f"Visita de {visitante.nombre} {visitante.apellido} → {destino_log}{detalle_vehiculo}",
                 request=info.context.request,
             )
 
-        # Notificar al anfitrión fuera de la transacción para no bloquear el commit
-        _notificar_anfitrion_async(anfitrion, visitante, motivo)
+        # Notificar al anfitrión solo si existe (visitas institucionales no tienen anfitrión)
+        if anfitrion:
+            _notificar_anfitrion_async(anfitrion, visitante, motivo)
         return visita
 
     @strawberry.mutation
@@ -573,4 +649,94 @@ class VisitantesMutation:
                 f"— salida confirmada por anfitrión {user.ci}",
                 request=info.context.request,
             )
+        return visita
+
+    @strawberry.mutation
+    def registrar_visita_rapida(self, info: Info, input: RegistrarVisitaRapidaInput) -> VisitaType:
+        """
+        Registro exprés: crea el visitante si no existe, registra la visita
+        e inicia el ingreso en UNA sola operación sin estado 'pendiente'.
+        Para guardias en momentos de alta afluencia.
+        """
+        from apps.usuarios.utils import tiene_rol
+        from apps.acceso.utils import log_audit
+
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not tiene_rol(user, "Administrador") and not tiene_rol(user, "Guardia"):
+            raise Exception("Solo guardias y administradores pueden registrar visitas")
+
+        ci_limpio = input.ci.strip()
+        if not ci_limpio:
+            raise Exception("El CI del visitante es obligatorio")
+        if not input.anfitrion_id and not input.dependencia_id:
+            raise Exception("Especifica el anfitrión o la dependencia de destino")
+
+        motivo = (input.motivo or "Consulta / trámite general").strip()
+        placa  = (input.placa_vehiculo_visitante or "").strip().upper()
+
+        anfitrion = None
+        if input.anfitrion_id:
+            from apps.usuarios.models import Usuario
+            anfitrion = Usuario.objects.filter(pk=input.anfitrion_id).first()
+            if not anfitrion:
+                raise Exception("Anfitrión no encontrado")
+
+        dependencia = None
+        if input.dependencia_id:
+            dependencia = DependenciaUAGRM.objects.filter(pk=input.dependencia_id).first()
+            if not dependencia:
+                raise Exception("Dependencia no encontrada")
+
+        tipo_visita = None
+        if input.tipo_visita_id:
+            tipo_visita = TipoVisita.objects.filter(pk=input.tipo_visita_id).first()
+
+        with transaction.atomic():
+            visitante, creado = Visitante.objects.get_or_create(
+                ci=ci_limpio,
+                defaults={
+                    "nombre":      input.nombre.strip(),
+                    "apellido":    input.apellido.strip(),
+                    "telefono":    (input.telefono or "").strip(),
+                    "procedencia": (input.procedencia or "").strip(),
+                },
+            )
+
+            en_curso = Visita.objects.filter(
+                visitante=visitante, estado__in=["pendiente", "activa"]
+            ).first()
+            if en_curso:
+                raise Exception(
+                    f"{visitante.nombre} {visitante.apellido} ya tiene una visita activa. "
+                    "Finaliza esa visita antes de registrar una nueva."
+                )
+
+            visita = Visita.objects.create(
+                visitante=visitante,
+                anfitrion=anfitrion,
+                dependencia=dependencia,
+                tipo_visita=tipo_visita,
+                motivo=motivo,
+                placa_vehiculo_visitante=placa,
+                num_acompanantes=max(0, input.num_acompanantes or 0),
+                estado="activa",
+                fecha_entrada=timezone.now(),
+            )
+
+            destino_log = (
+                f"{anfitrion.nombre} {anfitrion.apellido}" if anfitrion
+                else (dependencia.nombre if dependencia else "sin destino especificado")
+            )
+            prefijo = "visitante_creado+" if creado else ""
+            log_audit(
+                user, f"{prefijo}visita_rapida",
+                f"Registro rápido: {visitante.nombre} {visitante.apellido} → {destino_log}"
+                + (f" · {placa}" if placa else ""),
+                request=info.context.request,
+            )
+
+        if anfitrion:
+            _notificar_anfitrion_async(anfitrion, visitante, motivo)
         return visita

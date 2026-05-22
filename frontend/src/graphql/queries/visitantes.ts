@@ -28,6 +28,7 @@ export const VISITAS_ACTIVAS_QUERY = gql`
       duracionMinutos
       visitante { id nombreCompleto ci telefono procedencia }
       anfitrionNombre
+      dependencia { nombre codigo ubicacion }
       tipoVisita { nombre requiereVehiculo }
       placaVehiculo
     }
@@ -68,7 +69,15 @@ export const VISITAS_HISTORIAL_QUERY = gql`
 
 export const TIPOS_VISITA_QUERY = gql`
   query TiposVisita {
-    tiposVisita { id nombre descripcion requiereVehiculo }
+    tiposVisita { id nombre descripcion requiereVehiculo duracionEsperadaHoras }
+  }
+`
+
+export const DEPENDENCIAS_QUERY = gql`
+  query DependenciasUagrm($buscar: String) {
+    dependenciasUagrm(buscar: $buscar) {
+      id nombre codigo descripcion ubicacion
+    }
   }
 `
 

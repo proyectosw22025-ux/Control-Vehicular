@@ -9,7 +9,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../hooks/useToast'
 import { useDebounce } from '../hooks/useDebounce'
 import { ToastContainer } from '../components/ToastContainer'
-import { AnfitrionCombobox } from '../components/AnfitrionCombobox'
+import { DestinoSelector } from '../components/DestinoSelector'
 import {
   VISITANTES_QUERY,
   VISITAS_ACTIVAS_QUERY,
@@ -20,6 +20,7 @@ import { VEHICULOS_QUERY } from '../graphql/queries/vehiculos'
 import {
   REGISTRAR_VISITANTE_MUTATION,
   REGISTRAR_VISITA_MUTATION,
+  REGISTRAR_VISITA_RAPIDA_MUTATION,
   INICIAR_VISITA_MUTATION,
   FINALIZAR_VISITA_MUTATION,
   CANCELAR_VISITA_MUTATION,
@@ -130,6 +131,8 @@ export default function Visitantes() {
   const [busquedaHistorial, setBusqHist]    = useState('')
   const [visitanteEncontrado, setVisitante] = useState<any>(null)
   const [anfitrionId, setAnfitrionId]       = useState<number | null>(null)
+  const [dependenciaId, setDependenciaId]   = useState<number | null>(null)
+  const [modoRapido, setModoRapido]         = useState(false)
   const [error, setError]                   = useState('')
   const [modalSalida, setModalSalida]       = useState<any>(null)
 
@@ -174,6 +177,17 @@ export default function Visitantes() {
       toast.exito('Visitante registrado', d.registrarVisitante.nombreCompleto)
     },
     onError(e) { setError(e.message); toast.error('Error', e.message) },
+  })
+
+  const [registrarVisitaRapida, { loading: loadingRapida }] = useMutation(REGISTRAR_VISITA_RAPIDA_MUTATION, {
+    onCompleted(d) {
+      setError(''); setBusqueda(''); setVisitante(null); setAnfitrionId(null); setDependenciaId(null)
+      refetchVisitas(); setTab('activas')
+      const v = d.registrarVisitaRapida
+      const dest = v.anfitrionNombre || v.dependencia?.nombre || 'campus'
+      toast.exito('Ingreso registrado', `${v.visitante.nombreCompleto} → ${dest}`)
+    },
+    onError(e) { setError(e.message); toast.error('Error en registro rápido', e.message) },
   })
 
   const [registrarVisita, { loading: loadingVisita }] = useMutation(REGISTRAR_VISITA_MUTATION, {
@@ -234,7 +248,10 @@ export default function Visitantes() {
 
   function handleRegistrarVisita(e: FormEvent<HTMLFormElement>) {
     e.preventDefault(); setError('')
-    if (!anfitrionId) { setError('Selecciona la persona a visitar'); return }
+    if (!anfitrionId && !dependenciaId) {
+      setError('Selecciona a quién visita (persona) o a qué oficina/área se dirige')
+      return
+    }
     const f = new FormData(e.currentTarget)
     const vehId  = f.get('vehiculoId') as string
     const tipoId = f.get('tipoVisitaId') as string
@@ -244,12 +261,39 @@ export default function Visitantes() {
       variables: {
         input: {
           visitanteId:            visitanteEncontrado.id,
-          anfitrionId,
+          anfitrionId:            anfitrionId || null,
+          dependenciaId:          dependenciaId || null,
           motivo:                 (f.get('motivo') as string).trim(),
           tipoVisitaId:           tipoId ? parseInt(tipoId) : null,
           vehiculoId:             vehId  ? parseInt(vehId)  : null,
           placaVehiculoVisitante: placa || null,
           numAcompanantes:        acomp,
+        },
+      },
+    })
+  }
+
+  function handleRegistroRapido(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault(); setError('')
+    if (!anfitrionId && !dependenciaId) {
+      setError('Selecciona el destino (persona u oficina)')
+      return
+    }
+    const f = new FormData(e.currentTarget)
+    registrarVisitaRapida({
+      variables: {
+        input: {
+          ci:                     (f.get('ci') as string).trim(),
+          nombre:                 (f.get('nombre') as string).trim(),
+          apellido:               (f.get('apellido') as string).trim(),
+          procedencia:            (f.get('procedencia') as string || '').trim(),
+          telefono:               (f.get('telefono') as string || '').trim(),
+          anfitrionId:            anfitrionId || null,
+          dependenciaId:          dependenciaId || null,
+          tipoVisitaId:           f.get('tipoVisitaId') ? parseInt(f.get('tipoVisitaId') as string) : null,
+          motivo:                 (f.get('motivo') as string || 'Consulta / trámite general').trim(),
+          placaVehiculoVisitante: ((f.get('placa') as string) || '').trim().toUpperCase() || null,
+          numAcompanantes:        parseInt(f.get('numAcompanantes') as string) || 0,
         },
       },
     })
@@ -294,8 +338,11 @@ export default function Visitantes() {
       <div className="flex gap-1 mb-4 border-b border-slate-200 overflow-x-auto">
         <TabBtn active={tab === 'activas'} onClick={() => setTab('activas')}
           label={`En campus (${activas.length})${pendientes.length > 0 ? ` · ${pendientes.length} esperando` : ''}`} />
-        <TabBtn active={tab === 'registrar'} onClick={() => setTab('registrar')} label="Registrar Visita" />
-        <TabBtn active={tab === 'buscar'} onClick={() => setTab('buscar')} label="Buscar Visitante" />
+        <TabBtn active={tab === 'registrar'} onClick={() => { setTab('registrar'); setModoRapido(false) }}
+          label="Registrar" />
+        <TabBtn active={tab === 'registrar' && modoRapido} onClick={() => { setTab('registrar'); setModoRapido(true) }}
+          label="⚡ Registro Rápido" />
+        <TabBtn active={tab === 'buscar'} onClick={() => setTab('buscar')} label="Buscar" />
         <TabBtn active={tab === 'historial'} onClick={() => setTab('historial')} label="Historial" />
       </div>
 
@@ -359,8 +406,8 @@ export default function Visitantes() {
         </div>
       )}
 
-      {/* ── Tab: Registrar visita ── */}
-      {tab === 'registrar' && (
+      {/* ── Tab: Registrar visita (flujo normal) ── */}
+      {tab === 'registrar' && !modoRapido && (
         <div className="max-w-xl">
           {!visitanteEncontrado ? (
             <div>
@@ -488,16 +535,15 @@ export default function Visitantes() {
                   </select>
                 </div>
 
-                {/* Anfitrión — combobox con búsqueda en tiempo real */}
+                {/* Destino: persona u oficina — resuelve el caso "no conoce a nadie" */}
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Persona a visitar (anfitrión) *</label>
-                  <AnfitrionCombobox
-                    value={anfitrionId}
-                    onChange={(id) => setAnfitrionId(id)}
-                    required
-                    placeholder="Escribe el nombre o CI del docente/administrativo..."
+                  <label className="block text-xs font-medium text-slate-600 mb-1">¿A quién o a dónde va? *</label>
+                  <DestinoSelector
+                    anfitrionId={anfitrionId}
+                    dependenciaId={dependenciaId}
+                    onAnfitrionChange={setAnfitrionId}
+                    onDependenciaChange={setDependenciaId}
                   />
-                  <p className="text-[10px] text-slate-400 mt-1">Busca por nombre completo o número de CI</p>
                 </div>
 
                 {/* Motivo */}
@@ -557,6 +603,70 @@ export default function Visitantes() {
               </form>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Tab: Registro Rápido ── */}
+      {tab === 'registrar' && modoRapido && (
+        <div className="max-w-xl">
+          <div className="flex items-center gap-2 mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+            <span className="text-lg">⚡</span>
+            <div>
+              <p className="text-sm font-bold text-amber-800">Registro Rápido — Ingreso inmediato</p>
+              <p className="text-xs text-amber-600">Crea al visitante, registra la visita e inicia el ingreso en un solo paso</p>
+            </div>
+          </div>
+
+          <form onSubmit={handleRegistroRapido} className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <Campo label="Nombre *" name="nombre" placeholder="Nombre del visitante" />
+              <Campo label="Apellido *" name="apellido" placeholder="Apellido" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Campo label="CI *" name="ci" placeholder="Ej: 1234567" />
+              <Campo label="Teléfono" name="telefono" placeholder="7XXXXXXX" />
+            </div>
+            <Campo label="Procedencia" name="procedencia" placeholder="Ej: Santa Cruz, Empresa XYZ..." />
+
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Tipo de visita *</label>
+              <select name="tipoVisitaId" required className={cls}>
+                <option value="">Seleccionar...</option>
+                {tipos.map((t: any) => (
+                  <option key={t.id} value={t.id}>{t.nombre}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Destino en el campus *</label>
+              <DestinoSelector
+                anfitrionId={anfitrionId}
+                dependenciaId={dependenciaId}
+                onAnfitrionChange={setAnfitrionId}
+                onDependenciaChange={setDependenciaId}
+              />
+            </div>
+
+            <Campo label="Motivo" name="motivo" placeholder="Ej: Consulta de inscripción, entrega de documentos..." />
+
+            <div className="grid grid-cols-2 gap-3">
+              <Campo label="Placa vehículo" name="placa" placeholder="Ej: 123ABC / TAXI / A PIE" />
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Acompañantes</label>
+                <input type="number" name="numAcompanantes" min={0} max={20} defaultValue={0} className={cls} />
+              </div>
+            </div>
+
+            {error && <Err t={error} />}
+
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-700">
+              <p className="font-medium">El visitante ingresará directamente al campus</p>
+              <p className="opacity-75 mt-0.5">No pasa por estado "pendiente" — ideal para alta afluencia</p>
+            </div>
+
+            <Btn loading={loadingRapida} label="⚡ Registrar e iniciar ingreso" color="bg-emerald-500 hover:bg-emerald-600" />
+          </form>
         </div>
       )}
 
@@ -805,7 +915,12 @@ function VisitaCard({ visita: v, onIniciar, onFinalizar, onCancelar, loadingInic
             )}
           </div>
           <div className="text-xs text-slate-500 space-y-0.5">
-            <p><span className="font-medium text-slate-700">Visita a:</span> {v.anfitrionNombre}</p>
+            {v.anfitrionNombre
+              ? <p><span className="font-medium text-slate-700">Visita a:</span> {v.anfitrionNombre}</p>
+              : v.dependencia
+              ? <p><span className="font-medium text-slate-700">Destino:</span> <span className="text-cyan-700 font-medium">{v.dependencia.nombre}</span>{v.dependencia.ubicacion ? ` · ${v.dependencia.ubicacion}` : ''}</p>
+              : null
+            }
             <p><span className="font-medium text-slate-700">Motivo:</span> {v.motivo}</p>
             {v.tipoVisita && <p>Tipo: <span className="text-cyan-700 font-medium">{v.tipoVisita.nombre}</span></p>}
             {v.numAcompanantes > 0 && <p>Grupo: {v.numAcompanantes + 1} persona{v.numAcompanantes + 1 > 1 ? 's' : ''} total</p>}

@@ -20,6 +20,27 @@ class TipoVisita(models.Model):
         return self.nombre
 
 
+class DependenciaUAGRM(models.Model):
+    """
+    Unidad, facultad u oficina de la UAGRM como destino de visita.
+    Permite registrar visitantes sin anfitrión específico (ej: consultas de inscripción).
+    """
+    nombre      = models.CharField(max_length=120, unique=True)
+    codigo      = models.CharField(max_length=10, unique=True)
+    descripcion = models.TextField(blank=True)
+    ubicacion   = models.CharField(max_length=120, blank=True)
+    activo      = models.BooleanField(default=True)
+
+    class Meta:
+        db_table  = "dependencias_uagrm"
+        ordering  = ["nombre"]
+        verbose_name = "Dependencia UAGRM"
+        verbose_name_plural = "Dependencias UAGRM"
+
+    def __str__(self):
+        return f"[{self.codigo}] {self.nombre}"
+
+
 class Visitante(models.Model):
     nombre = models.CharField(max_length=100)
     apellido = models.CharField(max_length=100)
@@ -55,8 +76,18 @@ class Visita(models.Model):
     )
     anfitrion = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.PROTECT,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="visitas_como_anfitrion",
+    )
+    dependencia = models.ForeignKey(
+        DependenciaUAGRM,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="visitas",
+        help_text="Destino institucional cuando no hay anfitrión específico.",
     )
     tipo_visita = models.ForeignKey(
         TipoVisita,

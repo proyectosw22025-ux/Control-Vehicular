@@ -54,6 +54,17 @@ export const FINALIZAR_VISITA_MUTATION = gql`
   }
 `
 
+export const REGISTRAR_VISITA_RAPIDA_MUTATION = gql`
+  mutation RegistrarVisitaRapida($input: RegistrarVisitaRapidaInput!) {
+    registrarVisitaRapida(input: $input) {
+      id estado fechaEntrada
+      visitante { nombreCompleto ci }
+      anfitrionNombre
+      dependencia { nombre }
+    }
+  }
+`
+
 export const CONFIRMAR_SALIDA_ANFITRION_MUTATION = gql`
   mutation ConfirmarSalidaAnfitrion($visitaId: Int!) {
     confirmarSalidaAnfitrion(visitaId: $visitaId) {
