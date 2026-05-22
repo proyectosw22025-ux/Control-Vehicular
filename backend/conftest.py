@@ -168,6 +168,17 @@ def tipo_multa(db):
 # ── Cliente GraphQL ───────────────────────────────────────────────────────────
 
 @pytest.fixture
+def gql_usuario_normal(usuario_normal):
+    """Cliente HTTP autenticado como usuario regular (sin rol especial)."""
+    from django.test import Client
+    from rest_framework_simplejwt.tokens import RefreshToken
+    token = str(RefreshToken.for_user(usuario_normal).access_token)
+    c = Client()
+    c.defaults["HTTP_AUTHORIZATION"] = f"Bearer {token}"
+    return c
+
+
+@pytest.fixture
 def gql_client():
     """Cliente HTTP sin autenticación."""
     from django.test import Client

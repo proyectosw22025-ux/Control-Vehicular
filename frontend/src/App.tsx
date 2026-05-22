@@ -20,6 +20,7 @@ import HistorialVehiculo from './pages/HistorialVehiculo'
 import Auditoria from './pages/Auditoria'
 import ParqueoDemo    from './pages/ParqueoDemo'
 import RastreoEnVivo  from './pages/RastreoEnVivo'
+import MisAccesos     from './pages/MisAccesos'
 
 export default function App() {
   return (
@@ -39,7 +40,7 @@ export default function App() {
             <Route index element={<Dashboard />} />
             <Route path="usuarios" element={<PrivateRoute roles={['Administrador']}><Usuarios /></PrivateRoute>} />
             <Route path="vehiculos" element={<Vehiculos />} />
-            <Route path="parqueos" element={<PrivateRoute roles={['Administrador', 'Guardia']}><Parqueos /></PrivateRoute>} />
+            <Route path="parqueos" element={<Parqueos />} />
             <Route path="acceso" element={<PrivateRoute roles={['Administrador', 'Guardia']}><Acceso /></PrivateRoute>} />
             <Route path="visitantes" element={<PrivateRoute roles={['Administrador', 'Guardia']}><Visitantes /></PrivateRoute>} />
             <Route path="multas" element={<Multas />} />
@@ -51,6 +52,7 @@ export default function App() {
             <Route path="auditoria" element={<PrivateRoute roles={['Administrador']}><Auditoria /></PrivateRoute>} />
             <Route path="parqueo-demo"   element={<ParqueoDemo />} />
             <Route path="rastreo-en-vivo" element={<RastreoEnVivo />} />
+            <Route path="mis-accesos"    element={<MisAccesos />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

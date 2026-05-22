@@ -20,6 +20,22 @@ export const REGISTROS_ACCESO_QUERY = gql`
   }
 `
 
+export const MIS_ACCESOS_QUERY = gql`
+  query MisAccesos($limite: Int, $tipo: String) {
+    misAccesos(limite: $limite, tipo: $tipo) {
+      id
+      tipo
+      timestamp
+      metodoAcceso
+      puntoNombre
+      placaVehiculo
+      tipoVehiculo
+      marcaModelo
+      observacion
+    }
+  }
+`
+
 export const QR_DELEGACIONES_QUERY = gql`
   query QrDelegacionesVehiculo($vehiculoId: Int!) {
     qrDelegacionesVehiculo(vehiculoId: $vehiculoId) {

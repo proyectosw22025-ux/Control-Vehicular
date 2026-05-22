@@ -118,6 +118,18 @@ class RegistroAccesoType:
     def placa_vehiculo(self) -> Optional[str]:
         return self.vehiculo.placa if self.vehiculo else None
 
+    @strawberry.field
+    def tipo_vehiculo(self) -> Optional[str]:
+        if self.vehiculo and self.vehiculo.tipo_id:
+            return self.vehiculo.tipo.nombre
+        return None
+
+    @strawberry.field
+    def marca_modelo(self) -> Optional[str]:
+        if self.vehiculo:
+            return f"{self.vehiculo.marca} {self.vehiculo.modelo}".strip()
+        return None
+
 
 @strawberry.type
 class AuditLogType:
@@ -261,6 +273,33 @@ class AccesoQuery:
         if not tiene_rol(info.context.request.user, "Administrador"):
             return 0
         return AlertaAcceso.objects.filter(revisada=False).count()
+
+    @strawberry.field
+    def mis_accesos(
+        self,
+        info: Info,
+        limite: int = 50,
+        tipo: Optional[str] = None,
+    ) -> List[RegistroAccesoType]:
+        """
+        Historial de entradas y salidas del usuario autenticado.
+        Filtra por los vehículos de los que es propietario.
+        Disponible para cualquier usuario registrado.
+        """
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+
+        qs = (
+            RegistroAcceso.objects
+            .select_related("punto_acceso", "vehiculo__tipo")
+            .filter(vehiculo__propietario=user)
+            .order_by("-timestamp")
+        )
+        if tipo in ("entrada", "salida"):
+            qs = qs.filter(tipo=tipo)
+
+        return list(qs[:min(limite, 200)])
 
 
 # ──────────────────────────────────────────────
