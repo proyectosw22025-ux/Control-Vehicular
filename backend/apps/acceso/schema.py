@@ -335,6 +335,30 @@ class AccesoMutation:
         )
 
         propietario = getattr(resultado.vehiculo, "propietario", None)
+
+        # ── Fix 2: Al registrar SALIDA, cerrar automáticamente la SesionParqueo activa ──
+        # El espacio debe liberarse cuando el vehículo sale del campus, no solo
+        # cuando el guardia lo hace manualmente desde el módulo de Parqueos.
+        if input.tipo == "salida" and resultado.vehiculo:
+            from apps.parqueos.models import SesionParqueo as _SP
+            sesion_activa = (
+                _SP.objects
+                .select_related("espacio")
+                .filter(vehiculo=resultado.vehiculo, estado="activa")
+                .first()
+            )
+            if sesion_activa:
+                sesion_activa.hora_salida = timezone.now()
+                sesion_activa.estado = "cerrada"
+                sesion_activa.save(update_fields=["hora_salida", "estado"])
+                sesion_activa.espacio.estado = "disponible"
+                sesion_activa.espacio.save(update_fields=["estado"])
+                log_audit(
+                    registrado_por, "sesion_parqueo_auto_cerrada",
+                    f"Sesión de {resultado.vehiculo.placa} cerrada automáticamente al registrar salida QR",
+                    request=info.context.request,
+                )
+
         if propietario:
             from apps.notificaciones.utils import enviar_notificacion
             accion = "entró a" if input.tipo == "entrada" else "salió de"
@@ -344,13 +368,19 @@ class AccesoMutation:
                 mensaje=f"{resultado.vehiculo.placa} registró {input.tipo} en {punto.nombre}.",
                 tipo_codigo="acceso_vehiculo",
             )
-            # Notificación especial de guía de parqueo — solo en entradas
+            # Fix 3: Incluir vehiculo_id en datos_extra para que el frontend
+            # pueda pre-seleccionar el vehículo en el demo de guía de parqueo.
             if input.tipo == "entrada":
                 enviar_notificacion(
                     usuario=propietario,
                     titulo=f"🏫 Bienvenido al campus — {resultado.vehiculo.placa}",
                     mensaje="¿Deseas orientación para encontrar un lugar de estacionamiento disponible?",
                     tipo_codigo="orientacion_parqueo",
+                    datos_extra={
+                        "vehiculo_id":    resultado.vehiculo.pk,
+                        "placa":          resultado.vehiculo.placa,
+                        "punto_acceso":   punto.nombre,
+                    },
                 )
 
         return registro
@@ -391,6 +421,18 @@ class AccesoMutation:
             f"{input.tipo.capitalize()} manual de {vehiculo.placa} en {punto.nombre}",
             request=info.context.request,
         )
+
+        # Fix 2: cerrar SesionParqueo activa también en acceso manual de SALIDA
+        if input.tipo == "salida":
+            from apps.parqueos.models import SesionParqueo as _SP
+            sesion = _SP.objects.select_related("espacio").filter(vehiculo=vehiculo, estado="activa").first()
+            if sesion:
+                sesion.hora_salida = timezone.now()
+                sesion.estado = "cerrada"
+                sesion.save(update_fields=["hora_salida", "estado"])
+                sesion.espacio.estado = "disponible"
+                sesion.espacio.save(update_fields=["estado"])
+
         return registro
 
     @strawberry.mutation

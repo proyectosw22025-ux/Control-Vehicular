@@ -52,7 +52,7 @@ def enviar_email(usuario, asunto: str, cuerpo: str, html: str = "") -> None:
     hilo.start()
 
 
-def enviar_notificacion(usuario, titulo: str, mensaje: str, tipo_codigo: str | None = None) -> Notificacion:
+def enviar_notificacion(usuario, titulo: str, mensaje: str, tipo_codigo: str | None = None, datos_extra: dict | None = None) -> Notificacion:
     """
     Guarda la notificación en BD y la entrega en tiempo real por WebSocket
     al canal del usuario (si hay una conexión activa).
@@ -66,6 +66,7 @@ def enviar_notificacion(usuario, titulo: str, mensaje: str, tipo_codigo: str | N
         titulo=titulo,
         mensaje=mensaje,
         tipo=tipo,
+        datos_extra=datos_extra or {},
     )
 
     channel_layer = get_channel_layer()
@@ -79,7 +80,8 @@ def enviar_notificacion(usuario, titulo: str, mensaje: str, tipo_codigo: str | N
                     "titulo":     titulo,
                     "mensaje":    mensaje,
                     "fecha":      notif.fecha.isoformat(),
-                    "tipo_codigo": tipo_codigo or "",  # clave para el frontend
+                    "tipo_codigo": tipo_codigo or "",
+                    "datos_extra": datos_extra or {},  # contexto para acciones del frontend
                 },
             )
         except Exception:

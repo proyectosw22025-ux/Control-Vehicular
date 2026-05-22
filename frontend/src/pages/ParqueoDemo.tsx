@@ -11,7 +11,7 @@
  */
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Navigation, RotateCcw, CheckCircle2, XCircle, Clock,
   Car, Wifi, Loader2, Settings, MapPin, Save, X,
@@ -412,7 +412,9 @@ function dibujarZonas(L:any, map:any, zonas:Zona[], ref:React.MutableRefObject<R
 // ── Componente principal ──────────────────────────────────────────────────
 export default function ParqueoDemo() {
   const { esAdmin, usuario } = useAuth()
-  const navigate = useNavigate()
+  const navigate     = useNavigate()
+  const [searchParams] = useSearchParams()
+  const vehiculoIdParam = searchParams.get('vehiculoId')
 
   const [zonas, setZonas]           = useState<Zona[]>(cargarZonas)
   const [entrada]                   = useState<[number,number]>([-17.7695, -63.1960])
@@ -471,8 +473,52 @@ export default function ParqueoDemo() {
   })
 
   const vehiculos  = vehData?.vehiculos?.items ?? []
-  const primerEsp  = (espData?.espaciosPorZona ?? []).find((e:any) => e.estado==='disponible')
   const vehSel     = vehiculos.find((v:any) => v.id===vehiculoSelId)
+
+  // Fix 1 — Selección de espacio por categoría del propietario
+  // Evita asignar espacio "Docente" a un Estudiante o "Discapacitado" a cualquiera sin permiso.
+  const ROLES_CATEGORIA: Record<string, string[]> = {
+    'Docente':                 ['Docente', 'General'],
+    'Estudiante':              ['Estudiante', 'General'],
+    'Personal Administrativo': ['Personal Administrativo', 'General'],
+    'Guardia':                 ['General'],
+    'Administrador':           ['General', 'Docente', 'Estudiante', 'Personal Administrativo'],
+  }
+  const rolesOwner = (vehSel?.propietarioRoles ?? []) as string[]
+  const categoriasAceptables = rolesOwner.length > 0
+    ? [...new Set(rolesOwner.flatMap(r => ROLES_CATEGORIA[r] ?? ['General']))]
+    : ['General', 'Estudiante']  // fallback para usuarios sin rol asignado
+
+  const espaciosDisp = (espData?.espaciosPorZona ?? []).filter((e:any) => e.estado === 'disponible')
+  const primerEsp =
+    // 1. Espacio cuya categoría coincide exactamente con el rol del propietario
+    espaciosDisp.find((e:any) => categoriasAceptables.includes(e.categoria?.nombre)) ??
+    // 2. Espacio General como fallback seguro
+    espaciosDisp.find((e:any) => e.categoria?.nombre === 'General') ??
+    // 3. Último recurso: el primero disponible (con aviso en UI)
+    espaciosDisp[0]
+
+  const categoriaIncompatible = primerEsp &&
+    !categoriasAceptables.includes(primerEsp.categoria?.nombre) &&
+    primerEsp.categoria?.nombre !== 'General'
+
+  // Fix 3 — Pre-seleccionar el vehículo escaneado en el QR cuando viene de la notificación
+  useEffect(() => {
+    if (!vehiculoIdParam || vehiculos.length === 0) return
+    const id = parseInt(vehiculoIdParam)
+    const v  = vehiculos.find((v:any) => v.id === id)
+    if (v) {
+      setVehId(id)
+      setTipoV(v.tipo?.nombre ?? 'Automóvil')
+    }
+  }, [vehiculoIdParam, vehiculos])
+
+  // Si llega con vehiculoId en la URL, saltar la bienvenida directo a la guía
+  useEffect(() => {
+    if (vehiculoIdParam && flow === 'bienvenida') {
+      setFlow('inicio')
+    }
+  }, [vehiculoIdParam, flow])
 
   useEffect(() => {
     if (flow !== 'parqueado') return
@@ -693,12 +739,18 @@ export default function ParqueoDemo() {
                       </div>
                     )}
                   </div>
-                  {primerEsp?(
-                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2 text-xs text-emerald-700">
-                      Espacio: <strong>#{primerEsp.numero}</strong> · {primerEsp.zona?.nombre}
+                  {primerEsp ? (
+                    <div className={`rounded-xl p-2.5 text-xs border ${categoriaIncompatible ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700'}`}>
+                      <p className="font-semibold">
+                        {categoriaIncompatible ? '⚠ ' : ''}Espacio: <strong>#{primerEsp.numero}</strong> · {primerEsp.zona?.nombre}
+                      </p>
+                      <p className="text-[10px] opacity-80">
+                        Categoría: {primerEsp.categoria?.nombre}
+                        {categoriaIncompatible && ' — No es la categoría de tu rol, pero es el único disponible'}
+                      </p>
                     </div>
-                  ):(
-                    <div className="bg-red-50 border border-red-200 rounded-xl p-2 text-xs text-red-600">Sin espacios disponibles</div>
+                  ) : (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-2 text-xs text-red-600">Sin espacios disponibles en esta zona</div>
                   )}
                   {msg&&<div className={`rounded-xl p-2 text-xs ${msg.startsWith('✅')?'bg-emerald-50 text-emerald-700':'bg-red-50 text-red-700'}`}>{msg}</div>}
                   <div className="flex gap-2">

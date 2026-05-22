@@ -56,7 +56,8 @@ export default function Layout() {
   const [mobileOpen, setMobileOpen]     = useState(false)
   const [toasts, setToasts]             = useState<Toast[]>([])
   const [busquedaAbierta, setBusqueda]  = useState(false)
-  const [guiaParqueo, setGuiaParqueo]   = useState(false)  // modal orientacion_parqueo
+  const [guiaParqueo, setGuiaParqueo]   = useState(false)
+  const [guiaVehId, setGuiaVehId]       = useState<number | null>(null)  // vehiculo del QR escaneado
 
   const { logout, usuario, roles, esAdmin } = useAuth()
   // Aplicar tema al montar (lee preferencia guardada)
@@ -105,8 +106,10 @@ export default function Layout() {
   const conteo: number = conteoData?.conteoNoLeidas ?? 0
 
   const handleNueva = useCallback((n: NotifPayload) => {
-    // Notificación especial: ofrecer guía de parqueo → modal YES/NO, no toast
+    // Notificación especial: guía de parqueo → modal YES/NO con vehiculo_id del QR
     if (n.tipoCodigo === 'orientacion_parqueo') {
+      const vehId = n.datosExtra?.vehiculo_id
+      setGuiaVehId(typeof vehId === 'number' ? vehId : null)
       setGuiaParqueo(true)
       return
     }
@@ -389,7 +392,12 @@ export default function Layout() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <button
-                onClick={() => { setGuiaParqueo(false); navigate('/parqueo-demo') }}
+                onClick={() => {
+                setGuiaParqueo(false)
+                // Navegar con el vehiculo_id del QR para pre-selección automática
+                const url = guiaVehId ? `/parqueo-demo?vehiculoId=${guiaVehId}` : '/parqueo-demo'
+                navigate(url)
+              }}
                 className="flex flex-col items-center gap-1.5 py-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-bold text-sm transition-colors shadow-lg"
               >
                 <span className="text-2xl">✅</span>

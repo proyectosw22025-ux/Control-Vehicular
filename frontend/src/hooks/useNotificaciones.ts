@@ -7,7 +7,8 @@ export interface NotifPayload {
   titulo: string
   mensaje: string
   fecha: string
-  tipoCodigo?: string   // permite distinguir notificaciones especiales en el frontend
+  tipoCodigo?: string
+  datosExtra?: Record<string, unknown>  // contexto adicional (ej: vehiculo_id, placa)
 }
 
 export function useNotificaciones(onNueva?: (n: NotifPayload) => void) {
@@ -45,6 +46,7 @@ export function useNotificaciones(onNueva?: (n: NotifPayload) => void) {
             mensaje:    data.mensaje,
             fecha:      data.fecha,
             tipoCodigo: data.tipo_codigo ?? '',
+            datosExtra: data.datos_extra ?? {},
           })
         }
       } catch { /* ignorar mensajes malformados */ }
