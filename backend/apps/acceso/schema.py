@@ -213,9 +213,39 @@ class AccesoQuery:
 
     @strawberry.field
     def qr_delegaciones_vehiculo(self, info: Info, vehiculo_id: int) -> List[QrDelegacionType]:
+        from apps.usuarios.utils import tiene_rol
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        vehiculo = __import__("apps.vehiculos.models", fromlist=["Vehiculo"]).Vehiculo.objects.filter(pk=vehiculo_id).first()
+        if not vehiculo:
+            return []
+        es_personal = tiene_rol(user, "Administrador") or tiene_rol(user, "Guardia")
+        if not es_personal and vehiculo.propietario_id != user.pk:
+            raise Exception("Solo puedes ver las delegaciones de tus propios vehículos")
         return list(QrSesion.objects.filter(
             vehiculo_id=vehiculo_id, usado=False, fecha_expiracion__gt=timezone.now()
-        ).select_related("vehiculo"))
+        ).select_related("vehiculo").order_by("-fecha_generacion"))
+
+    @strawberry.field
+    def mis_delegaciones(self, info: Info) -> List[QrDelegacionType]:
+        """
+        Todas las delegaciones vigentes (no usadas, no expiradas) del usuario
+        autenticado, agrupadas por sus vehículos.
+        """
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        return list(
+            QrSesion.objects
+            .select_related("vehiculo")
+            .filter(
+                vehiculo__propietario=user,
+                usado=False,
+                fecha_expiracion__gt=timezone.now(),
+            )
+            .order_by("-fecha_generacion")
+        )
 
     @strawberry.field
     def registros_acceso(
@@ -311,25 +341,79 @@ class AccesoMutation:
     @strawberry.mutation
     def generar_qr_delegacion(self, info: Info, input: GenerarQrDelegacionInput) -> QrDelegacionType:
         from apps.vehiculos.models import Vehiculo
-        vehiculo = Vehiculo.objects.filter(pk=input.vehiculo_id).first()
+        from apps.usuarios.utils import tiene_rol
+
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+
+        vehiculo = Vehiculo.objects.select_related("propietario").filter(pk=input.vehiculo_id).first()
         if not vehiculo:
             raise Exception("Vehículo no encontrado")
+
+        es_personal = tiene_rol(user, "Administrador") or tiene_rol(user, "Guardia")
+        if not es_personal and vehiculo.propietario_id != user.pk:
+            raise Exception("Solo puedes generar QR de delegación para tus propios vehículos")
+
         if vehiculo.estado == "pendiente":
             raise Exception("Vehículo pendiente de aprobación, no puede generar QR de delegación")
         if vehiculo.estado == "sancionado":
             raise Exception("Vehículo sancionado, no puede generar QR de delegación")
         if vehiculo.estado == "inactivo":
             raise Exception("Vehículo inactivo, no puede generar QR de delegación")
+
+        if not input.motivo.strip():
+            raise Exception("El motivo de la delegación es obligatorio")
+
         codigo_hash = hashlib.sha256(f"{vehiculo.placa}-{uuid.uuid4()}".encode()).hexdigest()
         horas = max(1, min(input.horas_validez or 24, 168))
-        generado_por = info.context.request.user if info.context.request.user.is_authenticated else None
-        return QrSesion.objects.create(
+
+        qr = QrSesion.objects.create(
             vehiculo=vehiculo,
             codigo_hash=codigo_hash,
-            motivo=input.motivo,
+            motivo=input.motivo.strip(),
             fecha_expiracion=timezone.now() + timedelta(hours=horas),
-            generado_por=generado_por,
+            generado_por=user,
         )
+        log_audit(
+            user, "qr_delegacion_generado",
+            f"QR temporal generado para {vehiculo.placa} — {horas}h — motivo: {input.motivo[:60]}",
+            request=info.context.request,
+        )
+        return qr
+
+    @strawberry.mutation
+    def revocar_qr_delegacion(self, info: Info, qr_id: int) -> bool:
+        """
+        Revoca (invalida) un QR de delegación activo antes de que sea usado.
+        Solo el propietario del vehículo o un administrador puede revocar.
+        """
+        from apps.usuarios.utils import tiene_rol
+
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+
+        qr = QrSesion.objects.select_related("vehiculo__propietario").filter(pk=qr_id).first()
+        if not qr:
+            raise Exception("Delegación no encontrada")
+
+        es_personal = tiene_rol(user, "Administrador") or tiene_rol(user, "Guardia")
+        if not es_personal and qr.vehiculo.propietario_id != user.pk:
+            raise Exception("Solo puedes revocar delegaciones de tus propios vehículos")
+
+        if qr.usado:
+            raise Exception("Este QR ya fue utilizado y no puede revocarse")
+
+        # Forzar expiración inmediata — no eliminamos para mantener trazabilidad
+        qr.fecha_expiracion = timezone.now() - timedelta(seconds=1)
+        qr.save(update_fields=["fecha_expiracion"])
+        log_audit(
+            user, "qr_delegacion_revocada",
+            f"QR #{qr_id} revocado para {qr.vehiculo.placa}",
+            request=info.context.request,
+        )
+        return True
 
     @strawberry.mutation
     def registrar_acceso(self, info: Info, input: ValidarAccesoInput) -> RegistroAccesoType:

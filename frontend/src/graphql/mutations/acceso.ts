@@ -41,6 +41,12 @@ export const GENERAR_QR_DELEGACION_MUTATION = gql`
   }
 `
 
+export const REVOCAR_QR_DELEGACION_MUTATION = gql`
+  mutation RevocarQrDelegacion($qrId: Int!) {
+    revocarQrDelegacion(qrId: $qrId)
+  }
+`
+
 export const CREAR_PASE_TEMPORAL_MUTATION = gql`
   mutation CrearPaseTemporal($input: CrearPaseTemporalInput!) {
     crearPaseTemporal(input: $input) {

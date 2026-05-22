@@ -36,6 +36,21 @@ export const MIS_ACCESOS_QUERY = gql`
   }
 `
 
+export const MIS_DELEGACIONES_QUERY = gql`
+  query MisDelegaciones {
+    misDelegaciones {
+      id
+      codigoHash
+      motivo
+      fechaGeneracion
+      fechaExpiracion
+      usado
+      vigente
+      placaVehiculo
+    }
+  }
+`
+
 export const QR_DELEGACIONES_QUERY = gql`
   query QrDelegacionesVehiculo($vehiculoId: Int!) {
     qrDelegacionesVehiculo(vehiculoId: $vehiculoId) {

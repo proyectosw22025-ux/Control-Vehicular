@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Users, Car, ParkingSquare,
   DoorOpen, UserCheck, AlertTriangle, Bell, LogOut,
-  Menu, X, UserCircle, BarChart2, ShieldCheck, Shield, Search, Navigation, History,
+  Menu, X, UserCircle, BarChart2, ShieldCheck, Shield, Search, Navigation, History, QrCode,
 } from 'lucide-react'
 import { UagrmLogo } from './UagrmLogo'
 import { useQuery } from '@apollo/client'
@@ -25,6 +25,7 @@ const NAV_ITEMS = [
   { to: '/notificaciones', label: 'Notificaciones', icon: Bell,            roles: ['all'] },
   { to: '/reportes',       label: 'Reportes',       icon: BarChart2,       roles: ['Administrador'] },
   { to: '/auditoria',      label: 'Auditoría',      icon: Shield,          roles: ['Administrador'] },
+  { to: '/mi-pase-qr',      label: 'Mi Pase QR',           icon: QrCode,     roles: ['all'] },
   { to: '/mis-accesos',     label: 'Mis Accesos',          icon: History,    roles: ['Estudiante', 'Docente', 'Personal Administrativo'] },
   { to: '/parqueo-demo',    label: 'Guía Parqueo 🔴DEMO', icon: Navigation, roles: ['all'] },
   { to: '/rastreo-en-vivo', label: '📡 Rastreo en Vivo',   icon: Navigation, roles: ['all'] },
