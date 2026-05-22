@@ -28,8 +28,11 @@ backend/pyrightconfig.json
 .env.*
 !.env.example
 
-# Claude Code internal
-.claude/
+# Claude Code — archivos personales (NO commitear)
+.claude/memory/
+.claude/projects/
+.claude/settings.json
+.claude/*.json
 
 # Node / Frontend
 node_modules/
