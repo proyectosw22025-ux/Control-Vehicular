@@ -1,0 +1,33 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$data = $input | ConvertFrom-Json -ErrorAction SilentlyContinue; $fp = if ($data -and $data.tool_input) { [string]$data.tool_input.file_path } else { '' }; if ($fp -match 'backend.apps.*\\.py$') { @{systemMessage='Archivo backend Python editado. Considera correr /tests-rapidos para verificar que nada se rompio.'} | ConvertTo-Json -Compress }",
+            "shell": "powershell",
+            "timeout": 5,
+            "statusMessage": "Revisando si se requieren tests..."
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git push*)",
+            "command": "Write-Output '{\"systemMessage\":\"Antes del push: corre /deploy-check para verificar que Railway y Vercel recibiran codigo listo.\"}'",
+            "shell": "powershell",
+            "timeout": 5,
+            "statusMessage": "Verificando antes del push..."
+          }
+        ]
+      }
+    ]
+  }
+}

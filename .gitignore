@@ -31,8 +31,7 @@ backend/pyrightconfig.json
 # Claude Code — archivos personales (NO commitear)
 .claude/memory/
 .claude/projects/
-.claude/settings.json
-.claude/*.json
+.claude/settings.local.json
 
 # Node / Frontend
 node_modules/
