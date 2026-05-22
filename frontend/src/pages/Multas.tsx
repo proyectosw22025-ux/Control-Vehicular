@@ -99,11 +99,12 @@ export default function Multas() {
   const { data: pendientesData, refetch: refetchPendientes } = useQuery(MULTAS_PENDIENTES_QUERY, {
     skip: !esPersonal,
   })
-  // Solo vehículos activos — no 500 vehículos de toda la BD
+  // Admin/guardia: solo activos (no cargar toda la BD). Usuario: todos sus vehículos
+  // incluyendo sancionados, porque precisamente necesita ver las multas de ese vehículo.
   const { data: misVehiculosData } = useQuery(VEHICULOS_QUERY, {
     variables: {
       propietarioId: esPersonal ? undefined : usuario.id,
-      estado: 'activo',
+      estado: esPersonal ? 'activo' : undefined,
       porPagina: 100,
     },
     fetchPolicy: 'cache-and-network',

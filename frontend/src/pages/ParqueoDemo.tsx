@@ -785,14 +785,10 @@ export default function ParqueoDemo() {
                   )}
                   {msg&&<div className={`rounded-xl p-2 text-xs ${msg.startsWith('✅')?'bg-emerald-50 text-emerald-700':'bg-red-50 text-red-700'}`}>{msg}</div>}
                   <div className="flex gap-2">
-                    {/* "Cambiar zona" solo disponible en flujo manual — en el flujo QR
-                        el sistema ya asignó la mejor zona para el vehículo escaneado */}
-                    {!vehiculoIdParam && (
-                      <button onClick={()=>{setZonaD(null);setRuta([]);setFlow('en_ruta')}}
-                        className="flex-1 flex items-center justify-center gap-1 py-2.5 border-2 border-slate-200 text-slate-600 rounded-xl text-sm">
-                        <XCircle size={13}/>Cambiar zona
-                      </button>
-                    )}
+                    <button onClick={()=>{setZonaD(null);setRuta([]);setFlow('en_ruta')}}
+                      className="flex-1 flex items-center justify-center gap-1 py-2.5 border-2 border-slate-200 text-slate-600 rounded-xl text-sm">
+                      <XCircle size={13}/>Cambiar zona
+                    </button>
                     <button onClick={confirmar} disabled={lSesion||!vehiculoSelId||!primerEsp}
                       className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold text-sm disabled:opacity-40">
                       {lSesion?<Loader2 size={13} className="animate-spin"/>:<CheckCircle2 size={13}/>}Confirmar
