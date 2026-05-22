@@ -33,6 +33,17 @@ export const USUARIOS_QUERY = gql`
   }
 `
 
+export const USUARIOS_BUSCAR_QUERY = gql`
+  query UsuariosBuscar($buscar: String) {
+    usuarios(buscar: $buscar) {
+      id
+      nombreCompleto
+      ci
+      roles { nombre }
+    }
+  }
+`
+
 export const ROLES_QUERY = gql`
   query Roles {
     roles {

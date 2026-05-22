@@ -6,6 +6,10 @@ class TipoVisita(models.Model):
     nombre = models.CharField(max_length=60, unique=True)
     descripcion = models.TextField(blank=True)
     requiere_vehiculo = models.BooleanField(default=False)
+    duracion_esperada_horas = models.PositiveSmallIntegerField(
+        default=4,
+        help_text="Umbral en horas. Pasado este tiempo se notifica al anfitrión y se auto-cierra si no hay respuesta.",
+    )
 
     class Meta:
         db_table = "tipos_visita"
@@ -73,6 +77,15 @@ class Visita(models.Model):
     fecha_entrada = models.DateTimeField(null=True, blank=True)
     fecha_salida = models.DateTimeField(null=True, blank=True)
     observaciones = models.TextField(blank=True)
+    TIPO_CIERRE = [
+        ("manual_guardia",       "Registrada por guardia"),
+        ("confirmado_anfitrion", "Confirmada por anfitrión"),
+        ("auto",                 "Auto-cerrada — salida no verificada"),
+    ]
+    tipo_cierre = models.CharField(
+        max_length=25, blank=True, default="", choices=TIPO_CIERRE,
+    )
+    notificacion_anfitrion_enviada = models.BooleanField(default=False)
     num_acompanantes = models.PositiveSmallIntegerField(
         default=0,
         help_text="Personas adicionales que ingresan con el visitante.",

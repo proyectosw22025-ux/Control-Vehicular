@@ -58,9 +58,10 @@ export const VISITAS_HISTORIAL_QUERY = gql`
       observaciones
       placaVehiculoVisitante
       numAcompanantes
+      tipoCierre
       visitante { nombreCompleto ci procedencia }
       anfitrionNombre
-      tipoVisita { nombre }
+      tipoVisita { nombre duracionEsperadaHoras }
     }
   }
 `

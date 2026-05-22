@@ -3,12 +3,13 @@ import { useQuery, useMutation } from '@apollo/client'
 import {
   UserCheck, Search, LogIn, LogOut, X, FileDown,
   ArrowRight, Clock, CheckCircle2, XCircle, Users,
-  AlertTriangle, History, Filter, Calendar,
+  AlertTriangle, History, Filter, Calendar, ShieldCheck,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../hooks/useToast'
 import { useDebounce } from '../hooks/useDebounce'
 import { ToastContainer } from '../components/ToastContainer'
+import { AnfitrionCombobox } from '../components/AnfitrionCombobox'
 import {
   VISITANTES_QUERY,
   VISITAS_ACTIVAS_QUERY,
@@ -16,7 +17,6 @@ import {
   TIPOS_VISITA_QUERY,
 } from '../graphql/queries/visitantes'
 import { VEHICULOS_QUERY } from '../graphql/queries/vehiculos'
-import { USUARIOS_QUERY } from '../graphql/queries/usuarios'
 import {
   REGISTRAR_VISITANTE_MUTATION,
   REGISTRAR_VISITA_MUTATION,
@@ -129,6 +129,7 @@ export default function Visitantes() {
   const [busqueda, setBusqueda]             = useState('')
   const [busquedaHistorial, setBusqHist]    = useState('')
   const [visitanteEncontrado, setVisitante] = useState<any>(null)
+  const [anfitrionId, setAnfitrionId]       = useState<number | null>(null)
   const [error, setError]                   = useState('')
   const [modalSalida, setModalSalida]       = useState<any>(null)
 
@@ -159,7 +160,6 @@ export default function Visitantes() {
 
   const { data: tiposData } = useQuery(TIPOS_VISITA_QUERY)
   const { data: vehiculosData } = useQuery(VEHICULOS_QUERY, { variables: { porPagina: 500 } })
-  const { data: usuariosData } = useQuery(USUARIOS_QUERY)
 
   const { data: visitantesData } = useQuery(VISITANTES_QUERY, {
     variables: { buscar: busquedaDebounced || undefined },
@@ -208,7 +208,6 @@ export default function Visitantes() {
   const activas      = todasVisitas.filter((v: any) => v.estado === 'activa')
   const tipos        = tiposData?.tiposVisita ?? []
   const vehiculos    = vehiculosData?.vehiculos?.items ?? []
-  const usuarios     = usuariosData?.usuarios ?? []
   const visitantesResultado = visitantesData?.visitantes ?? []
   const historial    = historialData?.visitasHistorial ?? []
 
@@ -235,16 +234,17 @@ export default function Visitantes() {
 
   function handleRegistrarVisita(e: FormEvent<HTMLFormElement>) {
     e.preventDefault(); setError('')
+    if (!anfitrionId) { setError('Selecciona la persona a visitar'); return }
     const f = new FormData(e.currentTarget)
-    const vehId    = f.get('vehiculoId') as string
-    const tipoId   = f.get('tipoVisitaId') as string
-    const placa    = ((f.get('placaVehiculoVisitante') as string) || '').trim().toUpperCase()
-    const acomp    = parseInt(f.get('numAcompanantes') as string) || 0
+    const vehId  = f.get('vehiculoId') as string
+    const tipoId = f.get('tipoVisitaId') as string
+    const placa  = ((f.get('placaVehiculoVisitante') as string) || '').trim().toUpperCase()
+    const acomp  = parseInt(f.get('numAcompanantes') as string) || 0
     registrarVisita({
       variables: {
         input: {
           visitanteId:            visitanteEncontrado.id,
-          anfitrionId:            parseInt(f.get('anfitrionId') as string),
+          anfitrionId,
           motivo:                 (f.get('motivo') as string).trim(),
           tipoVisitaId:           tipoId ? parseInt(tipoId) : null,
           vehiculoId:             vehId  ? parseInt(vehId)  : null,
@@ -488,15 +488,16 @@ export default function Visitantes() {
                   </select>
                 </div>
 
-                {/* Anfitrión */}
+                {/* Anfitrión — combobox con búsqueda en tiempo real */}
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Persona a visitar (anfitrión) *</label>
-                  <select name="anfitrionId" required className={cls}>
-                    <option value="">Seleccionar usuario de la UAGRM...</option>
-                    {usuarios.map((u: any) => (
-                      <option key={u.id} value={u.id}>{u.nombreCompleto}</option>
-                    ))}
-                  </select>
+                  <AnfitrionCombobox
+                    value={anfitrionId}
+                    onChange={(id) => setAnfitrionId(id)}
+                    required
+                    placeholder="Escribe el nombre o CI del docente/administrativo..."
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">Busca por nombre completo o número de CI</p>
                 </div>
 
                 {/* Motivo */}
@@ -713,6 +714,21 @@ export default function Visitantes() {
                         {v.estado}
                       </span>
                       {v.tipoVisita && <span className="text-[10px] bg-cyan-50 text-cyan-700 px-2 py-0.5 rounded-full border border-cyan-200">{v.tipoVisita.nombre}</span>}
+                      {v.tipoCierre === 'manual_guardia' && (
+                        <span className="flex items-center gap-0.5 text-[10px] bg-green-50 text-green-700 px-2 py-0.5 rounded-full border border-green-200">
+                          <ShieldCheck size={9} /> Guardia verificó salida
+                        </span>
+                      )}
+                      {v.tipoCierre === 'confirmado_anfitrion' && (
+                        <span className="flex items-center gap-0.5 text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-200">
+                          <CheckCircle2 size={9} /> Anfitrión confirmó salida
+                        </span>
+                      )}
+                      {v.tipoCierre === 'auto' && (
+                        <span className="flex items-center gap-0.5 text-[10px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">
+                          <AlertTriangle size={9} /> Auto-cerrada — salida no verificada
+                        </span>
+                      )}
                     </div>
                     <div className="text-xs text-slate-500 space-y-0.5">
                       <p>CI: <span className="font-mono">{v.visitante?.ci}</span>{v.visitante?.procedencia ? ` · ${v.visitante.procedencia}` : ''}</p>

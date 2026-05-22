@@ -28,6 +28,7 @@ class TipoVisitaType:
     nombre: str
     descripcion: str
     requiere_vehiculo: bool
+    duracion_esperada_horas: int
 
 
 @strawberry.type
@@ -56,6 +57,7 @@ class VisitaType:
     observaciones: str
     placa_vehiculo_visitante: str
     num_acompanantes: int
+    tipo_cierre: str
     created_at: datetime
 
     @strawberry.field
@@ -214,7 +216,7 @@ class VisitantesQuery:
         return list(qs)
 
     @strawberry.field
-    def tipos_visita(self, info: Info) -> List[TipoVisitaType]:
+    def tipos_visita(self) -> List[TipoVisitaType]:
         return list(TipoVisita.objects.all().order_by("nombre"))
 
     @strawberry.field
@@ -284,7 +286,7 @@ class VisitantesQuery:
 class VisitantesMutation:
 
     @strawberry.mutation
-    def pre_registrar_visitante(self, info: Info, input: CrearVisitanteInput) -> VisitanteType:
+    def pre_registrar_visitante(self, input: CrearVisitanteInput) -> VisitanteType:
         """
         Permite a visitantes externos pre-registrar sus datos SIN autenticación.
         El guardia los encontrará por CI al llegar — no tiene que escribir nada.
@@ -475,9 +477,10 @@ class VisitantesMutation:
                 raise Exception("Visita activa no encontrada")
             visita.estado = "completada"
             visita.fecha_salida = timezone.now()
+            visita.tipo_cierre = "manual_guardia"
             if observaciones:
                 visita.observaciones = observaciones.strip()
-            visita.save(update_fields=["estado", "fecha_salida", "observaciones"])
+            visita.save(update_fields=["estado", "fecha_salida", "tipo_cierre", "observaciones"])
             duracion = int((visita.fecha_salida - visita.fecha_entrada).total_seconds() / 60) if visita.fecha_entrada else 0
             log_audit(
                 user, "visita_finalizada",
@@ -529,6 +532,45 @@ class VisitantesMutation:
                 user, "visita_cancelada",
                 f"Visita #{visita_id}: {visita.visitante.nombre} {visita.visitante.apellido} "
                 f"cancelada por {user.ci}",
+                request=info.context.request,
+            )
+        return visita
+
+    @strawberry.mutation
+    def confirmar_salida_anfitrion(self, info: Info, visita_id: int) -> VisitaType:
+        """
+        El anfitrión confirma que su visitante ya salió del campus.
+        Se llama desde la notificación de verificación enviada por el sistema.
+        Marca la visita con tipo_cierre='confirmado_anfitrion' para distinguirla
+        de una salida registrada por guardia o auto-cerrada.
+        """
+        from apps.acceso.utils import log_audit
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+
+        with transaction.atomic():
+            visita = (
+                Visita.objects
+                .select_related("visitante", "anfitrion")
+                .filter(pk=visita_id)
+                .first()
+            )
+            if not visita:
+                raise Exception("Visita no encontrada")
+            if visita.anfitrion_id != user.pk:
+                raise Exception("Solo el anfitrión puede confirmar la salida de su visitante")
+            if visita.estado not in ["activa", "pendiente"]:
+                raise Exception("La visita ya fue cerrada anteriormente")
+
+            visita.estado = "completada"
+            visita.fecha_salida = timezone.now()
+            visita.tipo_cierre = "confirmado_anfitrion"
+            visita.save(update_fields=["estado", "fecha_salida", "tipo_cierre"])
+            log_audit(
+                user, "salida_confirmada_anfitrion",
+                f"Visita #{visita_id}: {visita.visitante.nombre} {visita.visitante.apellido} "
+                f"— salida confirmada por anfitrión {user.ci}",
                 request=info.context.request,
             )
         return visita

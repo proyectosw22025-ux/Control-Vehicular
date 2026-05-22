@@ -54,6 +54,14 @@ export const FINALIZAR_VISITA_MUTATION = gql`
   }
 `
 
+export const CONFIRMAR_SALIDA_ANFITRION_MUTATION = gql`
+  mutation ConfirmarSalidaAnfitrion($visitaId: Int!) {
+    confirmarSalidaAnfitrion(visitaId: $visitaId) {
+      id estado tipoCierre fechaSalida
+    }
+  }
+`
+
 export const CANCELAR_VISITA_MUTATION = gql`
   mutation CancelarVisita($visitaId: Int!, $motivoCancelacion: String) {
     cancelarVisita(visitaId: $visitaId, motivoCancelacion: $motivoCancelacion) {

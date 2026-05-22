@@ -39,4 +39,9 @@ app.conf.beat_schedule = {
         "task": "acceso.detectar_anomalias_acceso",
         "schedule": crontab(hour=6, minute=0),
     },
+    # Cada 30 minutos — notificar anfitrión y auto-cerrar visitas que excedieron su umbral
+    "auto-cerrar-visitas-cada-30min": {
+        "task": "visitantes.auto_cerrar_visitas",
+        "schedule": 1800.0,
+    },
 }
