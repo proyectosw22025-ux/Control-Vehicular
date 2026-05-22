@@ -3,6 +3,7 @@ import { useQuery } from '@apollo/client'
 import {
   LogIn, LogOut, Clock, MapPin, Car, Filter,
   ShieldCheck, QrCode, Hand, RefreshCw,
+  type LucideIcon,
 } from 'lucide-react'
 import { MIS_ACCESOS_QUERY } from '../graphql/queries/acceso'
 
@@ -20,7 +21,7 @@ type Registro = {
 
 type FiltroTipo = 'todos' | 'entrada' | 'salida'
 
-const METODO_LABEL: Record<string, { label: string; icon: React.FC<{ size: number; className?: string }> }> = {
+const METODO_LABEL: Record<string, { label: string; icon: LucideIcon }> = {
   qr_permanente: { label: 'QR', icon: QrCode },
   qr_delegado:   { label: 'QR Delegado', icon: QrCode },
   manual:        { label: 'Manual', icon: Hand },

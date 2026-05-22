@@ -130,7 +130,7 @@ export default function MiPaseQR() {
 
   return (
     <div className="p-4 sm:p-8 max-w-lg mx-auto">
-      <ToastContainer />
+      <ToastContainer toasts={toast.toasts} onClose={toast.cerrar} />
 
       {/* Encabezado */}
       <div className="flex items-center gap-3 mb-6">
