@@ -85,11 +85,14 @@ export function useAccesoGuardia() {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
 
-      // Error de negocio (vehículo sancionado, código inválido, etc.)
-      // → NO reintentar, mostrar al guardia inmediatamente
+      // Error de negocio → NO reintentar, mostrar al guardia inmediatamente.
+      // Incluye errores de estado (ya dentro/fuera) y de validación de datos.
       const esErrorNegocio = [
         'sancionado', 'pendiente', 'inactivo',
         'inválido', 'expirado', 'no encontrado', 'no reconocido',
+        'ya está dentro', 'ya está fuera', 'ya ingresó', 'ya salió',
+        'no tiene registros', 'no se puede registrar',
+        'sin respuesta',
       ].some(p => msg.toLowerCase().includes(p))
 
       if (esErrorNegocio || intento >= MAX_REINTENTOS) {
@@ -129,15 +132,21 @@ export function useAccesoGuardia() {
     setProcesando(true)
     setProcesandoQr(true)
     try {
-      const { data } = await ejecutarConRetry(() =>
+      const result = await ejecutarConRetry(() =>
         mutarQr({ variables: { input: { puntoAccesoId: puntoId, codigo, tipo } } })
       )
-      const r = data?.registrarAcceso
+      // errorPolicy:'all' → errores GraphQL NO lanzan excepción, vienen en result.errors.
+      // Sin esta verificación, el frontend mostraría "Entrada registrada" aunque el backend rechazara.
+      if (result.errors?.length) {
+        throw new Error(result.errors[0].message)
+      }
+      const r = result.data?.registrarAcceso
+      if (!r) throw new Error('Sin respuesta del servidor. Intenta de nuevo.')
       mostrarResultado({
         ok: true,
         mensaje: tipo === 'entrada' ? 'Entrada registrada' : 'Salida registrada',
-        placa:   r?.placaVehiculo,
-        metodo:  r?.metodoAcceso,
+        placa:   r.placaVehiculo,
+        metodo:  r.metodoAcceso,
       })
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al registrar acceso'
@@ -166,18 +175,22 @@ export function useAccesoGuardia() {
 
     setProcesando(true)
     try {
-      const { data } = await ejecutarConRetry(() =>
+      const result = await ejecutarConRetry(() =>
         mutarManual({
           variables: {
             input: { puntoAccesoId: puntoId, placa: placa.trim().toUpperCase(), tipo },
           },
         })
       )
-      const r = data?.registrarAccesoManual
+      if (result.errors?.length) {
+        throw new Error(result.errors[0].message)
+      }
+      const r = result.data?.registrarAccesoManual
+      if (!r) throw new Error('Sin respuesta del servidor. Intenta de nuevo.')
       mostrarResultado({
         ok: true,
         mensaje: tipo === 'entrada' ? 'Entrada manual registrada' : 'Salida manual registrada',
-        placa:   r?.placaVehiculo,
+        placa:   r.placaVehiculo,
         metodo:  'manual',
       })
     } catch (err: unknown) {

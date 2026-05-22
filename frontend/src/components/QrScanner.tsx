@@ -13,9 +13,11 @@ let instanceCounter = 0
 export function QrScanner({ onScan, activo }: Props) {
   const [estado, setEstado] = useState<'idle' | 'iniciando' | 'activo' | 'detectado' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
-  const scannerRef  = useRef<Html5Qrcode | null>(null)
-  // ID único por instancia — evita conflictos entre GuardiaDashboard y Acceso
-  const containerId = useRef(`qr-scan-${++instanceCounter}`)
+  const scannerRef   = useRef<Html5Qrcode | null>(null)
+  const containerId  = useRef(`qr-scan-${++instanceCounter}`)
+  // Debounce: evita disparar onScan para el mismo código varias veces en el mismo frame window.
+  // Html5Qrcode puede detectar el mismo QR en múltiples frames consecutivos (15fps).
+  const ultimaScanRef = useRef<{ codigo: string; ts: number } | null>(null)
 
   useEffect(() => {
     if (!activo) { detener(); return }
@@ -41,10 +43,16 @@ export function QrScanner({ onScan, activo }: Props) {
           experimentalFeatures: { useBarCodeDetectorIfSupported: true },
         } as any),
         (decoded) => {
-          // Feedback visual INMEDIATO antes de cualquier network call
+          // Debounce: el mismo código detectado en < 2s es el mismo escaneo físico.
+          // Html5Qrcode dispara el callback para cada frame que detecta el QR (15fps).
+          const ahora = Date.now()
+          const ultima = ultimaScanRef.current
+          if (ultima && ultima.codigo === decoded && ahora - ultima.ts < 2000) return
+          ultimaScanRef.current = { codigo: decoded, ts: ahora }
+
           setEstado('detectado')
           onScan(decoded)
-          setTimeout(() => detener(), 200)           // pequeño delay para que el flash se vea
+          setTimeout(() => detener(), 200)
         },
         () => { /* frames sin QR — normal */ }
       )
