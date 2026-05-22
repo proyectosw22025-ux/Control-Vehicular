@@ -50,11 +50,18 @@ class VisitanteType:
     telefono: str
     email: str
     procedencia: str
+    placa_habitual: str
+    destino_sugerido_texto: str
     created_at: datetime
 
     @strawberry.field
     def nombre_completo(self) -> str:
         return f"{self.nombre} {self.apellido}"
+
+    @strawberry.field
+    def tiene_datos_previos(self) -> bool:
+        """True si el visitante se pre-registró y completó datos adicionales."""
+        return bool(self.placa_habitual or self.destino_sugerido_texto or self.procedencia)
 
 
 @strawberry.type
@@ -114,6 +121,8 @@ class CrearVisitanteInput:
     telefono: Optional[str] = ""
     email: Optional[str] = ""
     procedencia: Optional[str] = ""
+    placa_habitual: Optional[str] = ""
+    destino_sugerido_texto: Optional[str] = ""
 
 
 @strawberry.input
@@ -349,7 +358,19 @@ class VisitantesMutation:
 
         existente = Visitante.objects.filter(ci=ci_limpio).first()
         if existente:
-            return existente  # Visitante frecuente — el guardia lo encontrará por CI
+            # Actualizar datos opcionales si el visitante vuelve a pre-registrarse
+            actualizar = {}
+            if input.placa_habitual and input.placa_habitual.strip():
+                actualizar["placa_habitual"] = input.placa_habitual.strip().upper()
+            if input.destino_sugerido_texto and input.destino_sugerido_texto.strip():
+                actualizar["destino_sugerido_texto"] = input.destino_sugerido_texto.strip()
+            if input.procedencia and input.procedencia.strip():
+                actualizar["procedencia"] = input.procedencia.strip()
+            if actualizar:
+                for campo, valor in actualizar.items():
+                    setattr(existente, campo, valor)
+                existente.save(update_fields=list(actualizar.keys()))
+            return existente
 
         return Visitante.objects.create(
             nombre=input.nombre.strip(),
@@ -357,6 +378,9 @@ class VisitantesMutation:
             ci=ci_limpio,
             telefono=input.telefono.strip() if input.telefono else "",
             email=input.email.strip() if input.email else "",
+            procedencia=input.procedencia.strip() if input.procedencia else "",
+            placa_habitual=(input.placa_habitual or "").strip().upper(),
+            destino_sugerido_texto=(input.destino_sugerido_texto or "").strip(),
         )
 
     @strawberry.mutation
@@ -388,6 +412,8 @@ class VisitantesMutation:
             telefono=input.telefono.strip() if input.telefono else "",
             email=input.email.strip() if input.email else "",
             procedencia=input.procedencia.strip() if input.procedencia else "",
+            placa_habitual=(input.placa_habitual or "").strip().upper(),
+            destino_sugerido_texto=(input.destino_sugerido_texto or "").strip(),
         )
         log_audit(
             user, "visitante_registrado",

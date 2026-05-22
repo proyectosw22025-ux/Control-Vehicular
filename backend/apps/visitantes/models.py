@@ -52,6 +52,14 @@ class Visitante(models.Model):
         max_length=120, blank=True, default="",
         help_text="Ciudad, empresa o institución de procedencia.",
     )
+    placa_habitual = models.CharField(
+        max_length=20, blank=True, default="",
+        help_text="Placa del vehículo con el que suele venir (pre-llenada en /register).",
+    )
+    destino_sugerido_texto = models.CharField(
+        max_length=120, blank=True, default="",
+        help_text="Destino indicado por el visitante al pre-registrarse (texto libre).",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

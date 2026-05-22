@@ -10,6 +10,9 @@ export const VISITANTES_QUERY = gql`
       telefono
       email
       procedencia
+      placaHabitual
+      destinoSugeridoTexto
+      tieneDatosPrevios
       nombreCompleto
     }
   }
@@ -26,7 +29,7 @@ export const VISITAS_ACTIVAS_QUERY = gql`
       placaVehiculoVisitante
       numAcompanantes
       duracionMinutos
-      visitante { id nombreCompleto ci telefono procedencia }
+      visitante { id nombreCompleto ci telefono procedencia placaHabitual destinoSugeridoTexto tieneDatosPrevios }
       anfitrionNombre
       dependencia { nombre codigo ubicacion }
       tipoVisita { nombre requiereVehiculo }

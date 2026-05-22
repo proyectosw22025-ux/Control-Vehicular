@@ -211,86 +211,193 @@ function FormularioCuenta() {
 // ── Formulario de pre-registro de visitante externo ────────
 function FormularioVisitante() {
   const navigate = useNavigate()
-  const [form, setForm] = useState({ ci: '', nombre: '', apellido: '', telefono: '', email: '' })
-  const [exito, setExito] = useState(false)
-  const [error, setError] = useState('')
+  const [form, setForm] = useState({
+    ci: '', nombre: '', apellido: '', telefono: '', email: '',
+    procedencia: '', placa: '', destino: '',
+  })
+  const [exito, setExito]   = useState(false)
+  const [error, setError]   = useState('')
+  const [paso, setPaso]     = useState<1 | 2>(1)
 
   const [preRegistrar, { loading }] = useMutation(PRE_REGISTRAR_VISITANTE_MUTATION, {
     onCompleted() { setExito(true) },
     onError(e) { setError(e.message) },
   })
 
-  function handleSubmit(e: FormEvent) {
+  function set(f: string, v: string) { setForm(p => ({ ...p, [f]: v })) }
+
+  function handlePaso1(e: FormEvent) {
     e.preventDefault()
     setError('')
     if (!form.ci.trim() || !form.nombre.trim() || !form.apellido.trim()) {
       setError('CI, nombre y apellido son obligatorios')
       return
     }
+    setPaso(2)
+  }
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    setError('')
     preRegistrar({ variables: { input: {
-      ci: form.ci.trim(), nombre: form.nombre.trim(),
-      apellido: form.apellido.trim(), telefono: form.telefono.trim(),
-      email: form.email.trim(),
+      ci:                    form.ci.trim(),
+      nombre:                form.nombre.trim(),
+      apellido:              form.apellido.trim(),
+      telefono:              form.telefono.trim(),
+      email:                 form.email.trim(),
+      procedencia:           form.procedencia.trim(),
+      placaHabitual:         form.placa.trim().toUpperCase(),
+      destinoSugeridoTexto:  form.destino.trim(),
     }}})
   }
 
   if (exito) return (
-    <PantallaExito
-      titulo="¡Pre-registro exitoso!"
-      sub="Al llegar a la UAGRM, preséntate en la garita de seguridad con tu CI. El guardia te encontrará rápidamente en el sistema."
-      onLogin={() => navigate('/login')}
-    />
+    <div className="text-center space-y-4">
+      <div className="flex items-center justify-center w-16 h-16 bg-emerald-100 rounded-full mx-auto">
+        <CheckCircle size={32} className="text-emerald-600" />
+      </div>
+      <h2 className="text-xl font-bold text-slate-800">¡Listo para ingresar!</h2>
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-left space-y-3 text-sm">
+        <p className="font-semibold text-slate-700">Al llegar a la UAGRM:</p>
+        <div className="space-y-2">
+          <div className="flex items-start gap-2">
+            <span className="text-cyan-600 font-bold shrink-0">1.</span>
+            <p className="text-slate-600">Preséntate en la <strong>garita de seguridad</strong> con tu CI</p>
+          </div>
+          <div className="flex items-start gap-2">
+            <span className="text-cyan-600 font-bold shrink-0">2.</span>
+            <p className="text-slate-600">El guardia te buscará en el sistema — <strong>ya tiene tus datos</strong></p>
+          </div>
+          <div className="flex items-start gap-2">
+            <span className="text-cyan-600 font-bold shrink-0">3.</span>
+            <p className="text-slate-600">Confirma tu ingreso en segundos</p>
+          </div>
+        </div>
+      </div>
+      {form.placa && (
+        <div className="bg-violet-50 border border-violet-200 rounded-xl p-3 text-sm text-violet-700">
+          Tu vehículo <strong className="font-mono">{form.placa.toUpperCase()}</strong> ya está registrado. El guardia lo verificará al salir.
+        </div>
+      )}
+      <button onClick={() => navigate('/login')}
+        className="w-full bg-slate-800 hover:bg-slate-700 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors">
+        Volver al inicio
+      </button>
+    </div>
   )
 
   return (
     <div className="space-y-4">
-      {/* Info contextual */}
-      <div className="bg-cyan-50 border border-cyan-200 rounded-xl p-4 text-sm text-cyan-800">
-        <p className="font-semibold mb-1">¿Cómo funciona?</p>
-        <ol className="list-decimal list-inside space-y-1 text-xs">
-          <li>Completa tus datos aquí (solo toma 1 minuto)</li>
-          <li>Al llegar a la UAGRM, preséntate en la garita con tu CI</li>
-          <li>El guardia registrará tu visita en segundos</li>
-        </ol>
+      {/* Pasos visuales */}
+      <div className="flex items-center gap-2 mb-2">
+        {[1, 2].map(n => (
+          <div key={n} className={`flex items-center gap-1.5 ${n < 2 ? 'flex-1' : ''}`}>
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+              paso >= n ? 'bg-cyan-600 text-white' : 'bg-slate-200 text-slate-500'
+            }`}>{n}</div>
+            <span className={`text-xs ${paso >= n ? 'text-cyan-700 font-semibold' : 'text-slate-400'}`}>
+              {n === 1 ? 'Tus datos' : 'Tu visita'}
+            </span>
+            {n < 2 && <div className="flex-1 h-px bg-slate-200" />}
+          </div>
+        ))}
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="col-span-2">
-          <label className="block text-xs font-semibold text-slate-600 mb-1">CI / Documento de identidad *</label>
-          <input type="text" value={form.ci} placeholder="Ej: 12345678"
-            onChange={e => setForm({ ...form, ci: e.target.value })}
-            className={inputOk} />
-        </div>
-        <div>
-          <label className="block text-xs font-semibold text-slate-600 mb-1">Nombre *</label>
-          <input type="text" value={form.nombre} placeholder="Juan"
-            onChange={e => setForm({ ...form, nombre: e.target.value })} className={inputOk} />
-        </div>
-        <div>
-          <label className="block text-xs font-semibold text-slate-600 mb-1">Apellido *</label>
-          <input type="text" value={form.apellido} placeholder="Pérez"
-            onChange={e => setForm({ ...form, apellido: e.target.value })} className={inputOk} />
-        </div>
-        <div>
-          <label className="block text-xs font-semibold text-slate-600 mb-1">Teléfono</label>
-          <input type="tel" value={form.telefono} placeholder="7xxxxxxx"
-            onChange={e => setForm({ ...form, telefono: e.target.value })} className={inputOk} />
-        </div>
-        <div>
-          <label className="block text-xs font-semibold text-slate-600 mb-1">Email</label>
-          <input type="email" value={form.email} placeholder="tu@correo.com"
-            onChange={e => setForm({ ...form, email: e.target.value })} className={inputOk} />
-        </div>
-      </div>
+      {paso === 1 && (
+        <form onSubmit={handlePaso1} className="space-y-3">
+          <div className="bg-cyan-50 border border-cyan-200 rounded-xl p-3 text-xs text-cyan-800">
+            <p className="font-semibold">¿Por qué pre-registrarse?</p>
+            <p className="mt-0.5 opacity-80">El guardia ya tendrá tus datos. Tu ingreso tarda segundos, no minutos.</p>
+          </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">{error}</div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">CI / Documento de identidad *</label>
+            <input type="text" value={form.ci} placeholder="Ej: 12345678"
+              onChange={e => set('ci', e.target.value)} className={inputOk} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Nombre *</label>
+              <input type="text" value={form.nombre} placeholder="Juan"
+                onChange={e => set('nombre', e.target.value)} className={inputOk} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Apellido *</label>
+              <input type="text" value={form.apellido} placeholder="Pérez"
+                onChange={e => set('apellido', e.target.value)} className={inputOk} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Teléfono</label>
+              <input type="tel" value={form.telefono} placeholder="7xxxxxxx"
+                onChange={e => set('telefono', e.target.value)} className={inputOk} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Email</label>
+              <input type="email" value={form.email} placeholder="tu@correo.com"
+                onChange={e => set('email', e.target.value)} className={inputOk} />
+            </div>
+          </div>
+
+          {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">{error}</div>}
+
+          <button type="submit"
+            className="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-semibold py-3 rounded-xl text-sm transition-colors">
+            Continuar →
+          </button>
+        </form>
       )}
 
-      <button type="button" onClick={handleSubmit} disabled={loading}
-        className="w-full flex items-center justify-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold py-3 rounded-xl text-sm transition-colors disabled:opacity-50">
-        {loading ? <><Loader2 size={15} className="animate-spin" /> Registrando...</> : 'Pre-registrarme como visitante'}
-      </button>
+      {paso === 2 && (
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-600">
+            <p className="font-semibold">Datos opcionales — ayudan al guardia</p>
+            <p className="opacity-70 mt-0.5">Cuanto más completes, más rápido es tu ingreso</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">¿De dónde vienes?</label>
+            <input type="text" value={form.procedencia} placeholder="Ej: Santa Cruz, Empresa ABC, La Paz..."
+              onChange={e => set('procedencia', e.target.value)} className={inputOk} />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">¿A dónde vas en la universidad?</label>
+            <input type="text" value={form.destino}
+              placeholder="Ej: Secretaría de Admisiones, Biblioteca, Rectorado..."
+              onChange={e => set('destino', e.target.value)} className={inputOk} />
+            <p className="text-[10px] text-slate-400 mt-1">El guardia usará esto como referencia</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">Placa de tu vehículo</label>
+            <input type="text" value={form.placa}
+              placeholder="Ej: ABC-123 · 123ABC · MOTO-456"
+              maxLength={15}
+              onChange={e => set('placa', e.target.value.toUpperCase())}
+              style={{ textTransform: 'uppercase' }}
+              className={`${inputOk} uppercase`} />
+            <p className="text-[10px] text-slate-400 mt-1">Si vienes en moto, auto, etc. Deja vacío si vienes a pie o en taxi.</p>
+          </div>
+
+          {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">{error}</div>}
+
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setPaso(1)}
+              className="px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm">
+              ← Atrás
+            </button>
+            <button type="submit" disabled={loading}
+              className="flex-1 flex items-center justify-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors disabled:opacity-50">
+              {loading ? <><Loader2 size={15} className="animate-spin" /> Registrando...</> : 'Pre-registrarme →'}
+            </button>
+          </div>
+          <p className="text-[10px] text-slate-400 text-center">
+            Puedes omitir el paso 2 y completarlo después si lo deseas
+          </p>
+        </form>
+      )}
     </div>
   )
 }

@@ -439,19 +439,43 @@ export default function Visitantes() {
                     const visitaActual = visitaActivaPorVisitanteId.get(vt.id)
                     return (
                       <button key={vt.id} onClick={() => setVisitante(vt)}
-                        className="w-full bg-white border border-slate-200 hover:border-cyan-400 hover:shadow-sm rounded-xl p-3 text-left transition-all flex items-center justify-between group">
-                        <div>
-                          <p className="font-semibold text-slate-800 text-sm">{vt.nombreCompleto}</p>
-                          <p className="text-xs text-slate-400 mt-0.5">
-                            CI: {vt.ci}{vt.procedencia ? ` · ${vt.procedencia}` : ''}{vt.telefono ? ` · ${vt.telefono}` : ''}
-                          </p>
-                          {visitaActual && (
-                            <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full mt-1 inline-block">
-                              ⚠ Actualmente en campus
-                            </span>
-                          )}
+                        className="w-full bg-white border border-slate-200 hover:border-cyan-400 hover:shadow-sm rounded-xl p-3 text-left transition-all group">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-semibold text-slate-800 text-sm">{vt.nombreCompleto}</p>
+                              {vt.tieneDatosPrevios && (
+                                <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">
+                                  ✓ Pre-registrado
+                                </span>
+                              )}
+                              {visitaActual && (
+                                <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-bold">
+                                  ⚠ En campus
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-400 mt-0.5">
+                              CI: {vt.ci}{vt.procedencia ? ` · 📍${vt.procedencia}` : ''}{vt.telefono ? ` · ${vt.telefono}` : ''}
+                            </p>
+                            {/* Datos pre-cargados — aceleran el registro del guardia */}
+                            {(vt.placaHabitual || vt.destinoSugeridoTexto) && (
+                              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                {vt.placaHabitual && (
+                                  <span className="text-[10px] bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full font-mono font-bold">
+                                    🚗 {vt.placaHabitual}
+                                  </span>
+                                )}
+                                {vt.destinoSugeridoTexto && (
+                                  <span className="text-[10px] bg-cyan-100 text-cyan-700 px-2 py-0.5 rounded-full">
+                                    → {vt.destinoSugeridoTexto}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <ArrowRight size={16} className="text-slate-300 group-hover:text-cyan-500 transition-colors shrink-0 mt-1" />
                         </div>
-                        <ArrowRight size={16} className="text-slate-300 group-hover:text-cyan-500 transition-colors shrink-0" />
                       </button>
                     )
                   })}
@@ -510,13 +534,31 @@ export default function Visitantes() {
                     </button>
                   </div>
                 ) : (
-                  <div className="bg-cyan-50 border border-cyan-200 rounded-xl p-3 mb-4 flex items-center gap-3">
-                    <div className="bg-cyan-100 p-2 rounded-xl shrink-0"><UserCheck size={18} className="text-cyan-600" /></div>
-                    <div>
-                      <p className="font-bold text-cyan-800 text-sm">{visitanteEncontrado.nombreCompleto}</p>
-                      <p className="text-xs text-cyan-600">CI: {visitanteEncontrado.ci}{visitanteEncontrado.procedencia ? ` · ${visitanteEncontrado.procedencia}` : ''}</p>
+                  <div className="bg-cyan-50 border border-cyan-200 rounded-xl p-3 mb-4">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="bg-cyan-100 p-2 rounded-xl shrink-0"><UserCheck size={18} className="text-cyan-600" /></div>
+                      <div className="flex-1">
+                        <p className="font-bold text-cyan-800 text-sm">{visitanteEncontrado.nombreCompleto}</p>
+                        <p className="text-xs text-cyan-600">CI: {visitanteEncontrado.ci}{visitanteEncontrado.procedencia ? ` · ${visitanteEncontrado.procedencia}` : ''}</p>
+                      </div>
+                      <CheckCircle2 size={18} className="text-cyan-500 shrink-0" />
                     </div>
-                    <CheckCircle2 size={18} className="text-cyan-500 ml-auto shrink-0" />
+                    {/* Datos pre-cargados — el visitante los llenó en /register */}
+                    {(visitanteEncontrado.placaHabitual || visitanteEncontrado.destinoSugeridoTexto) && (
+                      <div className="bg-white/70 rounded-lg px-3 py-2 mt-1 space-y-1">
+                        <p className="text-[10px] font-bold text-cyan-700 uppercase tracking-wide">Datos pre-registrados por el visitante</p>
+                        {visitanteEncontrado.placaHabitual && (
+                          <p className="text-xs text-slate-700">
+                            🚗 Vehículo habitual: <span className="font-mono font-bold">{visitanteEncontrado.placaHabitual}</span>
+                          </p>
+                        )}
+                        {visitanteEncontrado.destinoSugeridoTexto && (
+                          <p className="text-xs text-slate-700">
+                            → Destino indicado: <span className="font-medium">{visitanteEncontrado.destinoSugeridoTexto}</span>
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )
               })()}
