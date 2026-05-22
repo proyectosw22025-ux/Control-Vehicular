@@ -716,29 +716,60 @@ export default function ParqueoDemo() {
                     <p className="font-bold text-amber-800">¡Llegaste a Zona {zonaDestino.id}!</p>
                     <p className="text-xs text-amber-600">{zonaDestino.sub}</p>
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Tu vehículo</label>
-                    <select value={vehiculoSelId??''} onChange={handleVehiculoChange}
-                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
-                      <option value="">Seleccionar...</option>
-                      {vehiculos.map((v:any)=>(
-                        <option key={v.id} value={v.id}>
-                          {v.placa} · {v.tipo?.nombre} — {v.marca} {v.modelo}
-                        </option>
-                      ))}
-                    </select>
-                    {/* Muestra el icono del tipo seleccionado */}
-                    {vehiculoSelId && (
-                      <div className="flex items-center gap-2 mt-2 bg-slate-50 rounded-xl px-3 py-2">
-                        <div dangerouslySetInnerHTML={{ __html: getVehicleSvg(tipoVehiculo).svg }}
-                          style={{ width: getVehicleSvg(tipoVehiculo).w, height: getVehicleSvg(tipoVehiculo).h, flexShrink: 0 }} />
-                        <div>
-                          <p className="text-xs font-semibold text-slate-700">{vehSel?.tipo?.nombre ?? tipoVehiculo}</p>
-                          <p className="text-[10px] text-slate-500">El mapa muestra este ícono</p>
-                        </div>
+                  {vehiculoIdParam ? (
+                    // ── VEHÍCULO BLOQUEADO — viene del escaneo QR en portería ──
+                    // No se puede cambiar: el parqueo debe registrarse para el vehículo
+                    // que realmente ingresó al campus, no para otro del mismo propietario.
+                    <div className="rounded-2xl border-2 border-slate-200 bg-slate-50 p-3">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span className="text-slate-400 text-xs">🔒</span>
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">Vehículo que ingresó al campus</span>
                       </div>
-                    )}
-                  </div>
+                      {vehSel ? (
+                        <div className="flex items-center gap-3 bg-white rounded-xl px-3 py-2.5 border border-slate-200">
+                          <div dangerouslySetInnerHTML={{ __html: getVehicleSvg(tipoVehiculo).svg }}
+                            style={{ width: getVehicleSvg(tipoVehiculo).w, height: getVehicleSvg(tipoVehiculo).h, flexShrink: 0 }} />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-mono font-black text-slate-800">{vehSel.placa}</p>
+                            <p className="text-xs text-slate-500">{vehSel.tipo?.nombre} — {vehSel.marca} {vehSel.modelo}</p>
+                          </div>
+                          <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-semibold shrink-0">
+                            En campus
+                          </span>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-400">Cargando vehículo...</p>
+                      )}
+                      <p className="text-[10px] text-slate-400 mt-2">
+                        Solo puedes registrar el parqueo del vehículo con el que ingresaste.
+                        El guardia escaneó este QR en la portería.
+                      </p>
+                    </div>
+                  ) : (
+                    // ── VEHÍCULO LIBRE — flujo manual desde el sidebar (sin QR) ──
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Tu vehículo</label>
+                      <select value={vehiculoSelId??''} onChange={handleVehiculoChange}
+                        className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
+                        <option value="">Seleccionar...</option>
+                        {vehiculos.map((v:any)=>(
+                          <option key={v.id} value={v.id}>
+                            {v.placa} · {v.tipo?.nombre} — {v.marca} {v.modelo}
+                          </option>
+                        ))}
+                      </select>
+                      {vehiculoSelId && (
+                        <div className="flex items-center gap-2 mt-2 bg-slate-50 rounded-xl px-3 py-2">
+                          <div dangerouslySetInnerHTML={{ __html: getVehicleSvg(tipoVehiculo).svg }}
+                            style={{ width: getVehicleSvg(tipoVehiculo).w, height: getVehicleSvg(tipoVehiculo).h, flexShrink: 0 }} />
+                          <div>
+                            <p className="text-xs font-semibold text-slate-700">{vehSel?.tipo?.nombre ?? tipoVehiculo}</p>
+                            <p className="text-[10px] text-slate-500">El mapa muestra este ícono</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {primerEsp ? (
                     <div className={`rounded-xl p-2.5 text-xs border ${categoriaIncompatible ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700'}`}>
                       <p className="font-semibold">
@@ -754,8 +785,14 @@ export default function ParqueoDemo() {
                   )}
                   {msg&&<div className={`rounded-xl p-2 text-xs ${msg.startsWith('✅')?'bg-emerald-50 text-emerald-700':'bg-red-50 text-red-700'}`}>{msg}</div>}
                   <div className="flex gap-2">
-                    <button onClick={()=>{setZonaD(null);setRuta([]);setFlow('en_ruta')}}
-                      className="flex-1 flex items-center justify-center gap-1 py-2.5 border-2 border-slate-200 text-slate-600 rounded-xl text-sm"><XCircle size={13}/>Cambiar</button>
+                    {/* "Cambiar zona" solo disponible en flujo manual — en el flujo QR
+                        el sistema ya asignó la mejor zona para el vehículo escaneado */}
+                    {!vehiculoIdParam && (
+                      <button onClick={()=>{setZonaD(null);setRuta([]);setFlow('en_ruta')}}
+                        className="flex-1 flex items-center justify-center gap-1 py-2.5 border-2 border-slate-200 text-slate-600 rounded-xl text-sm">
+                        <XCircle size={13}/>Cambiar zona
+                      </button>
+                    )}
                     <button onClick={confirmar} disabled={lSesion||!vehiculoSelId||!primerEsp}
                       className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold text-sm disabled:opacity-40">
                       {lSesion?<Loader2 size={13} className="animate-spin"/>:<CheckCircle2 size={13}/>}Confirmar
