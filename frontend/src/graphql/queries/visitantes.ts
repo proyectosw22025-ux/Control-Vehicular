@@ -9,6 +9,7 @@ export const VISITANTES_QUERY = gql`
       ci
       telefono
       email
+      procedencia
       nombreCompleto
     }
   }
@@ -23,10 +24,43 @@ export const VISITAS_ACTIVAS_QUERY = gql`
       fechaEntrada
       observaciones
       placaVehiculoVisitante
-      visitante { id nombreCompleto ci telefono }
+      numAcompanantes
+      duracionMinutos
+      visitante { id nombreCompleto ci telefono procedencia }
+      anfitrionNombre
+      tipoVisita { nombre requiereVehiculo }
+      placaVehiculo
+    }
+  }
+`
+
+export const VISITAS_HISTORIAL_QUERY = gql`
+  query VisitasHistorial(
+    $estado: String
+    $fechaDesde: String
+    $fechaHasta: String
+    $buscar: String
+    $limite: Int
+  ) {
+    visitasHistorial(
+      estado: $estado
+      fechaDesde: $fechaDesde
+      fechaHasta: $fechaHasta
+      buscar: $buscar
+      limite: $limite
+    ) {
+      id
+      motivo
+      estado
+      fechaEntrada
+      fechaSalida
+      duracionMinutos
+      observaciones
+      placaVehiculoVisitante
+      numAcompanantes
+      visitante { nombreCompleto ci procedencia }
       anfitrionNombre
       tipoVisita { nombre }
-      placaVehiculo
     }
   }
 `

@@ -38,6 +38,7 @@ class VisitanteType:
     ci: str
     telefono: str
     email: str
+    procedencia: str
     created_at: datetime
 
     @strawberry.field
@@ -54,6 +55,7 @@ class VisitaType:
     fecha_salida: Optional[datetime]
     observaciones: str
     placa_vehiculo_visitante: str
+    num_acompanantes: int
     created_at: datetime
 
     @strawberry.field
@@ -93,6 +95,7 @@ class CrearVisitanteInput:
     ci: str
     telefono: Optional[str] = ""
     email: Optional[str] = ""
+    procedencia: Optional[str] = ""
 
 
 @strawberry.input
@@ -102,7 +105,8 @@ class RegistrarVisitaInput:
     motivo: str
     tipo_visita_id: Optional[int] = None
     vehiculo_id: Optional[int] = None
-    placa_vehiculo_visitante: Optional[str] = ""   # placa del vehículo externo del visitante
+    placa_vehiculo_visitante: Optional[str] = ""
+    num_acompanantes: Optional[int] = 0
 
 
 # ── Notificación al anfitrión (async — no bloquea al guardia) ──────────────
@@ -211,7 +215,67 @@ class VisitantesQuery:
 
     @strawberry.field
     def tipos_visita(self, info: Info) -> List[TipoVisitaType]:
-        return list(TipoVisita.objects.all())
+        return list(TipoVisita.objects.all().order_by("nombre"))
+
+    @strawberry.field
+    def visitas_historial(
+        self,
+        info: Info,
+        estado: Optional[str] = None,
+        fecha_desde: Optional[str] = None,
+        fecha_hasta: Optional[str] = None,
+        buscar: Optional[str] = None,
+        limite: int = 60,
+    ) -> List[VisitaType]:
+        """
+        Historial de visitas completadas y canceladas con filtros avanzados.
+        Permite al guardia verificar si un visitante estuvo antes en el campus.
+        Solo admin y guardia.
+        """
+        from apps.usuarios.utils import tiene_rol
+        from django.db.models import Q
+
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not tiene_rol(user, "Administrador") and not tiene_rol(user, "Guardia"):
+            raise Exception("Solo personal autorizado puede ver el historial de visitas")
+
+        qs = (
+            Visita.objects
+            .select_related("visitante", "anfitrion", "tipo_visita", "vehiculo")
+            .order_by("-created_at")
+        )
+
+        estados_validos = {"completada", "cancelada", "pendiente", "activa"}
+        if estado and estado in estados_validos:
+            qs = qs.filter(estado=estado)
+        else:
+            qs = qs.filter(estado__in=["completada", "cancelada"])
+
+        if fecha_desde:
+            try:
+                qs = qs.filter(created_at__date__gte=fecha_desde)
+            except Exception:
+                pass
+
+        if fecha_hasta:
+            try:
+                qs = qs.filter(created_at__date__lte=fecha_hasta)
+            except Exception:
+                pass
+
+        if buscar:
+            b = buscar.strip()
+            qs = qs.filter(
+                Q(visitante__nombre__icontains=b)
+                | Q(visitante__apellido__icontains=b)
+                | Q(visitante__ci__icontains=b)
+                | Q(motivo__icontains=b)
+                | Q(visitante__procedencia__icontains=b)
+            )
+
+        return list(qs[:min(limite, 200)])
 
 
 # ── Mutations ──────────────────────────────────────────────────────────────
@@ -272,6 +336,7 @@ class VisitantesMutation:
             ci=ci_limpio,
             telefono=input.telefono.strip() if input.telefono else "",
             email=input.email.strip() if input.email else "",
+            procedencia=input.procedencia.strip() if input.procedencia else "",
         )
         log_audit(
             user, "visitante_registrado",
@@ -345,6 +410,7 @@ class VisitantesMutation:
                 tipo_visita=tipo_visita, vehiculo=vehiculo,
                 motivo=motivo,
                 placa_vehiculo_visitante=placa_externa,
+                num_acompanantes=max(0, input.num_acompanantes or 0),
             )
             detalle_vehiculo = f" · vehículo: {placa_externa}" if placa_externa else ""
             log_audit(

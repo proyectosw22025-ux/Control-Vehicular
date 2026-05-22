@@ -23,6 +23,10 @@ class Visitante(models.Model):
     telefono = models.CharField(max_length=20, blank=True)
     email = models.EmailField(blank=True)
     foto = models.ImageField(upload_to="visitantes/fotos/", blank=True, null=True)
+    procedencia = models.CharField(
+        max_length=120, blank=True, default="",
+        help_text="Ciudad, empresa o institución de procedencia.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -69,6 +73,10 @@ class Visita(models.Model):
     fecha_entrada = models.DateTimeField(null=True, blank=True)
     fecha_salida = models.DateTimeField(null=True, blank=True)
     observaciones = models.TextField(blank=True)
+    num_acompanantes = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Personas adicionales que ingresan con el visitante.",
+    )
     # Placa del vehículo propio del visitante (texto libre — puede ser placa, TAXI, A PIE, etc.)
     # Distinto del FK vehiculo, que es para vehículos registrados en el sistema UAGRM
     placa_vehiculo_visitante = models.CharField(
