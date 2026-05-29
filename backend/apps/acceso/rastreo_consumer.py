@@ -92,6 +92,26 @@ class RastreoConsumer(AsyncWebsocketConsumer):
             "placa":       event["placa"],
         }))
 
+    async def evento_acceso(self, event):
+        """
+        Notifica entrada o salida registrada por QR en una portería.
+        Para entradas: incluye coordenadas de la portería para mostrar
+        el vehículo en el mapa aunque el propietario no tenga GPS activo.
+        """
+        await self.send(json.dumps({
+            "tipo":           "evento_acceso",
+            "vehiculo_id":    event["vehiculo_id"],
+            "placa":          event["placa"],
+            "evento":         event["evento"],          # "entrada" | "salida"
+            "punto_acceso":   event.get("punto_acceso", ""),
+            "lat":            event.get("lat"),
+            "lng":            event.get("lng"),
+            "timestamp":      event.get("timestamp", ""),
+            "propietario":    event.get("propietario", ""),
+            "tipo_vehiculo":  event.get("tipo_vehiculo", "Automóvil"),
+            "fuente":         event.get("fuente", "qr"),
+        }))
+
     # ── Helpers DB ────────────────────────────────────────────────────────
     @database_sync_to_async
     def _es_personal(self, user):

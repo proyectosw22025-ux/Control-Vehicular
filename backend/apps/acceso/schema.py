@@ -213,6 +213,77 @@ class AlertaAccesoType:
         return self.vehiculo_id
 
 
+def _sincronizar_rastreo(vehiculo, punto, tipo_acceso: str, registro, propietario):
+    """
+    Vincula el registro de acceso QR con el sistema de rastreo en vivo.
+    Entrada → el vehículo aparece en el mapa en la portería usada.
+    Salida  → el vehículo desaparece del mapa.
+    """
+    try:
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        from apps.acceso.models import UbicacionVehiculo
+
+        layer = get_channel_layer()
+        if not layer:
+            return
+
+        propietario_nombre = (
+            f"{propietario.nombre} {propietario.apellido}" if propietario else "—"
+        )
+        propietario_id = propietario.pk if propietario else 0
+        tipo_vehiculo  = vehiculo.tipo.nombre if vehiculo.tipo else "Automóvil"
+
+        if tipo_acceso == "entrada":
+            # Colocar el vehículo en el mapa en la portería de entrada
+            UbicacionVehiculo.objects.update_or_create(
+                vehiculo=vehiculo,
+                defaults={
+                    "latitud":  punto.latitud,
+                    "longitud": punto.longitud,
+                    "velocidad": 0.0,
+                    "activo":   True,
+                },
+            )
+            evento = {
+                "type":            "evento_acceso",
+                "vehiculo_id":     vehiculo.pk,
+                "placa":           vehiculo.placa,
+                "evento":          "entrada",
+                "punto_acceso":    punto.nombre,
+                "lat":             float(punto.latitud),
+                "lng":             float(punto.longitud),
+                "timestamp":       registro.timestamp.isoformat(),
+                "propietario":     propietario_nombre,
+                "propietario_id":  propietario_id,
+                "tipo_vehiculo":   tipo_vehiculo,
+                "fuente":          "qr",
+            }
+        else:
+            # Desactivar rastreo al salir
+            UbicacionVehiculo.objects.filter(vehiculo=vehiculo).update(activo=False)
+            evento = {
+                "type":            "evento_acceso",
+                "vehiculo_id":     vehiculo.pk,
+                "placa":           vehiculo.placa,
+                "evento":          "salida",
+                "punto_acceso":    punto.nombre,
+                "lat":             float(punto.latitud) if punto.latitud else None,
+                "lng":             float(punto.longitud) if punto.longitud else None,
+                "timestamp":       registro.timestamp.isoformat(),
+                "propietario":     propietario_nombre,
+                "propietario_id":  propietario_id,
+                "tipo_vehiculo":   tipo_vehiculo,
+                "fuente":          "qr",
+            }
+
+        async_to_sync(layer.group_send)("rastreo_campus", evento)
+        if propietario_id:
+            async_to_sync(layer.group_send)(f"rastreo_usuario_{propietario_id}", evento)
+    except Exception:
+        pass   # El rastreo es auxiliar — no debe romper el registro de acceso
+
+
 @strawberry.type
 class AccesoQuery:
     @strawberry.field
@@ -516,6 +587,12 @@ class AccesoMutation:
                         "punto_lng":       float(punto.longitud) if punto.longitud is not None else None,
                     },
                 )
+
+        # ── Rastreo en vivo: sincronizar estado del vehículo en el mapa ──────
+        # Entrada: coloca el vehículo en la portería exacta (fuente 'qr')
+        # Salida:  desactiva el rastreo para que desaparezca del mapa
+        if resultado.vehiculo and punto.latitud is not None:
+            _sincronizar_rastreo(resultado.vehiculo, punto, input.tipo, registro, propietario)
 
         return registro
 
