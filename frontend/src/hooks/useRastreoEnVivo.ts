@@ -67,17 +67,42 @@ export function useRastreoEnVivo() {
   }, [])
 
   const conectar = useCallback(() => {
-    const token  = localStorage.getItem('access_token') ?? ''
-    const wsBase = (import.meta.env.VITE_WS_URI ?? 'ws://127.0.0.1:8000/ws/')
-      .replace(/\/notificaciones\/?$/, '')
-    const ws = new WebSocket(`${wsBase}rastreo/?token=${token}`)
+    const token = localStorage.getItem('access_token') ?? ''
+
+    // Construir URL del WebSocket de rastreo de forma robusta.
+    // VITE_WS_URI puede ser:
+    //   wss://host/ws/notificaciones/  → base = wss://host/ws/
+    //   wss://host/ws/                 → base = wss://host/ws/
+    //   (no definida)                  → ws://127.0.0.1:8000/ws/
+    const raw = import.meta.env.VITE_WS_URI ?? 'ws://127.0.0.1:8000/ws/notificaciones/'
+    const base = raw.replace(/\/notificaciones\/?$/, '').replace(/\/?$/, '/')
+    const url  = `${base}rastreo/?token=${token}`
+
+    const ws = new WebSocket(url)
     wsRef.current = ws
 
-    ws.onopen = () => { setConectado(true); setIntento(0) }
+    let pingInterval: ReturnType<typeof setInterval> | null = null
+
+    ws.onopen = () => {
+      setConectado(true)
+      setIntento(0)
+      // Heartbeat cliente→servidor cada 20s: responde al ping del servidor
+      // y envía pings propios para mantener la conexión activa en Railway
+      pingInterval = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ accion: 'pong' }))
+        }
+      }, 20_000)
+    }
 
     ws.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data)
+        if (data.tipo === 'ping') {
+          // El servidor mandó ping — responder con pong
+          if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ accion: 'pong' }))
+          return
+        }
 
         // ── Estado inicial al conectar ────────────────────────────────────
         if (data.tipo === 'conectado' && Array.isArray(data.ubicaciones_actuales)) {
@@ -148,9 +173,11 @@ export function useRastreoEnVivo() {
     }
 
     ws.onclose = (e) => {
+      if (pingInterval) clearInterval(pingInterval)
       setConectado(false)
-      if (e.code !== 4001) {
-        const delay = Math.min(2000 * Math.pow(2, intento), 30_000)
+      // 4001 = no autenticado, 4002 = error de servidor permanente → no reconectar
+      if (e.code !== 4001 && e.code !== 4002) {
+        const delay = Math.min(3000 * Math.pow(2, intento), 30_000)
         setTimeout(() => setIntento(n => n + 1), delay)
       }
     }

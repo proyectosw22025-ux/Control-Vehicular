@@ -17,6 +17,8 @@ from channels.db import database_sync_to_async
 
 
 class RastreoConsumer(AsyncWebsocketConsumer):
+    PING_INTERVAL = 25   # segundos entre pings del servidor al cliente
+
     async def connect(self):
         await self.accept()
 
@@ -26,37 +28,47 @@ class RastreoConsumer(AsyncWebsocketConsumer):
             await self.close(code=4001)
             return
 
-        es_personal = await self._es_personal(user)
-        self.groups_joined = []
+        try:
+            es_personal = await self._es_personal(user)
+            self.groups_joined = []
 
-        if es_personal:
-            # Admin/Guardia: se une al grupo global del campus
-            await self.channel_layer.group_add("rastreo_campus", self.channel_name)
-            self.groups_joined.append("rastreo_campus")
-        else:
-            # Propietario: se une solo a su grupo personal
-            grupo = f"rastreo_usuario_{user.pk}"
-            await self.channel_layer.group_add(grupo, self.channel_name)
-            self.groups_joined.append(grupo)
+            if es_personal:
+                await self.channel_layer.group_add("rastreo_campus", self.channel_name)
+                self.groups_joined.append("rastreo_campus")
+            else:
+                grupo = f"rastreo_usuario_{user.pk}"
+                await self.channel_layer.group_add(grupo, self.channel_name)
+                self.groups_joined.append(grupo)
 
-        # Enviar ubicaciones actuales al conectar
-        ubicaciones = await self._ubicaciones_activas(es_personal, user)
-        await self.send(json.dumps({
-            "tipo": "conectado",
-            "rol":  "personal" if es_personal else "propietario",
-            "ubicaciones_actuales": ubicaciones,
-        }))
+            ubicaciones = await self._ubicaciones_activas(es_personal, user)
+            await self.send(json.dumps({
+                "tipo":                "conectado",
+                "rol":                 "personal" if es_personal else "propietario",
+                "ubicaciones_actuales": ubicaciones,
+            }))
+
+            # Heartbeat: mantiene la conexión viva frente al timeout de Railway (60s)
+            self._ping_task = self.channel_layer.__class__  # placeholder
+            import asyncio
+            asyncio.ensure_future(self._heartbeat())
+
+        except Exception as exc:
+            await self.send(json.dumps({"tipo": "error", "mensaje": f"Error interno: {exc}"}))
+            await self.close(code=4002)  # 4002 = error de servidor (≠ 4001 autenticación)
 
     async def disconnect(self, code: int):
+        self._connected = False
         for grupo in getattr(self, "groups_joined", []):
             await self.channel_layer.group_discard(grupo, self.channel_name)
 
     async def receive(self, text_data=None, bytes_data=None):
-        """El cliente puede pedir el estado actual."""
         if not text_data:
             return
         try:
             data = json.loads(text_data)
+            if data.get("accion") == "pong":
+                # El cliente respondió al heartbeat — conexión viva
+                return
             if data.get("accion") == "solicitar_estado":
                 user = self.scope.get("user")
                 es_personal = await self._es_personal(user)
@@ -67,6 +79,19 @@ class RastreoConsumer(AsyncWebsocketConsumer):
                 }))
         except Exception:
             pass
+
+    async def _heartbeat(self):
+        """Envía ping al cliente cada PING_INTERVAL segundos para mantener la conexión."""
+        import asyncio
+        self._connected = True
+        while self._connected:
+            await asyncio.sleep(self.PING_INTERVAL)
+            if not self._connected:
+                break
+            try:
+                await self.send(json.dumps({"tipo": "ping"}))
+            except Exception:
+                break
 
     # ── Handler de evento broadcast ───────────────────────────────────────
     async def ubicacion_actualizada(self, event):
@@ -132,17 +157,23 @@ class RastreoConsumer(AsyncWebsocketConsumer):
         if not es_personal:
             qs = qs.filter(vehiculo__propietario=user)
 
-        return [
-            {
-                "vehiculo_id":   u.vehiculo.pk,
-                "placa":         u.vehiculo.placa,
-                "lat":           float(u.latitud),
-                "lng":           float(u.longitud),
-                "velocidad":     u.velocidad,
-                "timestamp":     u.timestamp.isoformat(),
-                "propietario":   f"{u.vehiculo.propietario.nombre} {u.vehiculo.propietario.apellido}",
-                "tipo_vehiculo": u.vehiculo.tipo.nombre if u.vehiculo.tipo else "Automóvil",
-                "en_campus":     u.activo,
-            }
-            for u in qs
-        ]
+        result = []
+        for u in qs:
+            try:
+                p = u.vehiculo.propietario
+                propietario_nombre = f"{p.nombre} {p.apellido}" if p else "—"
+                result.append({
+                    "vehiculo_id":   u.vehiculo.pk,
+                    "placa":         u.vehiculo.placa,
+                    "lat":           float(u.latitud),
+                    "lng":           float(u.longitud),
+                    "velocidad":     float(u.velocidad or 0),
+                    "timestamp":     u.timestamp.isoformat(),
+                    "propietario":   propietario_nombre,
+                    "tipo_vehiculo": u.vehiculo.tipo.nombre if u.vehiculo.tipo else "Automóvil",
+                    "en_campus":     u.activo,
+                    "fuente":        "gps",
+                })
+            except Exception:
+                continue   # un vehículo con datos inconsistentes no rompe el resto
+        return result
