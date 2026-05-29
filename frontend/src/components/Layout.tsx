@@ -60,6 +60,7 @@ export default function Layout() {
   const [busquedaAbierta, setBusqueda]  = useState(false)
   const [guiaParqueo, setGuiaParqueo]   = useState(false)
   const [guiaVehId, setGuiaVehId]       = useState<number | null>(null)  // vehiculo del QR escaneado
+  const [guiaEntrada, setGuiaEntrada]   = useState<{ lat: number | null; lng: number | null; nombre: string }>({ lat: null, lng: null, nombre: '' })
 
   const { logout, usuario, roles, esAdmin } = useAuth()
   // Aplicar tema al montar (lee preferencia guardada)
@@ -108,10 +109,14 @@ export default function Layout() {
   const conteo: number = conteoData?.conteoNoLeidas ?? 0
 
   const handleNueva = useCallback((n: NotifPayload) => {
-    // Notificación especial: guía de parqueo → modal YES/NO con vehiculo_id del QR
+    // Notificación especial: guía de parqueo → modal YES/NO con vehiculo_id + coords de portería
     if (n.tipoCodigo === 'orientacion_parqueo') {
-      const vehId = n.datosExtra?.vehiculo_id
+      const vehId  = n.datosExtra?.vehiculo_id
+      const lat    = typeof n.datosExtra?.punto_lat === 'number' ? n.datosExtra.punto_lat : null
+      const lng    = typeof n.datosExtra?.punto_lng === 'number' ? n.datosExtra.punto_lng : null
+      const nombre = typeof n.datosExtra?.punto_acceso === 'string' ? n.datosExtra.punto_acceso : ''
       setGuiaVehId(typeof vehId === 'number' ? vehId : null)
+      setGuiaEntrada({ lat, lng, nombre })
       setGuiaParqueo(true)
       return
     }
@@ -391,13 +396,19 @@ export default function Layout() {
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-5 text-center">
               <p className="font-bold text-amber-800 text-sm">🅿 ¿Deseas orientación para encontrar estacionamiento?</p>
               <p className="text-amber-600 text-xs mt-1">El sistema te guía hasta una zona disponible</p>
+              {guiaEntrada.nombre && (
+                <p className="text-xs text-slate-500 mt-1.5">📍 Ingresaste por: <strong>{guiaEntrada.nombre}</strong></p>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <button
                 onClick={() => {
                 setGuiaParqueo(false)
-                // Navegar con el vehiculo_id del QR para pre-selección automática
-                const url = guiaVehId ? `/parqueo-demo?vehiculoId=${guiaVehId}` : '/parqueo-demo'
+                let url = guiaVehId ? `/parqueo-demo?vehiculoId=${guiaVehId}` : '/parqueo-demo'
+                if (guiaEntrada.lat !== null && guiaEntrada.lng !== null) {
+                  url += `&elat=${guiaEntrada.lat}&elng=${guiaEntrada.lng}`
+                }
+                if (guiaEntrada.nombre) url += `&porteria=${encodeURIComponent(guiaEntrada.nombre)}`
                 navigate(url)
               }}
                 className="flex flex-col items-center gap-1.5 py-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-bold text-sm transition-colors shadow-lg"

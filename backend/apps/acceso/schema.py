@@ -59,6 +59,14 @@ class PuntoAccesoType:
     tipo: str
     activo: bool
 
+    @strawberry.field
+    def lat(self) -> Optional[float]:
+        return float(self.latitud) if self.latitud is not None else None
+
+    @strawberry.field
+    def lng(self) -> Optional[float]:
+        return float(self.longitud) if self.longitud is not None else None
+
 
 @strawberry.type
 class QrDelegacionType:
@@ -500,9 +508,12 @@ class AccesoMutation:
                     mensaje="¿Deseas orientación para encontrar un lugar de estacionamiento disponible?",
                     tipo_codigo="orientacion_parqueo",
                     datos_extra={
-                        "vehiculo_id":    resultado.vehiculo.pk,
-                        "placa":          resultado.vehiculo.placa,
-                        "punto_acceso":   punto.nombre,
+                        "vehiculo_id":     resultado.vehiculo.pk,
+                        "placa":           resultado.vehiculo.placa,
+                        "punto_acceso":    punto.nombre,
+                        "punto_acceso_id": punto.pk,
+                        "punto_lat":       float(punto.latitud) if punto.latitud is not None else None,
+                        "punto_lng":       float(punto.longitud) if punto.longitud is not None else None,
                     },
                 )
 
@@ -585,10 +596,35 @@ class AccesoMutation:
         )
 
     @strawberry.mutation
-    def crear_punto_acceso(self, info: Info, nombre: str, tipo: str, ubicacion: Optional[str] = "") -> PuntoAccesoType:
+    def crear_punto_acceso(
+        self, info: Info, nombre: str, tipo: str,
+        ubicacion: Optional[str] = "",
+        latitud: Optional[float] = None,
+        longitud: Optional[float] = None,
+    ) -> PuntoAccesoType:
         if tipo not in ["entrada", "salida", "ambos"]:
             raise Exception("Tipo inválido. Opciones: entrada, salida, ambos")
-        return PuntoAcceso.objects.create(nombre=nombre, tipo=tipo, ubicacion=ubicacion or "")
+        return PuntoAcceso.objects.create(
+            nombre=nombre, tipo=tipo, ubicacion=ubicacion or "",
+            latitud=latitud, longitud=longitud,
+        )
+
+    @strawberry.mutation
+    def actualizar_coords_punto_acceso(
+        self, info: Info, punto_id: int,
+        latitud: float, longitud: float,
+        ubicacion: Optional[str] = None,
+    ) -> PuntoAccesoType:
+        """Actualiza las coordenadas GPS de una portería existente."""
+        punto = PuntoAcceso.objects.filter(pk=punto_id).first()
+        if not punto:
+            raise Exception("Punto de acceso no encontrado")
+        punto.latitud  = latitud
+        punto.longitud = longitud
+        if ubicacion is not None:
+            punto.ubicacion = ubicacion
+        punto.save(update_fields=["latitud", "longitud"] + (["ubicacion"] if ubicacion is not None else []))
+        return punto
 
     @strawberry.mutation
     def marcar_alerta_revisada(self, info: Info, alerta_id: int) -> AlertaAccesoType:

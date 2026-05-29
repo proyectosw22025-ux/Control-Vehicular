@@ -9,7 +9,7 @@
  *   - Velocidad calibrada: 100ms/sub-punto → ~30-40 seg cruzar el campus (~15 km/h)
  *   - Icono del vehículo se actualiza al seleccionar el vehículo propio
  */
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -63,6 +63,32 @@ const ZONAS_DEFAULT = [
     roles: 'Todos los usuarios',
   },
 ] as const
+
+// ── Porterías vehiculares reales — coordenadas verificadas en OSM ─────────
+// Fuente: Overpass API, barrier=gate, Way perimetral 165843591 UAGRM campus.
+const PORTERIAS_UAGRM: { nombre: string; coords: [number,number] }[] = [
+  { nombre: 'Portería Este',        coords: [-17.77765, -63.19344] },
+  { nombre: 'Portería Sur Central', coords: [-17.77901, -63.19481] },
+  { nombre: 'Portería Av. Busch',   coords: [-17.77877, -63.19660] },
+]
+
+// ── Perímetro real del campus — 42 nodos OSM, Way 165843591 ───────────────
+const CAMPUS_PERIMETER: [number,number][] = [
+  [-17.7793098,-63.1932882],[-17.7792576,-63.1933367],[-17.7792003,-63.1933659],
+  [-17.7791426,-63.1933734],[-17.7790649,-63.1933689],[-17.7788301,-63.1932993],
+  [-17.7785216,-63.1932072],[-17.7780892,-63.1930785],[-17.7780866,-63.1930777],
+  [-17.7769272,-63.1927327],[-17.7768874,-63.1927209],[-17.7764950,-63.1926044],
+  [-17.7762342,-63.1925265],[-17.7758219,-63.1924038],[-17.7755023,-63.1923071],
+  [-17.7750132,-63.1921591],[-17.7751603,-63.1918238],[-17.7752126,-63.1917047],
+  [-17.7753018,-63.1912720],[-17.7755238,-63.1910954],[-17.7755550,-63.1910707],
+  [-17.7755827,-63.1910486],[-17.7757867,-63.1908186],[-17.7760476,-63.1906757],
+  [-17.7764739,-63.1905661],[-17.7764645,-63.1905219],[-17.7765003,-63.1904663],
+  [-17.7765677,-63.1905000],[-17.7765847,-63.1905128],[-17.7766889,-63.1905275],
+  [-17.7776025,-63.1900856],[-17.7777751,-63.1901146],[-17.7778202,-63.1901222],
+  [-17.7778519,-63.1901276],[-17.7792965,-63.1903963],[-17.7793016,-63.1909620],
+  [-17.7797533,-63.1910161],[-17.7796485,-63.1914382],[-17.7796401,-63.1914776],
+  [-17.7796329,-63.1915201],[-17.7795400,-63.1920671],[-17.7794861,-63.1923533],
+]
 
 type Zona = { id:string; nombre:string; sub:string; coords:[number,number]; color:string; libres:number; total:number; roles:string }
 
@@ -225,12 +251,13 @@ type ConfigZona = 'A'|'B'|'C'|null
 // ── Componente Leaflet ────────────────────────────────────────────────────
 function MapaLeaflet({
   zonas, entrada, zonaDestino, flowState, rutaPuntos,
-  modoConfig, zonaConfig, tipoVehiculo,
+  modoConfig, zonaConfig, tipoVehiculo, porteriaEntrada,
   onZonaClick, onLlegada, onMapClick,
 }: {
   zonas: Zona[]; entrada: [number,number]; zonaDestino: Zona|null
   flowState: FlowState; rutaPuntos: [number,number][]
   modoConfig: boolean; zonaConfig: ConfigZona; tipoVehiculo: string
+  porteriaEntrada: string
   onZonaClick: (z:Zona) => void; onLlegada: () => void; onMapClick: (lat:number,lng:number)=>void
 }) {
   const mapRef      = useRef<any>(null)
@@ -268,15 +295,35 @@ function MapaLeaflet({
         }).addTo(map)
         setTimeout(() => map.invalidateSize(), 250)
 
-        // Entrada
-        const iconEntrada = L.divIcon({
-          html: `<div style="background:#1e40af;color:white;border-radius:50%;width:38px;height:38px;
-                   display:flex;align-items:center;justify-content:center;font-size:20px;
-                   border:3px solid white;box-shadow:0 3px 10px rgba(0,0,0,0.5)">🏫</div>`,
-          className: '', iconSize: [38,38], iconAnchor: [19,19],
+        // Perímetro del campus — polígono OSM real (Way 165843591)
+        L.polygon(CAMPUS_PERIMETER, {
+          color: '#1e40af', weight: 2.5, opacity: 0.7,
+          fillColor: '#3b82f6', fillOpacity: 0.06,
+          dashArray: '6 4',
+        }).addTo(map).bindPopup('<b>Campus UAGRM</b><br>Perímetro oficial OSM · Way 165843591')
+
+        // Porterías vehiculares OSM — marcadores secundarios
+        PORTERIAS_UAGRM.forEach(p => {
+          const iconP = L.divIcon({
+            html: `<div style="background:#1e40af;color:white;border-radius:8px;padding:3px 7px;
+                     font-size:10px;font-weight:800;box-shadow:0 2px 6px rgba(0,0,0,0.4);
+                     border:2px solid white;white-space:nowrap">🚧 ${p.nombre}</div>`,
+            className: '', iconSize: [120, 24], iconAnchor: [60, 12],
+          })
+          L.marker(p.coords, { icon: iconP, zIndexOffset: 400 }).addTo(map)
+            .bindPopup(`<b>${p.nombre}</b><br>Portería vehicular UAGRM<br><small>${p.coords[0].toFixed(5)}, ${p.coords[1].toFixed(5)}</small>`)
         })
-        L.marker(entrada, { icon: iconEntrada }).addTo(map)
-          .bindPopup('<b>Entrada Principal — Av. Busch</b><br>Control QR')
+
+        // Portería usada — marcador principal destacado
+        const nombrePorteria = porteriaEntrada || 'Portería Campus'
+        const iconEntrada = L.divIcon({
+          html: `<div style="background:#1e40af;color:white;border-radius:50%;width:42px;height:42px;
+                   display:flex;align-items:center;justify-content:center;font-size:22px;
+                   border:3px solid white;box-shadow:0 4px 14px rgba(0,0,0,0.55)">🚧</div>`,
+          className: '', iconSize: [42,42], iconAnchor: [21,21],
+        })
+        L.marker(entrada, { icon: iconEntrada, zIndexOffset: 800 }).addTo(map)
+          .bindPopup(`<b>${nombrePorteria}</b><br>📍 Punto de ingreso al campus<br><small>${entrada[0].toFixed(5)}, ${entrada[1].toFixed(5)}</small>`)
 
         // 8 puntos P verificados
         TODOS_LOS_P.forEach((coords, i) => {
@@ -415,9 +462,21 @@ export default function ParqueoDemo() {
   const navigate     = useNavigate()
   const [searchParams] = useSearchParams()
   const vehiculoIdParam = searchParams.get('vehiculoId')
+  const latParam        = searchParams.get('elat')
+  const lngParam        = searchParams.get('elng')
+  const porteriaParam   = searchParams.get('porteria') ?? ''
 
   const [zonas, setZonas]           = useState<Zona[]>(cargarZonas)
-  const [entrada]                   = useState<[number,number]>([-17.7695, -63.1960])
+  // Punto de entrada real — coordenadas de la portería usada según la notificación WebSocket.
+  // Fallback: Portería Av. Busch (coordenada OSM verificada, Way 165843591).
+  const entrada = useMemo<[number,number]>(() => {
+    if (latParam && lngParam) {
+      const lat = parseFloat(latParam); const lng = parseFloat(lngParam)
+      if (!isNaN(lat) && !isNaN(lng)) return [lat, lng]
+    }
+    return [-17.77877, -63.19660]
+  }, [latParam, lngParam])
+  const [zonaRecomendada, setZonaRecomendada] = useState<string | null>(null)
   const [flow, setFlow]             = useState<FlowState>('bienvenida')
   const [zonaDestino, setZonaD]     = useState<Zona|null>(null)
   const [rutaPuntos, setRuta]       = useState<[number,number][]>([])
@@ -519,6 +578,18 @@ export default function ParqueoDemo() {
       setFlow('inicio')
     }
   }, [vehiculoIdParam, flow])
+
+  // Auto-recomendar la zona más cercana a la portería usada
+  useEffect(() => {
+    if (!latParam || !lngParam || !zonas.length) return
+    const [lat, lng] = [parseFloat(latParam), parseFloat(lngParam)]
+    if (isNaN(lat) || isNaN(lng)) return
+    const cercana = [...zonas].sort((a, b) =>
+      Math.hypot(lat - a.coords[0], lng - a.coords[1]) -
+      Math.hypot(lat - b.coords[0], lng - b.coords[1])
+    )[0]
+    setZonaRecomendada(cercana?.id ?? null)
+  }, [latParam, lngParam, zonas])
 
   useEffect(() => {
     if (flow !== 'parqueado') return
@@ -637,6 +708,12 @@ export default function ParqueoDemo() {
                       <p className="font-semibold text-slate-700">{usuario?.nombreCompleto ?? 'Estudiante'}</p>
                       <p className="text-slate-400">{new Date().toLocaleTimeString('es-BO',{hour:'2-digit',minute:'2-digit'})}</p>
                     </div>
+                    {porteriaParam && (
+                      <div className="mt-2 flex items-center justify-center gap-1.5 bg-blue-50 border border-blue-200 rounded-xl px-3 py-1.5 text-xs">
+                        <span>🚧</span>
+                        <span className="text-blue-700 font-semibold">{decodeURIComponent(porteriaParam)}</span>
+                      </div>
+                    )}
                   </div>
                   <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-center">
                     <p className="font-bold text-amber-800 text-sm mb-1">🅿 ¿Necesitas orientación para encontrar estacionamiento?</p>
@@ -687,7 +764,12 @@ export default function ParqueoDemo() {
 
               {(flow==='inicio'||flow==='en_ruta')&&(
                 <div className="space-y-2">
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Zonas del campus</p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Zonas del campus</p>
+                    {porteriaParam && zonaRecomendada && (
+                      <span className="text-[10px] text-blue-600 font-semibold">📍 Desde {decodeURIComponent(porteriaParam)}</span>
+                    )}
+                  </div>
                   {zonas.map(zona=>(
                     <button key={zona.id} onClick={()=>handleZonaClick(zona)}
                       className={`w-full text-left rounded-xl border-2 p-3 transition-all hover:shadow-md ${zonaDestino?.id===zona.id?'shadow-md':'border-slate-200'}`}
@@ -695,6 +777,9 @@ export default function ParqueoDemo() {
                       <div className="flex items-center gap-2 mb-0.5">
                         <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-black shrink-0" style={{background:zona.color}}>{zona.id}</div>
                         <span className="font-semibold text-slate-800 text-sm">{zona.nombre}</span>
+                        {zonaRecomendada === zona.id && (
+                          <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-bold">⭐ Cercana</span>
+                        )}
                         <span className="ml-auto text-xs font-bold" style={{color:zona.color}}>{zona.libres} libres</span>
                       </div>
                       <p className="text-xs text-slate-500 pl-8">{zona.sub}</p>
@@ -835,6 +920,7 @@ export default function ParqueoDemo() {
             zonas={zonasActivas} entrada={entrada} zonaDestino={zonaDestino}
             flowState={flow} rutaPuntos={rutaPuntos}
             modoConfig={modoConfig} zonaConfig={zonaConfig} tipoVehiculo={tipoVehiculo}
+            porteriaEntrada={decodeURIComponent(porteriaParam)}
             onZonaClick={handleZonaClick} onLlegada={handleLlegada} onMapClick={handleMapClick}
           />
           {modoConfig&&zonaConfig&&(

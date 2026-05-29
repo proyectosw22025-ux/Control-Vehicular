@@ -14,6 +14,8 @@ class PuntoAcceso(models.Model):
     ubicacion = models.CharField(max_length=150, blank=True)
     tipo = models.CharField(max_length=8, choices=TIPOS, default="ambos")
     activo = models.BooleanField(default=True)
+    latitud  = models.DecimalField(max_digits=12, decimal_places=8, null=True, blank=True)
+    longitud = models.DecimalField(max_digits=12, decimal_places=8, null=True, blank=True)
 
     class Meta:
         db_table = "puntos_acceso"
