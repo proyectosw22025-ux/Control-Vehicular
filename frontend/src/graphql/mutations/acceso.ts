@@ -28,6 +28,28 @@ export const MARCAR_ALERTA_REVISADA_MUTATION = gql`
   }
 `
 
+export const REGISTRAR_ACCESO_TEMPORAL_MUTATION = gql`
+  mutation RegistrarAccesoTemporal(
+    $placa: String! $tipo: String! $destino: String!
+    $duracionHoras: Float! $responsable: String $observacion: String
+  ) {
+    registrarAccesoTemporal(
+      placa: $placa tipo: $tipo destino: $destino
+      duracionHoras: $duracionHoras responsable: $responsable observacion: $observacion
+    ) {
+      id placa tipo tipoDisplay destino horaIngreso horaLimite activo minutosRestantes
+    }
+  }
+`
+
+export const REGISTRAR_SALIDA_TEMPORAL_MUTATION = gql`
+  mutation RegistrarSalidaTemporal($placa: String! $observacion: String) {
+    registrarSalidaTemporal(placa: $placa observacion: $observacion) {
+      id placa activo horaSalida
+    }
+  }
+`
+
 export const GENERAR_QR_DELEGACION_MUTATION = gql`
   mutation GenerarQrDelegacion($input: GenerarQrDelegacionInput!) {
     generarQrDelegacion(input: $input) {

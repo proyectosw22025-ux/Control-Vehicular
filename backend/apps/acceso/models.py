@@ -111,6 +111,55 @@ class PaseTemporal(models.Model):
         )
 
 
+class VehiculoTemporal(models.Model):
+    """
+    Vehículos externos sin registro en el sistema: proveedores, mantenimiento,
+    emergencias, visitantes espontáneos. El guardia los registra con placa,
+    tipo y duración máxima. Al vencer el tiempo sin salida → alerta automática.
+    """
+    TIPOS = [
+        ("proveedor",     "Proveedor / Entrega"),
+        ("mantenimiento", "Servicio de Mantenimiento"),
+        ("emergencia",    "Emergencia / Ambulancia"),
+        ("visitante",     "Visitante sin pre-registro"),
+        ("otro",          "Otro"),
+    ]
+
+    placa          = models.CharField(max_length=15)
+    tipo           = models.CharField(max_length=15, choices=TIPOS, default="visitante")
+    destino        = models.CharField(max_length=150)
+    responsable    = models.CharField(max_length=100, blank=True)
+    hora_ingreso   = models.DateTimeField(auto_now_add=True)
+    hora_limite    = models.DateTimeField()
+    hora_salida    = models.DateTimeField(null=True, blank=True)
+    activo         = models.BooleanField(default=True)
+    observacion    = models.TextField(blank=True)
+    registrado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="vehiculos_temporales_registrados",
+    )
+
+    class Meta:
+        db_table     = "vehiculos_temporales"
+        verbose_name = "Vehículo temporal"
+        ordering     = ["-hora_ingreso"]
+
+    def __str__(self):
+        return f"{self.placa} ({self.get_tipo_display()}) — hasta {self.hora_limite:%H:%M}"
+
+    @property
+    def minutos_restantes(self) -> int:
+        from django.utils import timezone
+        delta = self.hora_limite - timezone.now()
+        return max(0, int(delta.total_seconds() / 60))
+
+    @property
+    def vencido(self) -> bool:
+        from django.utils import timezone
+        return self.activo and timezone.now() > self.hora_limite
+
+
 class RegistroAcceso(models.Model):
     TIPOS = [
         ("entrada", "Entrada"),
@@ -121,6 +170,7 @@ class RegistroAcceso(models.Model):
         ("qr_permanente","QR permanente del vehículo (legacy)"),
         ("qr_delegacion","QR de delegación"),
         ("pase_temporal", "Pase temporal"),
+        ("temporal",     "Acceso temporal de proveedor/externo"),
         ("manual",       "Ingreso manual por guardia"),
     ]
 

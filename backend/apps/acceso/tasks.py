@@ -37,6 +37,66 @@ def expirar_reservas():
     return f"Reservas expiradas: {count}"
 
 
+@shared_task(name="acceso.vigilar_vencimiento_temporal")
+def vigilar_vencimiento_temporal(vehiculo_temporal_id: int, escalar: bool = False):
+    """
+    Se ejecuta al vencer el tiempo de un acceso temporal.
+    Si el vehículo no ha salido: crea AlertaAcceso y notifica a guardias.
+    escalar=True → la segunda llamada (+30min) sube la severidad a crítica.
+    """
+    from apps.acceso.models import VehiculoTemporal, AlertaAcceso
+    from apps.usuarios.models import UsuarioRol
+    from apps.notificaciones.utils import enviar_notificacion
+
+    vt = VehiculoTemporal.objects.filter(pk=vehiculo_temporal_id, activo=True).first()
+    if not vt:
+        return "Vehículo temporal ya salió o no existe"
+
+    severidad   = "critica" if escalar else "advertencia"
+    demora_min  = 60 if escalar else 30
+    descripcion = (
+        f"{vt.placa} ({vt.get_tipo_display()}) lleva {demora_min}min más del tiempo "
+        f"autorizado. Destino: {vt.destino}."
+    )
+
+    alerta = AlertaAcceso.objects.create(
+        vehiculo=None,
+        tipo_anomalia="vehiculo_sancionado",
+        severidad=severidad,
+        descripcion=descripcion,
+        fecha_analisis=timezone.now().date(),
+        datos_extra={
+            "placa":               vt.placa,
+            "tipo":                vt.tipo,
+            "destino":             vt.destino,
+            "vehiculo_temporal_id": vehiculo_temporal_id,
+        },
+    )
+
+    # Notificar a todos los guardias y admins activos
+    guardias_admins = UsuarioRol.objects.filter(
+        rol__nombre__in=["Guardia", "Administrador"]
+    ).select_related("usuario")
+
+    icono = "🔴" if escalar else "🟠"
+    for ur in guardias_admins:
+        enviar_notificacion(
+            usuario=ur.usuario,
+            titulo=f"{icono} Vehículo temporal vencido — {vt.placa}",
+            mensaje=descripcion,
+            tipo_codigo="alerta_acceso",
+            datos_extra={
+                "alerta_id":     alerta.pk,
+                "tipo_anomalia": "vehiculo_sancionado",
+                "severidad":     severidad,
+                "placa":         vt.placa,
+                "descripcion":   descripcion,
+            },
+        )
+
+    return f"Alerta {'crítica' if escalar else 'advertencia'} enviada para {vt.placa}"
+
+
 @shared_task(name="acceso.alertar_sesiones_largas")
 def alertar_sesiones_largas():
     """

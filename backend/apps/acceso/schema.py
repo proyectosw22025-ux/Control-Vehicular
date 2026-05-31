@@ -200,6 +200,34 @@ class CrearPaseTemporalInput:
 # ──────────────────────────────────────────────
 
 @strawberry.type
+class VehiculoTemporalType:
+    id:           int
+    placa:        str
+    tipo:         str
+    destino:      str
+    responsable:  str
+    hora_ingreso: datetime
+    hora_limite:  datetime
+    hora_salida:  Optional[datetime]
+    activo:       bool
+    observacion:  str
+
+    @strawberry.field
+    def tipo_display(self) -> str:
+        from apps.acceso.models import VehiculoTemporal as _VT
+        return dict(_VT.TIPOS).get(self.tipo, self.tipo)
+
+    @strawberry.field
+    def minutos_restantes(self) -> int:
+        delta = self.hora_limite - timezone.now()
+        return max(0, int(delta.total_seconds() / 60))
+
+    @strawberry.field
+    def vencido(self) -> bool:
+        return self.activo and timezone.now() > self.hora_limite
+
+
+@strawberry.type
 class AlertaAccesoType:
     id: int
     tipo_anomalia: str
@@ -478,6 +506,25 @@ class AccesoQuery:
         if not tiene_rol(info.context.request.user, "Administrador"):
             raise Exception("Solo administradores pueden ver el registro de auditoría")
         return list(AuditLog.objects.select_related("usuario")[:limite])
+
+    @strawberry.field
+    def vehiculos_temporales_activos(
+        self, info: Info
+    ) -> List[VehiculoTemporalType]:
+        """Vehículos temporales actualmente en campus — solo Guardia y Admin."""
+        from apps.usuarios.utils import tiene_rol
+        from apps.acceso.models import VehiculoTemporal
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not (tiene_rol(user, "Guardia") or tiene_rol(user, "Administrador")):
+            raise Exception("Solo guardias y administradores")
+        return list(
+            VehiculoTemporal.objects
+            .filter(activo=True)
+            .select_related("registrado_por")
+            .order_by("hora_limite")
+        )
 
     @strawberry.field
     def alertas_activas_panel(
@@ -887,6 +934,140 @@ class AccesoMutation:
             punto.ubicacion = ubicacion
         punto.save(update_fields=["latitud", "longitud"] + (["ubicacion"] if ubicacion is not None else []))
         return punto
+
+    # ── Acceso temporal de proveedores y vehículos externos ──────────────────
+
+    @strawberry.mutation
+    def registrar_acceso_temporal(
+        self, info: Info,
+        placa:        str,
+        tipo:         str,
+        destino:      str,
+        duracion_horas: float,
+        responsable:  Optional[str] = "",
+        observacion:  Optional[str] = "",
+    ) -> "VehiculoTemporalType":
+        """
+        Registra un vehículo externo (proveedor, mantenimiento, emergencia).
+        Solo Guardia y Admin. La placa no necesita estar en el sistema.
+        Genera alerta automática si el vehículo no sale al vencer el tiempo.
+        """
+        from apps.usuarios.utils import tiene_rol
+        from apps.acceso.models import VehiculoTemporal
+        from datetime import timedelta
+
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not (tiene_rol(user, "Guardia") or tiene_rol(user, "Administrador")):
+            raise Exception("Solo guardias y administradores pueden registrar acceso temporal")
+
+        tipos_validos = [t[0] for t in VehiculoTemporal.TIPOS]
+        if tipo not in tipos_validos:
+            raise Exception(f"Tipo inválido. Opciones: {', '.join(tipos_validos)}")
+
+        duracion_horas = max(0.5, min(float(duracion_horas), 8.0))  # 30min mínimo, 8h máximo
+        placa_upper = placa.strip().upper()
+
+        if not placa_upper:
+            raise Exception("La placa es obligatoria")
+
+        # Regla: una placa no puede tener más de un acceso temporal activo
+        if VehiculoTemporal.objects.filter(placa=placa_upper, activo=True).exists():
+            raise Exception(f"El vehículo {placa_upper} ya tiene un acceso temporal activo")
+
+        # Advertir si la placa coincide con un vehículo registrado en el sistema
+        from apps.vehiculos.models import Vehiculo
+        veh_registrado = Vehiculo.objects.filter(placa=placa_upper).first()
+        nota = ""
+        if veh_registrado:
+            nota = f"Nota: {placa_upper} está registrado en el sistema (propietario: {veh_registrado.propietario}). "
+
+        hora_limite = timezone.now() + timedelta(hours=duracion_horas)
+
+        vt = VehiculoTemporal.objects.create(
+            placa=placa_upper,
+            tipo=tipo,
+            destino=destino.strip(),
+            responsable=(responsable or "").strip(),
+            hora_limite=hora_limite,
+            observacion=(nota + (observacion or "")).strip(),
+            registrado_por=user,
+        )
+
+        # Buscar punto de acceso actual del guardia (desde localStorage no aplica en backend)
+        # Se usa el primer punto activo como referencia para el RegistroAcceso
+        punto = PuntoAcceso.objects.filter(activo=True).first()
+        if punto:
+            RegistroAcceso.objects.create(
+                punto_acceso=punto,
+                vehiculo=None,
+                tipo="entrada",
+                metodo_acceso="temporal",
+                observacion=f"Acceso temporal — {vt.get_tipo_display()} — {vt.destino}",
+                registrado_por=user,
+            )
+
+        log_audit(user, "acceso_temporal_entrada",
+                  f"Acceso temporal: {placa_upper} ({vt.get_tipo_display()}) hasta {hora_limite:%H:%M}",
+                  request=info.context.request)
+
+        # Lanzar Celery task que alerta al guardia cuando vence el tiempo
+        try:
+            from apps.acceso.tasks import vigilar_vencimiento_temporal
+            vigilar_vencimiento_temporal.apply_async(
+                args=[vt.pk, False],
+                eta=hora_limite,
+            )
+            vigilar_vencimiento_temporal.apply_async(
+                args=[vt.pk, True],
+                eta=hora_limite + timedelta(minutes=30),
+            )
+        except Exception:
+            pass  # Celery no disponible — la BD ya tiene el registro
+
+        return vt
+
+    @strawberry.mutation
+    def registrar_salida_temporal(
+        self, info: Info, placa: str, observacion: Optional[str] = ""
+    ) -> "VehiculoTemporalType":
+        """Registra la salida de un vehículo temporal por placa."""
+        from apps.usuarios.utils import tiene_rol
+        from apps.acceso.models import VehiculoTemporal
+
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not (tiene_rol(user, "Guardia") or tiene_rol(user, "Administrador")):
+            raise Exception("Solo guardias y administradores pueden registrar salida temporal")
+
+        placa_upper = placa.strip().upper()
+        vt = VehiculoTemporal.objects.filter(placa=placa_upper, activo=True).first()
+        if not vt:
+            raise Exception(f"No hay acceso temporal activo para la placa {placa_upper}")
+
+        vt.activo     = False
+        vt.hora_salida = timezone.now()
+        if observacion:
+            vt.observacion = f"{vt.observacion} | Salida: {observacion}".strip(" |")
+        vt.save(update_fields=["activo", "hora_salida", "observacion"])
+
+        punto = PuntoAcceso.objects.filter(activo=True).first()
+        if punto:
+            RegistroAcceso.objects.create(
+                punto_acceso=punto,
+                vehiculo=None,
+                tipo="salida",
+                metodo_acceso="temporal",
+                observacion=f"Salida temporal — {vt.get_tipo_display()} — {vt.destino}",
+                registrado_por=user,
+            )
+
+        log_audit(user, "acceso_temporal_salida",
+                  f"Salida temporal: {placa_upper} ({vt.get_tipo_display()})",
+                  request=info.context.request)
+        return vt
 
     @strawberry.mutation
     def marcar_alerta_revisada(self, info: Info, alerta_id: int) -> AlertaAccesoType:

@@ -6,6 +6,16 @@ export const PUNTOS_ACCESO_QUERY = gql`
   }
 `
 
+export const VEHICULOS_TEMPORALES_QUERY = gql`
+  query VehiculosTemporalesActivos {
+    vehiculosTemporalesActivos {
+      id placa tipo tipoDisplay destino responsable
+      horaIngreso horaLimite horaSalida
+      activo observacion minutosRestantes vencido
+    }
+  }
+`
+
 export const ALERTAS_PANEL_QUERY = gql`
   query AlertasActivasPanel($limite: Int) {
     alertasActivasPanel(limite: $limite) {

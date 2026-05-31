@@ -16,12 +16,12 @@ import {
   ShieldCheck, ArrowDownCircle, ArrowUpCircle, Camera, CameraOff,
   CheckCircle2, XCircle, Clock, ParkingSquare, UserCheck, DoorOpen,
   Wifi, WifiOff, RefreshCw, Loader2, Type, Keyboard,
-  AlertTriangle, Bell, Eye,
+  AlertTriangle, Bell, Eye, Truck, LogOut, Plus, Timer,
 } from 'lucide-react'
 import { QrScanner }     from '../components/QrScanner'
 import { PlacaScanner } from '../components/PlacaScanner'
-import { PUNTOS_ACCESO_QUERY, REGISTROS_ACCESO_QUERY, ALERTAS_PANEL_QUERY } from '../graphql/queries/acceso'
-import { MARCAR_ALERTA_REVISADA_MUTATION } from '../graphql/mutations/acceso'
+import { PUNTOS_ACCESO_QUERY, REGISTROS_ACCESO_QUERY, ALERTAS_PANEL_QUERY, VEHICULOS_TEMPORALES_QUERY } from '../graphql/queries/acceso'
+import { MARCAR_ALERTA_REVISADA_MUTATION, REGISTRAR_ACCESO_TEMPORAL_MUTATION, REGISTRAR_SALIDA_TEMPORAL_MUTATION } from '../graphql/mutations/acceso'
 import { VISITAS_ACTIVAS_QUERY } from '../graphql/queries/visitantes'
 import { useAccesoGuardia, type TipoAcceso, type AlertaInfo } from '../hooks/useAccesoGuardia'
 import { useOfflineAccess } from '../hooks/useOfflineAccess'
@@ -85,6 +85,27 @@ export default function GuardiaDashboard() {
     pollInterval: 30_000,
     fetchPolicy: 'cache-and-network',
   })
+  // ── Tab principal ─────────────────────────────────────────────────────────
+  const [tabPrincipal, setTabPrincipal] = useState<'acceso' | 'temporales'>('acceso')
+
+  // ── Vehículos temporales ──────────────────────────────────────────────────
+  const { data: temporalesData, refetch: refetchTemporales } = useQuery(VEHICULOS_TEMPORALES_QUERY, {
+    pollInterval: 30_000,
+    fetchPolicy: 'network-only',
+    skip: tabPrincipal !== 'temporales',
+  })
+  const [registrarTemporal, { loading: loadingTemporal }] = useMutation(REGISTRAR_ACCESO_TEMPORAL_MUTATION, {
+    onCompleted: () => { setFormTemp({ placa: '', tipo: 'visitante', destino: '', responsable: '', duracion: '1' }); refetchTemporales() },
+    onError: (e) => setErrorTemp(e.message),
+  })
+  const [registrarSalidaTemporal, { loading: loadingSalidaTemp }] = useMutation(REGISTRAR_SALIDA_TEMPORAL_MUTATION, {
+    onCompleted: () => refetchTemporales(),
+  })
+  const [formTemp, setFormTemp] = useState({ placa: '', tipo: 'visitante', destino: '', responsable: '', duracion: '1' })
+  const [errorTemp, setErrorTemp] = useState('')
+
+  const temporales = temporalesData?.vehiculosTemporalesActivos ?? []
+
   const { data: alertasData, refetch: refetchAlertas } = useQuery(ALERTAS_PANEL_QUERY, {
     variables: { limite: 20 },
     pollInterval: 20_000,
@@ -274,8 +295,31 @@ export default function GuardiaDashboard() {
         </div>
       </div>
 
+      {/* ── Selector de tabs principal ─────────────────────────── */}
+      <div className="flex gap-1 mb-4 bg-slate-100 p-1 rounded-xl">
+        {([
+          { id: 'acceso',     label: 'Control de Acceso',  icon: ShieldCheck, badge: 0 },
+          { id: 'temporales', label: 'Accesos Temporales', icon: Truck,
+            badge: temporales.filter((t: any) => t.vencido).length },
+        ] as const).map(t => (
+          <button key={t.id} onClick={() => setTabPrincipal(t.id)}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-colors ${
+              tabPrincipal === t.id ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'
+            }`}>
+            <t.icon size={13} />
+            <span className="hidden sm:inline">{t.label}</span>
+            <span className="sm:hidden">{t.id === 'acceso' ? 'Acceso' : 'Temporales'}</span>
+            {t.badge > 0 && (
+              <span className="bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full animate-pulse">
+                {t.badge}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
       {/* ── Aviso sin punto seleccionado ───────────────────────── */}
-      {!acceso.puntoId && (
+      {!acceso.puntoId && tabPrincipal === 'acceso' && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 text-amber-800 text-sm text-center">
           Selecciona un punto de acceso para empezar a registrar
         </div>
@@ -317,6 +361,160 @@ export default function GuardiaDashboard() {
         </div>
       )}
 
+      {/* ══════════════ TAB TEMPORALES ══════════════════════════ */}
+      {tabPrincipal === 'temporales' && (
+        <div className="space-y-4">
+          {/* Formulario de registro */}
+          <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Plus size={15} className="text-orange-500" />
+              <h2 className="text-sm font-semibold text-slate-700">Registrar vehículo externo</h2>
+            </div>
+            {errorTemp && (
+              <div className="mb-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700">
+                {errorTemp}
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Placa *</label>
+                <input type="text" placeholder="ABC-1234"
+                  value={formTemp.placa}
+                  onChange={e => { setErrorTemp(''); setFormTemp(p => ({ ...p, placa: e.target.value.toUpperCase() })) }}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-orange-400" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Tipo *</label>
+                <select value={formTemp.tipo}
+                  onChange={e => setFormTemp(p => ({ ...p, tipo: e.target.value }))}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
+                  <option value="proveedor">🚚 Proveedor / Entrega</option>
+                  <option value="mantenimiento">🔧 Mantenimiento</option>
+                  <option value="emergencia">🚨 Emergencia</option>
+                  <option value="visitante">👤 Visitante</option>
+                  <option value="otro">📋 Otro</option>
+                </select>
+              </div>
+            </div>
+            <div className="mb-2">
+              <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Destino / Área *</label>
+              <input type="text" placeholder="Ej: Bloque Administrativo, Cafetería..."
+                value={formTemp.destino}
+                onChange={e => setFormTemp(p => ({ ...p, destino: e.target.value }))}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
+            </div>
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Responsable</label>
+                <input type="text" placeholder="Nombre de quien autoriza"
+                  value={formTemp.responsable}
+                  onChange={e => setFormTemp(p => ({ ...p, responsable: e.target.value }))}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Duración</label>
+                <select value={formTemp.duracion}
+                  onChange={e => setFormTemp(p => ({ ...p, duracion: e.target.value }))}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
+                  <option value="0.5">30 minutos</option>
+                  <option value="1">1 hora</option>
+                  <option value="2">2 horas</option>
+                  <option value="4">4 horas</option>
+                  <option value="8">8 horas (máx.)</option>
+                </select>
+              </div>
+            </div>
+            <button
+              disabled={loadingTemporal || !formTemp.placa.trim() || !formTemp.destino.trim()}
+              onClick={() => {
+                setErrorTemp('')
+                registrarTemporal({ variables: {
+                  placa:        formTemp.placa.trim(),
+                  tipo:         formTemp.tipo,
+                  destino:      formTemp.destino.trim(),
+                  duracionHoras: parseFloat(formTemp.duracion),
+                  responsable:  formTemp.responsable.trim(),
+                }})
+              }}
+              className="w-full flex items-center justify-center gap-2 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold text-sm disabled:opacity-40 transition-colors">
+              {loadingTemporal ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+              Registrar ingreso temporal
+            </button>
+          </div>
+
+          {/* Lista de vehículos temporales activos */}
+          <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Timer size={15} className="text-slate-400" />
+              <h2 className="text-sm font-semibold text-slate-700">En campus ahora</h2>
+              {temporales.length > 0 && (
+                <span className="ml-auto text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">
+                  {temporales.length} activo{temporales.length !== 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+
+            {temporales.length === 0 ? (
+              <div className="text-center py-8 text-slate-400">
+                <Truck size={28} className="mx-auto mb-2 opacity-30" />
+                <p className="text-sm">Sin vehículos externos en campus</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {temporales.map((vt: any) => {
+                  const porcent = Math.max(0, Math.min(100, (vt.minutosRestantes / (parseFloat(formTemp.duracion || '1') * 60)) * 100))
+                  const critico = vt.minutosRestantes <= 15 && vt.activo
+                  const vencido = vt.vencido
+                  return (
+                    <div key={vt.id}
+                      className={`rounded-xl border-l-4 p-3 ${
+                        vencido ? 'border-red-500 bg-red-50' :
+                        critico ? 'border-amber-400 bg-amber-50' :
+                        'border-slate-300 bg-slate-50'
+                      }`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-black text-slate-800 text-sm">{vt.placa}</span>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                            vencido ? 'bg-red-100 text-red-700' :
+                            critico ? 'bg-amber-100 text-amber-700' :
+                            'bg-slate-100 text-slate-600'
+                          }`}>
+                            {vt.tipoDisplay}
+                          </span>
+                        </div>
+                        <div className={`text-xs font-bold flex items-center gap-1 ${
+                          vencido ? 'text-red-600' : critico ? 'text-amber-600' : 'text-slate-600'
+                        }`}>
+                          <Clock size={11} />
+                          {vencido ? '¡Vencido!' : `${vt.minutosRestantes}min`}
+                        </div>
+                      </div>
+                      <p className="text-xs text-slate-600 truncate">{vt.destino}</p>
+                      {vt.responsable && <p className="text-[10px] text-slate-400">Resp: {vt.responsable}</p>}
+                      <div className="mt-2 flex items-center gap-2">
+                        <div className="flex-1 bg-slate-200 rounded-full h-1.5">
+                          <div className="h-1.5 rounded-full transition-all"
+                            style={{ width: `${100 - porcent}%`, background: vencido ? '#ef4444' : critico ? '#f59e0b' : '#22c55e' }} />
+                        </div>
+                        <button
+                          disabled={loadingSalidaTemp}
+                          onClick={() => registrarSalidaTemporal({ variables: { placa: vt.placa } })}
+                          className="flex items-center gap-1 text-[10px] font-semibold px-2.5 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded-lg transition-colors shrink-0">
+                          <LogOut size={11} /> Salida
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════ TAB ACCESO (original) ═══════════════════ */}
+      {tabPrincipal === 'acceso' && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* ── Panel izquierdo: controles ─────────────────────── */}
         <div className="space-y-3">
@@ -531,7 +729,7 @@ export default function GuardiaDashboard() {
           )}
         </div>
       </div>
-
+      )}
       {/* ── Panel de visitantes en espera — contexto del turno ── */}
       {(visitasPendientes.length > 0 || visitasActivas.length > 0) && (
         <div className="mt-4 bg-white rounded-xl border border-slate-200 p-4">
