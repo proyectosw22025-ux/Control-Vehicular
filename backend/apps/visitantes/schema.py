@@ -19,6 +19,8 @@ from django.utils import timezone
 
 from .models import TipoVisita, Visitante, Visita, DependenciaUAGRM
 
+FRONTEND_URL = "https://control-vehicular-six.vercel.app"
+
 
 # ── Types ──────────────────────────────────────────────────────────────────
 
@@ -62,6 +64,35 @@ class VisitanteType:
     def tiene_datos_previos(self) -> bool:
         """True si el visitante se pre-registró y completó datos adicionales."""
         return bool(self.placa_habitual or self.destino_sugerido_texto or self.procedencia)
+
+
+@strawberry.type
+class PreRegistroResultType:
+    """
+    Resultado del pre-registro de visitante.
+    Incluye el código del pase QR para mostrar en la pantalla de éxito del frontend.
+    """
+    visitante:     VisitanteType
+    pase_codigo:   str
+    pase_url:      str    # URL pública /visita/:codigo — para el email y la pantalla de éxito
+    email_enviado: bool   # True si se intentó enviar (el visitante puede no tener email)
+
+
+@strawberry.type
+class PaseVerificacionType:
+    """
+    Estado de un pase de visitante — consulta pública sin autenticación.
+    Usada por la página /visita/:codigo que el visitante muestra al guardia.
+    """
+    codigo:           str
+    valido:           bool
+    estado:           str   # vigente | vencido | ya_usado | no_encontrado
+    visitante_nombre: str
+    visitante_ci:     str
+    destino:          str
+    valido_hasta:     str
+    usos_actual:      int
+    usos_max:         int
 
 
 @strawberry.type
@@ -159,6 +190,67 @@ class RegistrarVisitaRapidaInput:
     num_acompanantes: Optional[int] = 0
 
 
+# ── Generación y envío del pase de visitante ──────────────────────────────
+
+def _crear_pase_visitante(visitante) -> "tuple[str, str]":
+    """
+    Crea un PaseTemporal para el visitante con vigencia hasta las 23:00 de hoy.
+    Retorna (codigo, url_verificacion).
+    """
+    import uuid
+    from datetime import datetime, time
+    from django.utils import timezone
+    from apps.acceso.models import PaseTemporal
+
+    # Invalidar pases anteriores del mismo visitante que aún estén activos
+    PaseTemporal.objects.filter(
+        visitante=visitante,
+        activo=True,
+    ).update(activo=False)
+
+    hoy   = timezone.localdate()
+    tz    = timezone.get_current_timezone()
+    inicio = timezone.now()
+    fin    = timezone.make_aware(datetime.combine(hoy, time(23, 0, 0)), tz)
+
+    codigo = uuid.uuid4().hex[:12].upper()
+    PaseTemporal.objects.create(
+        visitante=visitante,
+        vehiculo=None,
+        generado_por=None,
+        codigo=codigo,
+        valido_desde=inicio,
+        valido_hasta=fin,
+        usos_max=1,
+    )
+    url = f"{FRONTEND_URL}/visita/{codigo}"
+    return codigo, url
+
+
+def _enviar_pase_email_async(visitante, codigo: str, url: str) -> bool:
+    """Envía el email con el código QR en un hilo daemon. Retorna False si no hay email."""
+    email = getattr(visitante, "email", "")
+    if not email:
+        return False
+
+    import threading
+    from django.utils import timezone
+    from apps.notificaciones.utils import _enviar_email_sync
+    from apps.notificaciones.email_templates import email_pase_visitante
+
+    fecha_str = timezone.localdate().strftime("%d/%m/%Y")
+    nombre = f"{visitante.nombre} {visitante.apellido}"
+    destino = visitante.destino_sugerido_texto or "Campus UAGRM"
+    asunto, html = email_pase_visitante(nombre, destino, fecha_str, codigo, url)
+
+    threading.Thread(
+        target=_enviar_email_sync,
+        args=(email, asunto, f"Tu código de acceso es: {codigo}\nVerifica en: {url}", html),
+        daemon=True,
+    ).start()
+    return True
+
+
 # ── Notificación al anfitrión (async — no bloquea al guardia) ──────────────
 
 def _notificar_anfitrion_async(anfitrion, visitante, motivo: str) -> None:
@@ -196,6 +288,52 @@ def _notificar_anfitrion_async(anfitrion, visitante, motivo: str) -> None:
 
 @strawberry.type
 class VisitantesQuery:
+
+    @strawberry.field
+    def verificar_pase_visitante(self, info: Info, codigo: str) -> PaseVerificacionType:
+        """
+        Consulta pública (sin autenticación) del estado de un pase de visitante.
+        Usada por la página /visita/:codigo que el visitante muestra al guardia en portería.
+        Solo expone datos necesarios — no datos personales sensibles completos.
+        """
+        from apps.acceso.models import PaseTemporal
+        from django.utils import timezone
+
+        codigo_upper = codigo.strip().upper()
+        pase = (
+            PaseTemporal.objects
+            .filter(codigo=codigo_upper)
+            .select_related("visitante")
+            .first()
+        )
+
+        if not pase or not pase.visitante:
+            return PaseVerificacionType(
+                codigo=codigo_upper, valido=False, estado="no_encontrado",
+                visitante_nombre="—", visitante_ci="—", destino="—",
+                valido_hasta="—", usos_actual=0, usos_max=1,
+            )
+
+        ahora = timezone.now()
+        if pase.usos_actual >= pase.usos_max or not pase.activo:
+            estado = "ya_usado"
+        elif ahora > pase.valido_hasta:
+            estado = "vencido"
+        else:
+            estado = "vigente"
+
+        v = pase.visitante
+        return PaseVerificacionType(
+            codigo       = codigo_upper,
+            valido       = estado == "vigente",
+            estado       = estado,
+            visitante_nombre = f"{v.nombre} {v.apellido}",
+            visitante_ci     = v.ci,
+            destino          = v.destino_sugerido_texto or "Campus UAGRM",
+            valido_hasta     = pase.valido_hasta.strftime("%d/%m/%Y %H:%M"),
+            usos_actual      = pase.usos_actual,
+            usos_max         = pase.usos_max,
+        )
 
     @strawberry.field
     def visitantes(self, info: Info, buscar: Optional[str] = None) -> List[VisitanteType]:
@@ -344,11 +482,12 @@ class VisitantesQuery:
 class VisitantesMutation:
 
     @strawberry.mutation
-    def pre_registrar_visitante(self, input: CrearVisitanteInput) -> VisitanteType:
+    def pre_registrar_visitante(self, input: CrearVisitanteInput) -> PreRegistroResultType:
         """
         Permite a visitantes externos pre-registrar sus datos SIN autenticación.
-        El guardia los encontrará por CI al llegar — no tiene que escribir nada.
-        Si el CI ya está en el sistema, retorna el registro existente (visitante frecuente).
+        Genera automáticamente un PaseTemporal con código QR válido hasta las 23:00.
+        Si el visitante tiene email, se le envía el pase por correo.
+        Si el CI ya está en el sistema, actualiza los datos y genera un nuevo pase.
         """
         ci_limpio = input.ci.strip()
         if not ci_limpio:
@@ -358,7 +497,6 @@ class VisitantesMutation:
 
         existente = Visitante.objects.filter(ci=ci_limpio).first()
         if existente:
-            # Actualizar datos opcionales si el visitante vuelve a pre-registrarse
             actualizar = {}
             if input.placa_habitual and input.placa_habitual.strip():
                 actualizar["placa_habitual"] = input.placa_habitual.strip().upper()
@@ -366,21 +504,34 @@ class VisitantesMutation:
                 actualizar["destino_sugerido_texto"] = input.destino_sugerido_texto.strip()
             if input.procedencia and input.procedencia.strip():
                 actualizar["procedencia"] = input.procedencia.strip()
+            if input.email and input.email.strip():
+                actualizar["email"] = input.email.strip()
             if actualizar:
                 for campo, valor in actualizar.items():
                     setattr(existente, campo, valor)
                 existente.save(update_fields=list(actualizar.keys()))
-            return existente
+            visitante = existente
+        else:
+            visitante = Visitante.objects.create(
+                nombre=input.nombre.strip(),
+                apellido=input.apellido.strip(),
+                ci=ci_limpio,
+                telefono=input.telefono.strip() if input.telefono else "",
+                email=input.email.strip() if input.email else "",
+                procedencia=input.procedencia.strip() if input.procedencia else "",
+                placa_habitual=(input.placa_habitual or "").strip().upper(),
+                destino_sugerido_texto=(input.destino_sugerido_texto or "").strip(),
+            )
 
-        return Visitante.objects.create(
-            nombre=input.nombre.strip(),
-            apellido=input.apellido.strip(),
-            ci=ci_limpio,
-            telefono=input.telefono.strip() if input.telefono else "",
-            email=input.email.strip() if input.email else "",
-            procedencia=input.procedencia.strip() if input.procedencia else "",
-            placa_habitual=(input.placa_habitual or "").strip().upper(),
-            destino_sugerido_texto=(input.destino_sugerido_texto or "").strip(),
+        # Generar PaseTemporal + enviar email (en hilo daemon — no bloquea la request)
+        codigo, url = _crear_pase_visitante(visitante)
+        email_ok    = _enviar_pase_email_async(visitante, codigo, url)
+
+        return PreRegistroResultType(
+            visitante=visitante,
+            pase_codigo=codigo,
+            pase_url=url,
+            email_enviado=email_ok,
         )
 
     @strawberry.mutation

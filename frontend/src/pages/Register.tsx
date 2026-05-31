@@ -1,7 +1,7 @@
-import { useState, FormEvent } from 'react'
+import { useState, FormEvent, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useMutation } from '@apollo/client'
-import { ArrowLeft, CheckCircle, Eye, EyeOff, Users, UserCheck, Loader2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle, Eye, EyeOff, Users, UserCheck, Loader2, QrCode, Mail } from 'lucide-react'
 import { CREAR_USUARIO_MUTATION } from '../graphql/mutations/usuarios'
 import { PRE_REGISTRAR_VISITANTE_MUTATION } from '../graphql/mutations/visitantes'
 
@@ -215,14 +215,33 @@ function FormularioVisitante() {
     ci: '', nombre: '', apellido: '', telefono: '', email: '',
     procedencia: '', placa: '', destino: '',
   })
-  const [exito, setExito]   = useState(false)
-  const [error, setError]   = useState('')
-  const [paso, setPaso]     = useState<1 | 2>(1)
+  const [exito,      setExito]     = useState(false)
+  const [error,      setError]     = useState('')
+  const [paso,       setPaso]      = useState<1 | 2>(1)
+  const [paseCodigo, setPaseCodigo] = useState('')
+  const [paseUrl,    setPaseUrl]   = useState('')
+  const [emailOk,    setEmailOk]   = useState(false)
+  const [qrDataUrl,  setQrDataUrl] = useState('')
 
   const [preRegistrar, { loading }] = useMutation(PRE_REGISTRAR_VISITANTE_MUTATION, {
-    onCompleted() { setExito(true) },
+    onCompleted(d) {
+      const r = d.preRegistrarVisitante
+      setPaseCodigo(r.paseCodigo)
+      setPaseUrl(r.paseUrl)
+      setEmailOk(r.emailEnviado)
+      setExito(true)
+    },
     onError(e) { setError(e.message) },
   })
+
+  // Generar QR en el cliente cuando llega el código
+  useEffect(() => {
+    if (!paseCodigo) return
+    import('qrcode').then(QRCode =>
+      QRCode.toDataURL(paseCodigo, { width: 220, margin: 2, errorCorrectionLevel: 'H' })
+        .then(setQrDataUrl)
+    )
+  }, [paseCodigo])
 
   function set(f: string, v: string) { setForm(p => ({ ...p, [f]: v })) }
 
@@ -253,32 +272,61 @@ function FormularioVisitante() {
 
   if (exito) return (
     <div className="text-center space-y-4">
-      <div className="flex items-center justify-center w-16 h-16 bg-emerald-100 rounded-full mx-auto">
-        <CheckCircle size={32} className="text-emerald-600" />
+      <div className="flex items-center justify-center w-14 h-14 bg-emerald-100 rounded-full mx-auto">
+        <CheckCircle size={28} className="text-emerald-600" />
       </div>
-      <h2 className="text-xl font-bold text-slate-800">¡Listo para ingresar!</h2>
-      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-left space-y-3 text-sm">
-        <p className="font-semibold text-slate-700">Al llegar a la UAGRM:</p>
-        <div className="space-y-2">
-          <div className="flex items-start gap-2">
-            <span className="text-cyan-600 font-bold shrink-0">1.</span>
-            <p className="text-slate-600">Preséntate en la <strong>garita de seguridad</strong> con tu CI</p>
-          </div>
-          <div className="flex items-start gap-2">
-            <span className="text-cyan-600 font-bold shrink-0">2.</span>
-            <p className="text-slate-600">El guardia te buscará en el sistema — <strong>ya tiene tus datos</strong></p>
-          </div>
-          <div className="flex items-start gap-2">
-            <span className="text-cyan-600 font-bold shrink-0">3.</span>
-            <p className="text-slate-600">Confirma tu ingreso en segundos</p>
-          </div>
+      <div>
+        <h2 className="text-xl font-bold text-slate-800">¡Tu pase está listo!</h2>
+        <p className="text-slate-500 text-sm mt-1">Muestra este código QR al guardia en la portería</p>
+      </div>
+
+      {/* QR code */}
+      {qrDataUrl ? (
+        <div className="flex flex-col items-center gap-2 bg-slate-50 rounded-2xl p-4 border border-slate-200">
+          <img src={qrDataUrl} alt="QR pase visitante"
+            className="rounded-xl shadow-md" style={{ width: 180, height: 180 }} />
+          <p className="font-mono font-black text-slate-700 text-lg tracking-[0.25em]">{paseCodigo}</p>
+          <a href={paseUrl} target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-1.5 text-blue-600 text-xs hover:underline">
+            <QrCode size={12} />
+            Abrir mi pase completo
+          </a>
         </div>
-      </div>
-      {form.placa && (
-        <div className="bg-violet-50 border border-violet-200 rounded-xl p-3 text-sm text-violet-700">
-          Tu vehículo <strong className="font-mono">{form.placa.toUpperCase()}</strong> ya está registrado. El guardia lo verificará al salir.
+      ) : (
+        <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200">
+          <p className="font-mono font-black text-slate-700 text-2xl tracking-[0.3em]">{paseCodigo}</p>
+          <p className="text-slate-400 text-xs mt-1">Tu código de acceso</p>
         </div>
       )}
+
+      {/* Notificación de email */}
+      {emailOk && (
+        <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-xs text-blue-700">
+          <Mail size={13} />
+          <span>También te enviamos el pase a tu correo electrónico</span>
+        </div>
+      )}
+
+      <div className="bg-cyan-50 border border-cyan-200 rounded-xl p-4 text-left space-y-2 text-xs">
+        <p className="font-bold text-cyan-800 text-sm">Al llegar a la UAGRM:</p>
+        {[
+          'Ve directamente a la garita de seguridad',
+          'Muestra este QR al guardia — lo escanea en segundos',
+          'El guardia ya tiene todos tus datos, no necesitas decir nada más',
+        ].map((txt, i) => (
+          <div key={i} className="flex items-start gap-2">
+            <span className="font-bold text-cyan-600 shrink-0">{i + 1}.</span>
+            <p className="text-cyan-700">{txt}</p>
+          </div>
+        ))}
+      </div>
+
+      {form.placa && (
+        <div className="bg-violet-50 border border-violet-200 rounded-xl p-3 text-xs text-violet-700">
+          Tu vehículo <strong className="font-mono">{form.placa.toUpperCase()}</strong> ya está registrado.
+        </div>
+      )}
+
       <button onClick={() => navigate('/login')}
         className="w-full bg-slate-800 hover:bg-slate-700 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors">
         Volver al inicio

@@ -302,6 +302,58 @@ def email_multa_pagada(nombre: str, placa: str, monto: str, metodo: str) -> tupl
     return asunto, html
 
 
+def email_pase_visitante(
+    nombre_visitante: str,
+    destino: str,
+    fecha_visita: str,
+    codigo: str,
+    url_verificacion: str,
+) -> tuple[str, str]:
+    """
+    Email al visitante con su código de pase QR.
+    El visitante llega a la portería y muestra este código — el guardia lo escanea.
+    """
+    asunto = f"Tu pase de acceso — UAGRM · {fecha_visita}"
+    info = f"""
+    <table width="100%" cellpadding="0" cellspacing="0" border="0"
+           style="margin:16px 0;border:1px solid #e2e8f0;border-radius:8px;
+                  overflow:hidden;font-size:13px;">
+      {_info_row("Visitante", nombre_visitante)}
+      {_info_row("Destino", destino)}
+      {_info_row("Fecha", fecha_visita)}
+      {_info_row("Estado", "✅ Válido")}
+    </table>"""
+
+    contenido = f"""
+    <p>Hola, <strong>{nombre_visitante}</strong>.</p>
+    <p>Tu pre-registro fue completado exitosamente.
+       Al llegar a la portería, muestra el siguiente código al guardia:</p>
+
+    <div style="text-align:center;margin:24px 0;padding:20px;
+                background:#f8fafc;border:2px dashed #cbd5e1;border-radius:12px;">
+      <p style="margin:0 0 8px 0;color:#64748b;font-size:12px;font-weight:600;
+                 letter-spacing:1px;text-transform:uppercase;">Tu código de acceso</p>
+      <p style="margin:0;color:#1e293b;font-size:36px;font-weight:900;
+                 letter-spacing:8px;font-family:monospace;">{codigo}</p>
+    </div>
+
+    {info}
+
+    {_alert_box(
+        "Abre el enlace de verificación en tu celular y muestra la pantalla al guardia."
+        " El código es de un solo uso y válido hasta las 23:00 del día de tu visita.",
+        "info"
+    )}
+    """
+    html = _base_template(
+        f"Pase de acceso — {fecha_visita}",
+        contenido,
+        "Ver mi pase QR",
+        url_verificacion,
+    )
+    return asunto, html
+
+
 def email_visita_registrada(nombre_anfitrion: str, nombre_visitante: str, ci_visitante: str, motivo: str) -> tuple[str, str]:
     """Email al anfitrión cuando se registra una visita."""
     asunto = f"🔔 Nueva visita — {nombre_visitante}"

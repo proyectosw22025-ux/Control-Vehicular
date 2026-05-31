@@ -1,5 +1,21 @@
 import { gql } from '@apollo/client'
 
+export const VERIFICAR_PASE_VISITANTE_QUERY = gql`
+  query VerificarPaseVisitante($codigo: String!) {
+    verificarPaseVisitante(codigo: $codigo) {
+      codigo
+      valido
+      estado
+      visitanteNombre
+      visitanteCi
+      destino
+      validoHasta
+      usosActual
+      usosMax
+    }
+  }
+`
+
 export const VISITANTES_QUERY = gql`
   query Visitantes($buscar: String) {
     visitantes(buscar: $buscar) {

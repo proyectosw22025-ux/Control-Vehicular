@@ -1,12 +1,13 @@
 import { gql } from '@apollo/client'
 
-// Pública — no requiere auth. Permite a visitantes externos pre-registrar su CI.
+// Pública — no requiere auth. Genera PaseTemporal + envía email con QR al visitante.
 export const PRE_REGISTRAR_VISITANTE_MUTATION = gql`
   mutation PreRegistrarVisitante($input: CrearVisitanteInput!) {
     preRegistrarVisitante(input: $input) {
-      id
-      ci
-      nombreCompleto
+      visitante { id ci nombreCompleto }
+      paseCodigo
+      paseUrl
+      emailEnviado
     }
   }
 `
