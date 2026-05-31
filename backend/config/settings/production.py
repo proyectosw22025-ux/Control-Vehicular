@@ -46,7 +46,10 @@ DEFAULT_FROM_EMAIL = config(
     "DEFAULT_FROM_EMAIL", default="Parqueo UAGRM <noreply@uagrm.edu.bo>"
 )
 
-# Resend API — para enviar emails via HTTPS (más confiable que SMTP en cloud)
+# Brevo HTTP API — usa HTTPS puerto 443, no bloqueado por Railway (recomendado)
+BREVO_API_KEY = config("BREVO_API_KEY", default="")
+
+# Resend API — alternativa HTTPS (requiere dominio verificado para enviar a cualquier email)
 RESEND_API_KEY = config("RESEND_API_KEY", default="")
 
 # ── Sentry — monitoreo de errores en producción ────────────────

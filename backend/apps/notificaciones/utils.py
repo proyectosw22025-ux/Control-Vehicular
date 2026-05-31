@@ -13,49 +13,82 @@ def _enviar_email_sync(email: str, asunto: str, cuerpo: str, html: str) -> None:
     """
     Envía el email de forma síncrona. Se llama desde un hilo separado.
 
-    Prioridad:
-      1. Resend API (RESEND_API_KEY configurada en Railway)
-      2. SMTP (EMAIL_HOST_USER + EMAIL_HOST_PASSWORD en Railway)
-      3. Console backend — imprime en logs, NO envía (solo para desarrollo)
+    Prioridad (de mayor a menor confiabilidad en Railway):
+      1. Brevo HTTP API  (BREVO_API_KEY)  — usa HTTPS puerto 443, nunca bloqueado
+      2. Resend HTTP API (RESEND_API_KEY) — también HTTPS, requiere dominio verificado
+      3. SMTP Django     (EMAIL_HOST_USER) — puerto 587, bloqueado por Railway
     """
-    api_key   = getattr(settings, 'RESEND_API_KEY', '')
-    from_email = getattr(settings, 'DEFAULT_FROM_EMAIL',
-                         'Control Vehicular <onboarding@resend.dev>')
+    from_email   = getattr(settings, 'DEFAULT_FROM_EMAIL',
+                           'Control Vehicular UAGRM <noreply@control-vehicular.app>')
+    brevo_key    = getattr(settings, 'BREVO_API_KEY',   '')
+    resend_key   = getattr(settings, 'RESEND_API_KEY',  '')
 
-    if api_key:
+    # ── 1. Brevo HTTP API ─────────────────────────────────────────────────────
+    if brevo_key:
+        try:
+            import json, urllib.request
+            # Extraer nombre y email del DEFAULT_FROM_EMAIL: "Nombre <email@>"
+            import re
+            m = re.match(r'^(.+?)\s*<(.+?)>$', from_email.strip())
+            sender_name  = m.group(1).strip() if m else "Control Vehicular UAGRM"
+            sender_email = m.group(2).strip() if m else "noreply@control-vehicular.app"
+
+            payload = json.dumps({
+                "sender":      {"name": sender_name, "email": sender_email},
+                "to":          [{"email": email}],
+                "subject":     asunto,
+                "textContent": cuerpo,
+                "htmlContent": html or cuerpo,
+            }).encode("utf-8")
+
+            req = urllib.request.Request(
+                "https://api.brevo.com/v3/smtp/email",
+                data=payload,
+                headers={"Content-Type": "application/json", "api-key": brevo_key},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                result = json.loads(resp.read())
+            logger.info("[EMAIL] Enviado via Brevo API a %s — id=%s",
+                        email, result.get("messageId", "?"))
+            return
+        except Exception as exc:
+            logger.error("[EMAIL] Error Brevo API enviando a %s: %s", email, exc)
+
+    # ── 2. Resend HTTP API ────────────────────────────────────────────────────
+    if resend_key:
         try:
             import resend
-            resend.api_key = api_key
+            resend.api_key = resend_key
             params: dict = {
-                "from": from_email,
-                "to":   [email],
-                "subject": asunto,
-                "text": cuerpo,
+                "from": from_email, "to": [email],
+                "subject": asunto, "text": cuerpo,
             }
             if html:
                 params["html"] = html
             result = resend.Emails.send(params)
-            logger.info("[EMAIL] Enviado via Resend a %s — id=%s", email, result.get("id", "?"))
+            logger.info("[EMAIL] Enviado via Resend a %s — id=%s",
+                        email, result.get("id", "?"))
+            return
         except Exception as exc:
             logger.error("[EMAIL] Error Resend enviando a %s: %s", email, exc)
-    else:
-        try:
-            from django.core.mail import send_mail
-            send_mail(
-                subject=asunto,
-                message=cuerpo,
-                from_email=from_email,
-                recipient_list=[email],
-                html_message=html if html else None,
-                fail_silently=False,
-            )
-            logger.info("[EMAIL] Enviado via SMTP/backend a %s", email)
-        except Exception as exc:
-            logger.error(
-                "[EMAIL] Error enviando a %s: %s — "
-                "Configura RESEND_API_KEY o EMAIL_HOST_USER/PASSWORD en Railway",
-                email, exc
-            )
+
+    # ── 3. SMTP Django (fallback — puede fallar en Railway por puerto bloqueado) ──
+    try:
+        from django.core.mail import send_mail
+        send_mail(
+            subject=asunto, message=cuerpo, from_email=from_email,
+            recipient_list=[email],
+            html_message=html if html else None,
+            fail_silently=False,
+        )
+        logger.info("[EMAIL] Enviado via SMTP a %s", email)
+    except Exception as exc:
+        logger.error(
+            "[EMAIL] Error SMTP enviando a %s: %s — "
+            "Agrega BREVO_API_KEY en Railway para evitar bloqueo de puertos",
+            email, exc
+        )
 
 
 def enviar_email(usuario, asunto: str, cuerpo: str, html: str = "") -> None:
