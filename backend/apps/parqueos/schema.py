@@ -82,12 +82,21 @@ def _disponibilidad_de_zona(zona) -> dict:
     }
 
 
+CACHE_KEY_DISPONIBILIDAD = "parqueo_disponibilidad_zonas_v1"
+CACHE_TTL_SEGUNDOS = 30
+
+
 def broadcast_disponibilidad(zona_id: int):
     """
     Envía disponibilidad actualizada al grupo parqueo_disponibilidad.
-    Llamado desde mutaciones de sesión y desde señales de EspacioParqueo.
+    También invalida el cache Redis para que el próximo request lo recalcule.
+    Llamado desde mutaciones de sesión.
     """
     try:
+        # Invalidar cache para que el semáforo público muestre datos frescos
+        from django.core.cache import cache
+        cache.delete(CACHE_KEY_DISPONIBILIDAD)
+
         from channels.layers import get_channel_layer
         from asgiref.sync import async_to_sync
         zona = ZonaParqueo.objects.filter(pk=zona_id).first()
@@ -126,6 +135,7 @@ class DisponibilidadZonaType:
     porcentaje_libre: float   # 0.0–100.0
     estado:           str     # disponible | limitado | saturado | lleno | sin_datos
     color_estado:     str     # hex color para la UI
+    ultima_actualizacion: str = ""  # ISO timestamp de cuando se calcularon los datos
 
 
 @strawberry.type
@@ -382,19 +392,26 @@ class ParqueosQuery:
     @strawberry.field
     def disponibilidad_zonas(self, info: Info) -> List[DisponibilidadZonaType]:
         """
-        Disponibilidad real por zona — sin autenticación requerida.
-        Calcula libres desde EspacioParqueo.estado y SesionParqueo activas.
+        Disponibilidad real por zona — SIN autenticación requerida.
+        Cache: 30 segundos en Redis (producción) o LocMem (desarrollo).
+        Se invalida automáticamente cuando se abre/cierra una sesión de parqueo.
         Reglas:
           - Espacios en 'mantenimiento' o 'reservado' NO cuentan como libres.
           - Al llegar a 0 libres: estado='lleno'.
         """
+        from django.core.cache import cache
+        from django.utils import timezone as tz
+
+        cached = cache.get(CACHE_KEY_DISPONIBILIDAD)
+        if cached is not None:
+            return cached
+
         zonas = ZonaParqueo.objects.filter(activo=True).annotate(
             _libres=Count("espacios", filter=Q(espacios__estado="disponible")),
             _mantenimiento=Count("espacios", filter=Q(espacios__estado="mantenimiento")),
             _reservados=Count("espacios", filter=Q(espacios__estado="reservado")),
         ).order_by("nombre")
 
-        # Una sola query adicional para todas las sesiones activas
         sesiones_por_zona: dict[int, int] = {}
         for row in (
             SesionParqueo.objects.filter(estado="activa")
@@ -403,6 +420,7 @@ class ParqueosQuery:
         ):
             sesiones_por_zona[row["espacio__zona_id"]] = row["total"]
 
+        ahora_iso = tz.now().isoformat()
         result = []
         for z in zonas:
             total_util = max(z.capacidad_total - z._mantenimiento - z._reservados, 0)
@@ -411,18 +429,21 @@ class ParqueosQuery:
             pct        = round((libres / total_util * 100) if total_util > 0 else 0.0, 1)
             estado     = _calcular_estado(libres, total_util)
             result.append(DisponibilidadZonaType(
-                id               = z.pk,
-                nombre           = z.nombre,
-                descripcion      = z.descripcion,
-                ubicacion        = z.ubicacion,
-                capacidad_total  = z.capacidad_total,
-                libres           = libres,
-                sesiones_activas = sesiones,
-                en_mantenimiento = z._mantenimiento,
-                porcentaje_libre = pct,
-                estado           = estado,
-                color_estado     = _color_estado(estado),
+                id                   = z.pk,
+                nombre               = z.nombre,
+                descripcion          = z.descripcion,
+                ubicacion            = z.ubicacion,
+                capacidad_total      = z.capacidad_total,
+                libres               = libres,
+                sesiones_activas     = sesiones,
+                en_mantenimiento     = z._mantenimiento,
+                porcentaje_libre     = pct,
+                estado               = estado,
+                color_estado         = _color_estado(estado),
+                ultima_actualizacion = ahora_iso,
             ))
+
+        cache.set(CACHE_KEY_DISPONIBILIDAD, result, CACHE_TTL_SEGUNDOS)
         return result
 
     @strawberry.field

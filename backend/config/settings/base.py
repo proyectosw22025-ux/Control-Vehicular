@@ -114,6 +114,16 @@ if _cloudinary_configurado:
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# ── Cache — local memory en desarrollo, Redis en producción ──────────────────
+# production.py sobreescribe esto con RedisCache.
+# El semáforo público usa cache de 30s para no golpear la BD en cada request.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "uagrm-cache",
+    }
+}
+
 AUTH_USER_MODEL = "usuarios.Usuario"
 
 # AllowAllUsersModelBackend lets authenticate() return the user even when

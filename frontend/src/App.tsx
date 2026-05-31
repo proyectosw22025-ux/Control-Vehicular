@@ -6,6 +6,7 @@ import Layout from './components/Layout'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import PaseVisitante from './pages/PaseVisitante'
+import Disponibilidad from './pages/Disponibilidad'
 import Dashboard from './pages/Dashboard'
 import Usuarios from './pages/Usuarios'
 import Vehiculos from './pages/Vehiculos'
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/visita/:codigo" element={<PaseVisitante />} />
+          <Route path="/disponibilidad" element={<Disponibilidad />} />
           <Route
             path="/"
             element={

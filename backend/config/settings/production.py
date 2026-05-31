@@ -46,6 +46,17 @@ DEFAULT_FROM_EMAIL = config(
     "DEFAULT_FROM_EMAIL", default="Parqueo UAGRM <noreply@uagrm.edu.bo>"
 )
 
+# ── Cache Redis — semáforo público de parqueo (TTL 30s) ──────────────────────
+# Usa el mismo REDIS_URL que Celery y Channels. No requiere librería adicional.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": config("REDIS_URL", default="redis://localhost:6379/0"),
+        "TIMEOUT": 30,
+        "OPTIONS": {"db": "1"},  # db=1 para separar del channel layer (db=0)
+    }
+}
+
 # Brevo HTTP API — usa HTTPS puerto 443, no bloqueado por Railway (recomendado)
 BREVO_API_KEY = config("BREVO_API_KEY", default="")
 
