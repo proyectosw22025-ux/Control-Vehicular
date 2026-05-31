@@ -1,3 +1,4 @@
+import logging
 import threading
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
@@ -5,22 +6,38 @@ from django.conf import settings
 
 from .models import Notificacion, TipoNotificacion
 
+logger = logging.getLogger(__name__)
+
 
 def _enviar_email_sync(email: str, asunto: str, cuerpo: str, html: str) -> None:
-    """Envía el email de forma síncrona. Se llama desde un hilo separado."""
-    api_key = getattr(settings, 'RESEND_API_KEY', '')
-    from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'Control Vehicular <onboarding@resend.dev>')
+    """
+    Envía el email de forma síncrona. Se llama desde un hilo separado.
+
+    Prioridad:
+      1. Resend API (RESEND_API_KEY configurada en Railway)
+      2. SMTP (EMAIL_HOST_USER + EMAIL_HOST_PASSWORD en Railway)
+      3. Console backend — imprime en logs, NO envía (solo para desarrollo)
+    """
+    api_key   = getattr(settings, 'RESEND_API_KEY', '')
+    from_email = getattr(settings, 'DEFAULT_FROM_EMAIL',
+                         'Control Vehicular <onboarding@resend.dev>')
 
     if api_key:
         try:
             import resend
             resend.api_key = api_key
-            params: dict = {"from": from_email, "to": [email], "subject": asunto, "text": cuerpo}
+            params: dict = {
+                "from": from_email,
+                "to":   [email],
+                "subject": asunto,
+                "text": cuerpo,
+            }
             if html:
                 params["html"] = html
-            resend.Emails.send(params)
-        except Exception:
-            pass
+            result = resend.Emails.send(params)
+            logger.info("[EMAIL] Enviado via Resend a %s — id=%s", email, result.get("id", "?"))
+        except Exception as exc:
+            logger.error("[EMAIL] Error Resend enviando a %s: %s", email, exc)
     else:
         try:
             from django.core.mail import send_mail
@@ -30,10 +47,15 @@ def _enviar_email_sync(email: str, asunto: str, cuerpo: str, html: str) -> None:
                 from_email=from_email,
                 recipient_list=[email],
                 html_message=html if html else None,
-                fail_silently=True,
+                fail_silently=False,
             )
-        except Exception:
-            pass
+            logger.info("[EMAIL] Enviado via SMTP/backend a %s", email)
+        except Exception as exc:
+            logger.error(
+                "[EMAIL] Error enviando a %s: %s — "
+                "Configura RESEND_API_KEY o EMAIL_HOST_USER/PASSWORD en Railway",
+                email, exc
+            )
 
 
 def enviar_email(usuario, asunto: str, cuerpo: str, html: str = "") -> None:

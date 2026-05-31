@@ -300,12 +300,19 @@ function FormularioVisitante() {
       )}
 
       {/* Notificación de email */}
-      {emailOk && (
+      {emailOk ? (
         <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-xs text-blue-700">
           <Mail size={13} />
           <span>También te enviamos el pase a tu correo electrónico</span>
         </div>
-      )}
+      ) : form.email ? (
+        <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-xs text-amber-700">
+          <Mail size={13} />
+          <span>
+            El servidor de email no está configurado — guarda el <strong>código QR de arriba</strong>, lo necesitarás en la portería.
+          </span>
+        </div>
+      ) : null}
 
       <div className="bg-cyan-50 border border-cyan-200 rounded-xl p-4 text-left space-y-2 text-xs">
         <p className="font-bold text-cyan-800 text-sm">Al llegar a la UAGRM:</p>
