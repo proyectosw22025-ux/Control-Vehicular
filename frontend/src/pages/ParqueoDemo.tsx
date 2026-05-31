@@ -20,6 +20,7 @@ import { useAuth } from '../hooks/useAuth'
 import { ZONAS_QUERY, ESPACIOS_POR_ZONA_QUERY } from '../graphql/queries/parqueos'
 import { VEHICULOS_QUERY } from '../graphql/queries/vehiculos'
 import { INICIAR_SESION_MUTATION } from '../graphql/mutations/parqueos'
+import { useDisponibilidadZonas, type AlertaSaturacion } from '../hooks/useDisponibilidadZonas'
 
 // ── Coordenadas exactas verificadas en campo ──────────────────────────────
 const CAMPUS_CENTRO: [number, number] = [-17.775468, -63.196007]
@@ -467,6 +468,23 @@ export default function ParqueoDemo() {
   const porteriaParam   = searchParams.get('porteria') ?? ''
 
   const [zonas, setZonas]           = useState<Zona[]>(cargarZonas)
+
+  // ── Disponibilidad real desde el backend ──────────────────────────────────
+  const { zonas: disponibilidad, alertas, descartarAlerta } = useDisponibilidadZonas()
+
+  // Mapear disponibilidad real a las zonas visuales (A, B, C) por nombre
+  useEffect(() => {
+    if (!disponibilidad.length) return
+    setZonas(prev => prev.map(z => {
+      // Buscar la zona en la BD que corresponde a esta zona visual (A, B, C)
+      const match = disponibilidad.find(d =>
+        d.nombre.toLowerCase().includes(`zona ${z.id.toLowerCase()}`)
+      )
+      if (!match) return z
+      return { ...z, libres: match.libres, total: match.capacidadTotal }
+    }))
+  }, [disponibilidad])
+
   // Punto de entrada real — coordenadas de la portería usada según la notificación WebSocket.
   // Fallback: Portería Av. Busch (coordenada OSM verificada, Way 165843591).
   const entrada = useMemo<[number,number]>(() => {
@@ -632,8 +650,52 @@ export default function ParqueoDemo() {
   const min=Math.floor(segundos/60), sec=segundos%60
   const zonasActivas = modoConfig ? zonasTmp : zonas
 
+  // Badge de disponibilidad para mostrar en la lista de zonas
+  function estadoBadge(zonaId: string) {
+    const match = disponibilidad.find(d =>
+      d.nombre.toLowerCase().includes(`zona ${zonaId.toLowerCase()}`)
+    )
+    if (!match) return null
+    const labels: Record<string, string> = {
+      disponible: 'Disponible', limitado: 'Limitado',
+      saturado: 'Saturado', lleno: 'Sin espacio', sin_datos: '—',
+    }
+    return (
+      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full text-white"
+        style={{ background: match.colorEstado }}>
+        {labels[match.estado] ?? match.estado}
+      </span>
+    )
+  }
+
   return (
     <div className="flex flex-col bg-slate-900 overflow-hidden" style={{height:'100%'}}>
+
+      {/* Toasts de saturación */}
+      {alertas.map((al: AlertaSaturacion) => (
+        <div key={al.zonaId}
+          className="fixed top-4 right-4 z-[2000] bg-white border-l-4 rounded-xl shadow-2xl p-4 flex gap-3 items-start max-w-sm animate-pulse"
+          style={{ borderColor: al.estadoNuevo === 'lleno' ? '#ef4444' : '#f97316' }}>
+          <span className="text-xl shrink-0">
+            {al.estadoNuevo === 'lleno' ? '🔴' : '🟠'}
+          </span>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-slate-800 text-sm">
+              {al.zonaNombre} — {al.estadoNuevo === 'lleno' ? 'Sin espacio' : 'Capacidad crítica'}
+            </p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {al.estadoNuevo === 'lleno'
+                ? 'No hay espacios disponibles en esta zona'
+                : `Solo ${al.libres} espacio${al.libres !== 1 ? 's' : ''} libre${al.libres !== 1 ? 's' : ''}`}
+            </p>
+          </div>
+          <button onClick={() => descartarAlerta(al.zonaId)}
+            className="text-slate-400 hover:text-slate-700 shrink-0 mt-0.5">
+            <X size={14} />
+          </button>
+        </div>
+      ))}
+
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2.5 shrink-0"
         style={{background:'linear-gradient(90deg,#061840 0%,#0a2a6e 100%)'}}>
@@ -770,21 +832,49 @@ export default function ParqueoDemo() {
                       <span className="text-[10px] text-blue-600 font-semibold">📍 Desde {decodeURIComponent(porteriaParam)}</span>
                     )}
                   </div>
-                  {zonas.map(zona=>(
-                    <button key={zona.id} onClick={()=>handleZonaClick(zona)}
-                      className={`w-full text-left rounded-xl border-2 p-3 transition-all hover:shadow-md ${zonaDestino?.id===zona.id?'shadow-md':'border-slate-200'}`}
-                      style={{borderColor:zonaDestino?.id===zona.id?zona.color:undefined}}>
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-black shrink-0" style={{background:zona.color}}>{zona.id}</div>
+                  {zonas.map(zona => {
+                    const disp = disponibilidad.find(d =>
+                      d.nombre.toLowerCase().includes(`zona ${zona.id.toLowerCase()}`)
+                    )
+                    const estaLlena = disp?.estado === 'lleno'
+                    return (
+                    <button key={zona.id}
+                      onClick={() => !estaLlena && handleZonaClick(zona)}
+                      disabled={estaLlena}
+                      className={`w-full text-left rounded-xl border-2 p-3 transition-all
+                        ${estaLlena ? 'opacity-50 cursor-not-allowed border-red-200 bg-red-50' :
+                          zonaDestino?.id===zona.id ? 'shadow-md hover:shadow-md' : 'border-slate-200 hover:shadow-md'}`}
+                      style={{borderColor: estaLlena ? '#fca5a5' : zonaDestino?.id===zona.id ? zona.color : undefined}}>
+                      <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-black shrink-0"
+                          style={{background: estaLlena ? '#ef4444' : zona.color}}>
+                          {zona.id}
+                        </div>
                         <span className="font-semibold text-slate-800 text-sm">{zona.nombre}</span>
-                        {zonaRecomendada === zona.id && (
+                        {zonaRecomendada === zona.id && !estaLlena && (
                           <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-bold">⭐ Cercana</span>
                         )}
-                        <span className="ml-auto text-xs font-bold" style={{color:zona.color}}>{zona.libres} libres</span>
+                        {estadoBadge(zona.id)}
+                        <span className="ml-auto text-xs font-bold"
+                          style={{color: disp ? disp.colorEstado : zona.color}}>
+                          {estaLlena ? '🔴 Llena' : `${zona.libres} libres`}
+                        </span>
                       </div>
                       <p className="text-xs text-slate-500 pl-8">{zona.sub}</p>
+                      {disp && !estaLlena && (
+                        <div className="pl-8 mt-1">
+                          <div className="w-full bg-slate-200 rounded-full h-1">
+                            <div className="h-1 rounded-full transition-all duration-500"
+                              style={{
+                                width: `${100 - disp.porcentajeLibre}%`,
+                                background: disp.colorEstado,
+                              }} />
+                          </div>
+                        </div>
+                      )}
                     </button>
-                  ))}
+                    )
+                  })}
                   {flow==='inicio'&&(
                     <button onClick={()=>handleZonaClick(zonas[1])}
                       className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl text-sm mt-1">

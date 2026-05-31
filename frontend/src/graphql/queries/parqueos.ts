@@ -76,6 +76,24 @@ export const SESIONES_ACTIVAS_QUERY = gql`
   }
 `
 
+export const DISPONIBILIDAD_ZONAS_QUERY = gql`
+  query DisponibilidadZonas {
+    disponibilidadZonas {
+      id
+      nombre
+      descripcion
+      ubicacion
+      capacidadTotal
+      libres
+      sesionesActivas
+      enMantenimiento
+      porcentajeLibre
+      estado
+      colorEstado
+    }
+  }
+`
+
 export const MAPA_PARQUEO_QUERY = gql`
   query MapaParqueo {
     mapaParqueo {

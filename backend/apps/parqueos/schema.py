@@ -23,7 +23,110 @@ from .models import (
 )
 
 
+# ── Disponibilidad real — lógica de negocio ────────────────────────────────
+
+def _calcular_estado(libres: int, total_util: int) -> str:
+    """
+    Estado de disponibilidad según porcentaje libre.
+    total_util = capacidad total menos espacios en mantenimiento/reservado.
+    """
+    if total_util <= 0:
+        return "sin_datos"
+    if libres == 0:
+        return "lleno"
+    pct = libres / total_util
+    if pct <= 0.10:
+        return "saturado"    # < 10% libre
+    if pct <= 0.40:
+        return "limitado"    # 10-40% libre
+    return "disponible"      # > 40% libre
+
+
+def _color_estado(estado: str) -> str:
+    return {
+        "disponible": "#22c55e",
+        "limitado":   "#f59e0b",
+        "saturado":   "#f97316",
+        "lleno":      "#ef4444",
+        "sin_datos":  "#94a3b8",
+    }.get(estado, "#94a3b8")
+
+
+def _disponibilidad_de_zona(zona) -> dict:
+    """Calcula disponibilidad real para una zona. Reutilizable desde signal y query."""
+    from django.db.models import Count, Q
+    z = (
+        ZonaParqueo.objects.filter(pk=zona.pk).annotate(
+            _libres=Count("espacios", filter=Q(espacios__estado="disponible")),
+            _mantenimiento=Count("espacios", filter=Q(espacios__estado="mantenimiento")),
+            _reservados=Count("espacios", filter=Q(espacios__estado="reservado")),
+        ).first()
+    )
+    if not z:
+        return {}
+    total_util = max(z.capacidad_total - z._mantenimiento - z._reservados, 0)
+    libres = z._libres
+    sesiones = SesionParqueo.objects.filter(espacio__zona=z, estado="activa").count()
+    pct = round((libres / total_util * 100) if total_util > 0 else 0, 1)
+    estado = _calcular_estado(libres, total_util)
+    return {
+        "zona_id":        z.pk,
+        "zona_nombre":    z.nombre,
+        "libres":         libres,
+        "total":          z.capacidad_total,
+        "sesiones_activas": sesiones,
+        "en_mantenimiento": z._mantenimiento,
+        "porcentaje_libre": pct,
+        "estado":         estado,
+        "color_estado":   _color_estado(estado),
+    }
+
+
+def broadcast_disponibilidad(zona_id: int):
+    """
+    Envía disponibilidad actualizada al grupo parqueo_disponibilidad.
+    Llamado desde mutaciones de sesión y desde señales de EspacioParqueo.
+    """
+    try:
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        zona = ZonaParqueo.objects.filter(pk=zona_id).first()
+        if not zona:
+            return
+        data = _disponibilidad_de_zona(zona)
+        if not data:
+            return
+        layer = get_channel_layer()
+        if layer:
+            async_to_sync(layer.group_send)("parqueo_disponibilidad", {
+                "type": "disponibilidad_actualizada",
+                **data,
+            })
+    except Exception:
+        pass  # No debe interrumpir el flujo de negocio principal
+
+
 # ── Types ──────────────────────────────────────────────────────────────────
+
+@strawberry.type
+class DisponibilidadZonaType:
+    """
+    Disponibilidad real de una zona de parqueo.
+    Calculada desde EspacioParqueo.estado y SesionParqueo activas.
+    No requiere autenticación — usada en la guía y en la página pública.
+    """
+    id:               int
+    nombre:           str
+    descripcion:      str
+    ubicacion:        str
+    capacidad_total:  int
+    libres:           int     # espacios con estado='disponible'
+    sesiones_activas: int     # SesionParqueo con estado='activa'
+    en_mantenimiento: int     # espacios fuera de servicio (no cuentan como libres)
+    porcentaje_libre: float   # 0.0–100.0
+    estado:           str     # disponible | limitado | saturado | lleno | sin_datos
+    color_estado:     str     # hex color para la UI
+
 
 @strawberry.type
 class CategoriaEspacioType:
@@ -277,6 +380,52 @@ class ParqueosQuery:
         )
 
     @strawberry.field
+    def disponibilidad_zonas(self, info: Info) -> List[DisponibilidadZonaType]:
+        """
+        Disponibilidad real por zona — sin autenticación requerida.
+        Calcula libres desde EspacioParqueo.estado y SesionParqueo activas.
+        Reglas:
+          - Espacios en 'mantenimiento' o 'reservado' NO cuentan como libres.
+          - Al llegar a 0 libres: estado='lleno'.
+        """
+        zonas = ZonaParqueo.objects.filter(activo=True).annotate(
+            _libres=Count("espacios", filter=Q(espacios__estado="disponible")),
+            _mantenimiento=Count("espacios", filter=Q(espacios__estado="mantenimiento")),
+            _reservados=Count("espacios", filter=Q(espacios__estado="reservado")),
+        ).order_by("nombre")
+
+        # Una sola query adicional para todas las sesiones activas
+        sesiones_por_zona: dict[int, int] = {}
+        for row in (
+            SesionParqueo.objects.filter(estado="activa")
+            .values("espacio__zona_id")
+            .annotate(total=Count("id"))
+        ):
+            sesiones_por_zona[row["espacio__zona_id"]] = row["total"]
+
+        result = []
+        for z in zonas:
+            total_util = max(z.capacidad_total - z._mantenimiento - z._reservados, 0)
+            libres     = z._libres
+            sesiones   = sesiones_por_zona.get(z.pk, 0)
+            pct        = round((libres / total_util * 100) if total_util > 0 else 0.0, 1)
+            estado     = _calcular_estado(libres, total_util)
+            result.append(DisponibilidadZonaType(
+                id               = z.pk,
+                nombre           = z.nombre,
+                descripcion      = z.descripcion,
+                ubicacion        = z.ubicacion,
+                capacidad_total  = z.capacidad_total,
+                libres           = libres,
+                sesiones_activas = sesiones,
+                en_mantenimiento = z._mantenimiento,
+                porcentaje_libre = pct,
+                estado           = estado,
+                color_estado     = _color_estado(estado),
+            ))
+        return result
+
+    @strawberry.field
     def categorias_espacio(self, info: Info) -> List[CategoriaEspacioType]:
         return list(CategoriaEspacio.objects.all())
 
@@ -424,6 +573,7 @@ class ParqueosMutation:
                 f"Sesión iniciada: {vehiculo.placa} en {espacio.zona.nombre}#{espacio.numero}",
                 request=info.context.request,
             )
+        broadcast_disponibilidad(espacio.zona_id)
         return sesion
 
     @strawberry.mutation
@@ -463,6 +613,7 @@ class ParqueosMutation:
                 f"({duracion} min)",
                 request=info.context.request,
             )
+        broadcast_disponibilidad(sesion.espacio.zona_id)
         return sesion
 
     @strawberry.mutation

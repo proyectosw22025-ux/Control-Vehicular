@@ -16,6 +16,8 @@ class NotificacionConsumer(AsyncWebsocketConsumer):
 
         self.group_name = f"notificaciones_usuario_{self.user.pk}"
         await self.channel_layer.group_add(self.group_name, self.channel_name)
+        # Grupo global de disponibilidad de parqueo — recibe actualizaciones en tiempo real
+        await self.channel_layer.group_add("parqueo_disponibilidad", self.channel_name)
 
         no_leidas = await self.conteo_no_leidas()
         await self.send(json.dumps({"tipo": "conectado", "no_leidas": no_leidas}))
@@ -23,6 +25,7 @@ class NotificacionConsumer(AsyncWebsocketConsumer):
     async def disconnect(self, code: int) -> None:
         if hasattr(self, "group_name"):
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        await self.channel_layer.group_discard("parqueo_disponibilidad", self.channel_name)
 
     async def receive(self, text_data: str | None = None, bytes_data: bytes | None = None) -> None:
         if not text_data:
@@ -34,6 +37,21 @@ class NotificacionConsumer(AsyncWebsocketConsumer):
                 await self.send(json.dumps({"tipo": "leidas_marcadas"}))
         except Exception:
             pass
+
+    async def disponibilidad_actualizada(self, event):
+        """Broadcast de disponibilidad real de zona al cliente. Sin guardar en BD."""
+        await self.send(json.dumps({
+            "tipo":             "disponibilidad_actualizada",
+            "zona_id":          event["zona_id"],
+            "zona_nombre":      event["zona_nombre"],
+            "libres":           event["libres"],
+            "total":            event["total"],
+            "sesiones_activas": event["sesiones_activas"],
+            "en_mantenimiento": event["en_mantenimiento"],
+            "porcentaje_libre": event["porcentaje_libre"],
+            "estado":           event["estado"],
+            "color_estado":     event["color_estado"],
+        }))
 
     async def notificacion_nueva(self, event):
         await self.send(json.dumps({
