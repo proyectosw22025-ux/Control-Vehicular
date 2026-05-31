@@ -10,18 +10,20 @@
  * Regla 4 (Async): useAccesoGuardia implementa retry con exponential backoff
  *   y detecta Error 4001 (token JWT expirado en WebSocket).
  */
-import { useState, useEffect, useCallback } from 'react'
-import { useQuery, gql } from '@apollo/client'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useQuery, useMutation, gql } from '@apollo/client'
 import {
   ShieldCheck, ArrowDownCircle, ArrowUpCircle, Camera, CameraOff,
   CheckCircle2, XCircle, Clock, ParkingSquare, UserCheck, DoorOpen,
   Wifi, WifiOff, RefreshCw, Loader2, Type, Keyboard,
+  AlertTriangle, Bell, Eye,
 } from 'lucide-react'
 import { QrScanner }     from '../components/QrScanner'
 import { PlacaScanner } from '../components/PlacaScanner'
-import { PUNTOS_ACCESO_QUERY, REGISTROS_ACCESO_QUERY } from '../graphql/queries/acceso'
+import { PUNTOS_ACCESO_QUERY, REGISTROS_ACCESO_QUERY, ALERTAS_PANEL_QUERY } from '../graphql/queries/acceso'
+import { MARCAR_ALERTA_REVISADA_MUTATION } from '../graphql/mutations/acceso'
 import { VISITAS_ACTIVAS_QUERY } from '../graphql/queries/visitantes'
-import { useAccesoGuardia, type TipoAcceso } from '../hooks/useAccesoGuardia'
+import { useAccesoGuardia, type TipoAcceso, type AlertaInfo } from '../hooks/useAccesoGuardia'
 import { useOfflineAccess } from '../hooks/useOfflineAccess'
 
 const GUARDIA_STATS_QUERY = gql`
@@ -83,6 +85,50 @@ export default function GuardiaDashboard() {
     pollInterval: 30_000,
     fetchPolicy: 'cache-and-network',
   })
+  const { data: alertasData, refetch: refetchAlertas } = useQuery(ALERTAS_PANEL_QUERY, {
+    variables: { limite: 20 },
+    pollInterval: 20_000,
+    fetchPolicy: 'network-only',
+  })
+  const [marcarRevisada] = useMutation(MARCAR_ALERTA_REVISADA_MUTATION, {
+    onCompleted: () => refetchAlertas(),
+  })
+
+  // Alertas en tiempo real — se añaden por WS desde Layout.tsx via evento DOM
+  const [alertasLocales, setAlertasLocales] = useState<AlertaInfo[]>([])
+  const sonidoRef = useRef<HTMLAudioElement | null>(null)
+
+  useEffect(() => {
+    const handler = (e: CustomEvent) => {
+      const d = e.detail as AlertaInfo
+      setAlertasLocales(prev => {
+        if (prev.some(a => a.id === d.id)) return prev
+        return [d, ...prev].slice(0, 20)
+      })
+      // Sonido de alerta para alertas críticas
+      if (d.severidad === 'critica') {
+        try {
+          if (!sonidoRef.current) {
+            sonidoRef.current = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAA...')
+          }
+          const ctx = new AudioContext()
+          const osc = ctx.createOscillator()
+          const gain = ctx.createGain()
+          osc.connect(gain); gain.connect(ctx.destination)
+          osc.frequency.value = 880
+          gain.gain.setValueAtTime(0.3, ctx.currentTime)
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
+          osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.5)
+        } catch { /* sin audio en algunos navegadores */ }
+      }
+    }
+    window.addEventListener('alerta-acceso', handler as EventListener)
+    return () => window.removeEventListener('alerta-acceso', handler as EventListener)
+  }, [])
+
+  // Modal de alerta crítica — se muestra cuando el escaneo detecta alertas
+  const [modalAlertas, setModalAlertas] = useState<AlertaInfo[] | null>(null)
+  const [placaModal, setPlacaModal]     = useState('')
 
   const stats    = statsData?.dashboardStats
   const puntos   = puntosData?.puntosAcceso ?? []
@@ -134,7 +180,46 @@ export default function GuardiaDashboard() {
 
   const resultado = acceso.resultado
 
+  // Verificar alertas cada vez que llega un resultado de acceso
+  useEffect(() => {
+    if (resultado?.ok && resultado.alertas?.length) {
+      const criticas = resultado.alertas.filter(a => a.severidad === 'critica')
+      if (criticas.length > 0) {
+        setPlacaModal(resultado.placa ?? '')
+        setModalAlertas(criticas)
+      }
+      refetchAlertas()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resultado])
+
+  const alertasPanel = [
+    ...(alertasData?.alertasActivasPanel ?? []),
+    ...alertasLocales.filter(al => !(alertasData?.alertasActivasPanel ?? []).some((a: any) => a.id === al.id)),
+  ] as AlertaInfo[]
+  const alertasCriticas   = alertasPanel.filter(a => a.severidad === 'critica').length
+  const alertasAdvertencia = alertasPanel.filter(a => a.severidad === 'advertencia').length
+
+  const SEVERIDAD_COLOR: Record<string, string> = {
+    critica:    'border-red-400 bg-red-50',
+    advertencia:'border-amber-400 bg-amber-50',
+    info:       'border-blue-300 bg-blue-50',
+  }
+  const SEVERIDAD_BADGE: Record<string, string> = {
+    critica:    'bg-red-100 text-red-700',
+    advertencia:'bg-amber-100 text-amber-700',
+    info:       'bg-blue-100 text-blue-700',
+  }
+  const TIPO_LABEL: Record<string, string> = {
+    frecuencia_excesiva: 'Frecuencia excesiva',
+    vehiculo_sancionado: 'Multas pendientes',
+    horario_inusual:     'Horario inusual',
+    punto_inusual:       'Punto inusual',
+    placas_similares:    'Placas similares',
+  }
+
   return (
+    <>
     <div className="p-4 sm:p-6 min-h-screen bg-slate-50">
 
       {/* ── Header ─────────────────────────────────────────────── */}
@@ -488,7 +573,106 @@ export default function GuardiaDashboard() {
           </div>
         </div>
       )}
+      {/* ── Panel de alertas activas ──────────────────────────────────── */}
+      {alertasPanel.length > 0 && (
+        <div className="mt-4 bg-white rounded-xl border border-slate-200 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Bell size={15} className="text-red-500" />
+            <h2 className="text-sm font-semibold text-slate-700">Alertas de seguridad</h2>
+            <div className="ml-auto flex gap-1.5">
+              {alertasCriticas > 0 && (
+                <span className="text-[10px] font-bold bg-red-100 text-red-700 px-2 py-0.5 rounded-full animate-pulse">
+                  {alertasCriticas} crítica{alertasCriticas > 1 ? 's' : ''}
+                </span>
+              )}
+              {alertasAdvertencia > 0 && (
+                <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                  {alertasAdvertencia} advertencia{alertasAdvertencia > 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="space-y-2 max-h-48 overflow-y-auto">
+            {alertasPanel.map((al) => (
+              <div key={al.id}
+                className={`flex items-start gap-2 rounded-xl px-3 py-2.5 border-l-4 ${SEVERIDAD_COLOR[al.severidad] ?? 'border-slate-300 bg-slate-50'}`}>
+                <AlertTriangle size={14} className={`shrink-0 mt-0.5 ${al.severidad === 'critica' ? 'text-red-500' : 'text-amber-500'}`} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${SEVERIDAD_BADGE[al.severidad] ?? ''}`}>
+                      {al.severidad.toUpperCase()}
+                    </span>
+                    <span className="text-[10px] font-semibold text-slate-600">
+                      {TIPO_LABEL[al.tipoAnomalia] ?? al.tipoAnomalia}
+                    </span>
+                    {al.vehiculoPlaca && (
+                      <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border">
+                        {al.vehiculoPlaca}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">{al.descripcion}</p>
+                </div>
+                <button
+                  onClick={() => marcarRevisada({ variables: { alertaId: al.id } })}
+                  className="shrink-0 flex items-center gap-1 text-[10px] text-slate-400 hover:text-emerald-600 transition-colors mt-0.5">
+                  <Eye size={12} /> OK
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
+
+    {/* ── Modal de alerta crítica ─────────────────────────────────────────── */}
+    {modalAlertas && (
+      <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4 backdrop-blur-sm">
+        <div className="bg-white rounded-3xl shadow-2xl p-6 max-w-sm w-full">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center shrink-0">
+              <AlertTriangle size={24} className="text-red-600" />
+            </div>
+            <div>
+              <h2 className="font-black text-slate-800 text-base">Alerta de seguridad</h2>
+              {placaModal && (
+                <p className="text-slate-500 text-xs">Vehículo: <strong className="font-mono">{placaModal}</strong></p>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-2 mb-5">
+            {modalAlertas.map(al => (
+              <div key={al.id} className="bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                <p className="text-xs font-bold text-red-700">{TIPO_LABEL[al.tipoAnomalia] ?? al.tipoAnomalia}</p>
+                <p className="text-xs text-red-600 mt-0.5 leading-relaxed">{al.descripcion}</p>
+              </div>
+            ))}
+          </div>
+
+          <p className="text-xs text-slate-500 mb-4 text-center">
+            El acceso fue registrado. Toma la acción correspondiente.
+          </p>
+
+          <div className="flex gap-3">
+            <button
+              onClick={() => {
+                modalAlertas.forEach(al => marcarRevisada({ variables: { alertaId: al.id } }))
+                setModalAlertas(null)
+              }}
+              className="flex-1 py-3 border-2 border-slate-200 text-slate-600 rounded-2xl font-semibold text-sm hover:bg-slate-50 transition-colors">
+              Marcar revisado
+            </button>
+            <button
+              onClick={() => setModalAlertas(null)}
+              className="flex-1 py-3 bg-red-500 hover:bg-red-600 text-white rounded-2xl font-bold text-sm transition-colors">
+              Entendido
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }
 

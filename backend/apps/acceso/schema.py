@@ -138,6 +138,11 @@ class RegistroAccesoType:
             return f"{self.vehiculo.marca} {self.vehiculo.modelo}".strip()
         return None
 
+    @strawberry.field
+    def alertas_detectadas(self) -> List["AlertaAccesoType"]:
+        """Alertas activas detectadas para este vehículo en el momento del registro."""
+        return getattr(self, "_alertas_detectadas", [])
+
 
 @strawberry.type
 class AuditLogType:
@@ -211,6 +216,123 @@ class AlertaAccesoType:
     @strawberry.field
     def vehiculo_id_val(self) -> Optional[int]:
         return self.vehiculo_id
+
+
+def _broadcast_alerta_ws(alerta, vehiculo):
+    """Envía alerta nueva al canal de notificaciones de guardias y admins."""
+    try:
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        from apps.usuarios.models import UsuarioRol
+
+        layer = get_channel_layer()
+        if not layer:
+            return
+        ids = (
+            UsuarioRol.objects
+            .filter(rol__nombre__in=["Guardia", "Administrador"])
+            .values_list("usuario_id", flat=True)
+            .distinct()
+        )
+        iconos = {"critica": "🔴", "advertencia": "🟠", "info": "🔵"}
+        for uid in ids:
+            async_to_sync(layer.group_send)(
+                f"notificaciones_usuario_{uid}",
+                {
+                    "type":       "notificacion_nueva",
+                    "id":         alerta.pk,
+                    "titulo":     f"{iconos.get(alerta.severidad,'⚠')} Alerta — {vehiculo.placa}",
+                    "mensaje":    alerta.descripcion,
+                    "fecha":      alerta.fecha.isoformat(),
+                    "tipo_codigo": "alerta_acceso",
+                    "datos_extra": {
+                        "alerta_id":     alerta.pk,
+                        "tipo_anomalia": alerta.tipo_anomalia,
+                        "severidad":     alerta.severidad,
+                        "placa":         vehiculo.placa,
+                        "descripcion":   alerta.descripcion,
+                    },
+                },
+            )
+    except Exception:
+        pass
+
+
+def _detectar_anomalias_acceso(vehiculo, tipo_acceso: str) -> list:
+    """
+    Detecta anomalías en tiempo real al registrar un acceso QR o manual.
+    Crea AlertaAcceso si se encuentran, hace broadcast WS y retorna la lista.
+
+    Detecta:
+      1. Frecuencia excesiva: >3 entradas en las últimas 2 horas
+      2. Multas pendientes/apeladas: vehículo con deudas activas
+    """
+    from datetime import timedelta
+    if tipo_acceso != "entrada":
+        return []
+
+    nuevas = []
+    ahora  = timezone.now()
+    hoy    = ahora.date()
+
+    # ── 1. Frecuencia excesiva de accesos ─────────────────────────────────────
+    ventana   = ahora - timedelta(hours=2)
+    conteo    = RegistroAcceso.objects.filter(
+        vehiculo=vehiculo, tipo="entrada", timestamp__gte=ventana
+    ).count()
+    if conteo >= 3:
+        ya_existe = AlertaAcceso.objects.filter(
+            vehiculo=vehiculo,
+            tipo_anomalia="frecuencia_excesiva",
+            revisada=False,
+            fecha__gte=ventana,
+        ).exists()
+        if not ya_existe:
+            a = AlertaAcceso.objects.create(
+                vehiculo=vehiculo,
+                tipo_anomalia="frecuencia_excesiva",
+                severidad="advertencia",
+                descripcion=(
+                    f"{vehiculo.placa} registró {conteo + 1} entradas en 2 horas — "
+                    "posible uso irregular o error de registro."
+                ),
+                fecha_analisis=hoy,
+                datos_extra={"entradas_recientes": conteo + 1},
+            )
+            _broadcast_alerta_ws(a, vehiculo)
+            nuevas.append(a)
+
+    # ── 2. Multas pendientes o apeladas ───────────────────────────────────────
+    try:
+        from apps.multas.models import Multa
+        multas = Multa.objects.filter(
+            vehiculo=vehiculo, estado__in=["pendiente", "apelada"]
+        ).count()
+        if multas > 0:
+            ya_existe = AlertaAcceso.objects.filter(
+                vehiculo=vehiculo,
+                tipo_anomalia="vehiculo_sancionado",
+                revisada=False,
+                fecha__gte=ahora - timedelta(hours=24),
+            ).exists()
+            if not ya_existe:
+                a = AlertaAcceso.objects.create(
+                    vehiculo=vehiculo,
+                    tipo_anomalia="vehiculo_sancionado",
+                    severidad="critica",
+                    descripcion=(
+                        f"{vehiculo.placa} tiene {multas} multa(s) sin pagar. "
+                        "El vehículo debería estar sancionado."
+                    ),
+                    fecha_analisis=hoy,
+                    datos_extra={"multas_pendientes": multas},
+                )
+                _broadcast_alerta_ws(a, vehiculo)
+                nuevas.append(a)
+    except Exception:
+        pass
+
+    return nuevas
 
 
 def _sincronizar_rastreo(vehiculo, punto, tipo_acceso: str, registro, propietario):
@@ -356,6 +478,33 @@ class AccesoQuery:
         if not tiene_rol(info.context.request.user, "Administrador"):
             raise Exception("Solo administradores pueden ver el registro de auditoría")
         return list(AuditLog.objects.select_related("usuario")[:limite])
+
+    @strawberry.field
+    def alertas_activas_panel(
+        self, info: Info, limite: int = 30
+    ) -> List[AlertaAccesoType]:
+        """
+        Alertas no revisadas de las últimas 24h — panel del guardia en tiempo real.
+        Ordenadas: critica → advertencia → info.
+        Acceso: Guardia y Administrador.
+        """
+        from apps.usuarios.utils import tiene_rol
+        from datetime import timedelta
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not (tiene_rol(user, "Guardia") or tiene_rol(user, "Administrador")):
+            raise Exception("Solo guardias y administradores")
+        desde = timezone.now() - timedelta(hours=24)
+        alertas = list(
+            AlertaAcceso.objects
+            .filter(revisada=False, fecha__gte=desde)
+            .select_related("vehiculo")
+            .order_by("-fecha")[:limite]
+        )
+        orden = {"critica": 0, "advertencia": 1, "info": 2}
+        alertas.sort(key=lambda a: orden.get(a.severidad, 3))
+        return alertas
 
     @strawberry.field
     def alertas_acceso(
@@ -588,9 +737,33 @@ class AccesoMutation:
                     },
                 )
 
+        # ── Detección de anomalías en tiempo real ─────────────────────────────
+        # Detecta frecuencia excesiva y multas pendientes; crea AlertaAcceso
+        # y hace broadcast WS a guardias. El response incluye las alertas.
+        alertas_detectadas: list = []
+        if resultado.vehiculo:
+            # Alertas existentes no revisadas para este vehículo
+            alertas_existentes = list(
+                AlertaAcceso.objects
+                .filter(vehiculo=resultado.vehiculo, revisada=False)
+                .select_related("vehiculo")
+                .order_by("-severidad", "-fecha")[:5]
+            )
+            # Detectar nuevas anomalías en tiempo real
+            alertas_nuevas = _detectar_anomalias_acceso(resultado.vehiculo, input.tipo)
+            alertas_detectadas = alertas_existentes + alertas_nuevas
+
+            # Auto-observación si hay alertas críticas
+            if any(a.severidad == "critica" for a in alertas_detectadas):
+                criticas_desc = "; ".join(
+                    a.descripcion[:60] for a in alertas_detectadas if a.severidad == "critica"
+                )
+                registro.observacion = f"Entrada con alertas críticas: {criticas_desc}"
+                registro.save(update_fields=["observacion"])
+
+        registro._alertas_detectadas = alertas_detectadas
+
         # ── Rastreo en vivo: sincronizar estado del vehículo en el mapa ──────
-        # Entrada: coloca el vehículo en la portería exacta (fuente 'qr')
-        # Salida:  desactiva el rastreo para que desaparezca del mapa
         if resultado.vehiculo and punto.latitud is not None:
             _sincronizar_rastreo(resultado.vehiculo, punto, input.tipo, registro, propietario)
 
@@ -643,6 +816,18 @@ class AccesoMutation:
                 sesion.save(update_fields=["hora_salida", "estado"])
                 sesion.espacio.estado = "disponible"
                 sesion.espacio.save(update_fields=["estado"])
+
+        # Detección de anomalías (manual — misma lógica que acceso QR)
+        alertas_detectadas: list = []
+        alertas_existentes = list(
+            AlertaAcceso.objects
+            .filter(vehiculo=vehiculo, revisada=False)
+            .select_related("vehiculo")
+            .order_by("-severidad", "-fecha")[:5]
+        )
+        alertas_nuevas = _detectar_anomalias_acceso(vehiculo, input.tipo)
+        alertas_detectadas = alertas_existentes + alertas_nuevas
+        registro._alertas_detectadas = alertas_detectadas
 
         return registro
 
@@ -705,11 +890,11 @@ class AccesoMutation:
 
     @strawberry.mutation
     def marcar_alerta_revisada(self, info: Info, alerta_id: int) -> AlertaAccesoType:
-        """Marca una alerta de acceso como revisada — solo admin."""
+        """Marca una alerta de acceso como revisada — Guardia y Admin."""
         from apps.usuarios.utils import tiene_rol
         admin = info.context.request.user
-        if not tiene_rol(admin, "Administrador"):
-            raise Exception("Solo administradores pueden revisar alertas")
+        if not (tiene_rol(admin, "Administrador") or tiene_rol(admin, "Guardia")):
+            raise Exception("Solo guardias y administradores pueden revisar alertas")
         alerta = AlertaAcceso.objects.select_related("vehiculo").filter(pk=alerta_id).first()
         if not alerta:
             raise Exception("Alerta no encontrada")

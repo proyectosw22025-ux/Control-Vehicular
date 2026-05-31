@@ -109,6 +109,11 @@ export default function Layout() {
   const conteo: number = conteoData?.conteoNoLeidas ?? 0
 
   const handleNueva = useCallback((n: NotifPayload) => {
+    // Alerta de seguridad → dispatch DOM event para GuardiaDashboard (en tiempo real)
+    if (n.tipoCodigo === 'alerta_acceso') {
+      window.dispatchEvent(new CustomEvent('alerta-acceso', { detail: n.datosExtra }))
+    }
+
     // Notificación especial: guía de parqueo → modal YES/NO con vehiculo_id + coords de portería
     if (n.tipoCodigo === 'orientacion_parqueo') {
       const vehId  = n.datosExtra?.vehiculo_id

@@ -6,6 +6,14 @@ export const PUNTOS_ACCESO_QUERY = gql`
   }
 `
 
+export const ALERTAS_PANEL_QUERY = gql`
+  query AlertasActivasPanel($limite: Int) {
+    alertasActivasPanel(limite: $limite) {
+      id tipoAnomalia severidad descripcion fecha revisada vehiculoPlaca
+    }
+  }
+`
+
 export const REGISTROS_ACCESO_QUERY = gql`
   query RegistrosAcceso($vehiculoId: Int, $puntoId: Int, $limite: Int) {
     registrosAcceso(vehiculoId: $vehiculoId, puntoId: $puntoId, limite: $limite) {

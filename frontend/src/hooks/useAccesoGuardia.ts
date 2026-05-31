@@ -17,11 +17,21 @@ import {
 
 export type TipoAcceso = 'entrada' | 'salida'
 
+export interface AlertaInfo {
+  id:             number
+  tipoAnomalia:   string
+  severidad:      'critica' | 'advertencia' | 'info'
+  descripcion:    string
+  fecha?:         string
+  vehiculoPlaca?: string
+}
+
 export interface ResultadoAcceso {
-  ok: boolean
+  ok:      boolean
   mensaje: string
-  placa?: string
+  placa?:  string
   metodo?: string
+  alertas: AlertaInfo[]
 }
 
 export interface EstadoConexion {
@@ -116,13 +126,13 @@ export function useAccesoGuardia() {
 
     const puntoId = puntoIdRef.current
     if (!puntoId) {
-      mostrarResultado({ ok: false, mensaje: 'Selecciona un punto de acceso primero' })
+      mostrarResultado({ ok: false, mensaje: 'Selecciona un punto de acceso primero', alertas: [] })
       enEjecucionRef.current = false
       return
     }
     if (!navigator.onLine) {
       mostrarResultado({
-        ok: false,
+        ok: false, alertas: [],
         mensaje: 'Sin conexión a internet. El acceso no pudo registrarse.',
       }, 8000)
       enEjecucionRef.current = false
@@ -142,15 +152,24 @@ export function useAccesoGuardia() {
       }
       const r = result.data?.registrarAcceso
       if (!r) throw new Error('Sin respuesta del servidor. Intenta de nuevo.')
+      const alertas: AlertaInfo[] = (r.alertasDetectadas ?? []).map((a: any) => ({
+        id:             a.id,
+        tipoAnomalia:   a.tipoAnomalia,
+        severidad:      a.severidad,
+        descripcion:    a.descripcion,
+        fecha:          a.fecha,
+        vehiculoPlaca:  a.vehiculoPlaca,
+      }))
       mostrarResultado({
-        ok: true,
+        ok:      true,
         mensaje: tipo === 'entrada' ? 'Entrada registrada' : 'Salida registrada',
         placa:   r.placaVehiculo,
         metodo:  r.metodoAcceso,
+        alertas,
       })
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al registrar acceso'
-      mostrarResultado({ ok: false, mensaje: msg }, 7000)
+      mostrarResultado({ ok: false, mensaje: msg, alertas: [] }, 7000)
     } finally {
       setProcesando(false)
       setProcesandoQr(false)
@@ -168,7 +187,7 @@ export function useAccesoGuardia() {
     const puntoId = puntoIdRef.current
     if (!puntoId || !placa.trim()) { enEjecucionRef.current = false; return }
     if (!navigator.onLine) {
-      mostrarResultado({ ok: false, mensaje: 'Sin conexión. Acceso no registrado.' }, 8000)
+      mostrarResultado({ ok: false, mensaje: 'Sin conexión. Acceso no registrado.', alertas: [] }, 8000)
       enEjecucionRef.current = false
       return
     }
@@ -187,15 +206,24 @@ export function useAccesoGuardia() {
       }
       const r = result.data?.registrarAccesoManual
       if (!r) throw new Error('Sin respuesta del servidor. Intenta de nuevo.')
+      const alertasM: AlertaInfo[] = (r.alertasDetectadas ?? []).map((a: any) => ({
+        id:             a.id,
+        tipoAnomalia:   a.tipoAnomalia,
+        severidad:      a.severidad,
+        descripcion:    a.descripcion,
+        fecha:          a.fecha,
+        vehiculoPlaca:  a.vehiculoPlaca,
+      }))
       mostrarResultado({
-        ok: true,
+        ok:      true,
         mensaje: tipo === 'entrada' ? 'Entrada manual registrada' : 'Salida manual registrada',
         placa:   r.placaVehiculo,
         metodo:  'manual',
+        alertas: alertasM,
       })
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al registrar acceso'
-      mostrarResultado({ ok: false, mensaje: msg }, 7000)
+      mostrarResultado({ ok: false, mensaje: msg, alertas: [] }, 7000)
     } finally {
       setProcesando(false)
       setConexion(c => ({ ...c, reintentando: false, intentos: 0 }))
