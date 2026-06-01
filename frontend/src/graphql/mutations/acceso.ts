@@ -28,6 +28,31 @@ export const MARCAR_ALERTA_REVISADA_MUTATION = gql`
   }
 `
 
+export const CREAR_AUTORIZACION_EXTERNA_MUTATION = gql`
+  mutation CrearAutorizacionExterna(
+    $placa: String! $empresa: String! $motivo: String!
+    $validoDesde: String! $validoHasta: String!
+    $dependenciaId: Int $emailProveedor: String $observacion: String
+  ) {
+    crearAutorizacionExterna(
+      placa: $placa empresa: $empresa motivo: $motivo
+      validoDesde: $validoDesde validoHasta: $validoHasta
+      dependenciaId: $dependenciaId emailProveedor: $emailProveedor
+      observacion: $observacion
+    ) {
+      id placa empresa motivo codigoAcceso estado vigente
+      emailEnviado urlVerificacion validoDesde validoHasta
+      dependenciaNombre
+    }
+  }
+`
+
+export const REVOCAR_AUTORIZACION_EXTERNA_MUTATION = gql`
+  mutation RevocarAutorizacionExterna($authId: Int!) {
+    revocarAutorizacionExterna(authId: $authId) { id activo estado }
+  }
+`
+
 export const REGISTRAR_ACCESO_TEMPORAL_MUTATION = gql`
   mutation RegistrarAccesoTemporal(
     $placa: String! $tipo: String! $destino: String!

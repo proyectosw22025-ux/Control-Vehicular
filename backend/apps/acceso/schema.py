@@ -200,6 +200,65 @@ class CrearPaseTemporalInput:
 # ──────────────────────────────────────────────
 
 @strawberry.type
+class AutorizacionAccesoExternoType:
+    id:               int
+    placa:            str
+    empresa:          str
+    motivo:           str
+    email_proveedor:  str
+    valido_desde:     datetime
+    valido_hasta:     datetime
+    codigo_acceso:    str
+    activo:           bool
+    usado:            bool
+    email_enviado:    bool
+    fecha_creacion:   datetime
+    observacion:      str
+
+    @strawberry.field
+    def dependencia_nombre(self) -> Optional[str]:
+        return self.dependencia.nombre if self.dependencia_id else None
+
+    @strawberry.field
+    def dependencia_ubicacion(self) -> Optional[str]:
+        return self.dependencia.ubicacion if self.dependencia_id else None
+
+    @strawberry.field
+    def autorizado_por_nombre(self) -> str:
+        if self.autorizado_por_id:
+            p = self.autorizado_por
+            return f"{p.nombre} {p.apellido}"
+        return "—"
+
+    @strawberry.field
+    def vigente(self) -> bool:
+        return (
+            self.activo and not self.usado
+            and self.valido_desde <= timezone.now() <= self.valido_hasta
+        )
+
+    @strawberry.field
+    def estado(self) -> str:
+        if not self.activo:
+            return "revocada"
+        if self.usado:
+            return "usada"
+        ahora = timezone.now()
+        if ahora < self.valido_desde:
+            return "pendiente"
+        if ahora > self.valido_hasta:
+            return "vencida"
+        return "vigente"
+
+    @strawberry.field
+    def url_verificacion(self) -> str:
+        from django.conf import settings
+        base = getattr(settings, "FRONTEND_URL",
+                       "https://control-vehicular-six.vercel.app")
+        return f"{base}/autorizacion/{self.codigo_acceso}"
+
+
+@strawberry.type
 class VehiculoTemporalType:
     id:           int
     placa:        str
@@ -363,6 +422,40 @@ def _detectar_anomalias_acceso(vehiculo, tipo_acceso: str) -> list:
     return nuevas
 
 
+def _enviar_email_autorizacion_async(auth) -> None:
+    """Envía por email el QR de acceso al proveedor en un hilo daemon."""
+    import threading
+    from django.conf import settings
+
+    def _enviar():
+        try:
+            from apps.notificaciones.utils import _enviar_email_sync
+            from apps.notificaciones.email_templates import email_autorizacion_externa
+            base = getattr(settings, "FRONTEND_URL",
+                           "https://control-vehicular-six.vercel.app")
+            url = f"{base}/autorizacion/{auth.codigo_acceso}"
+            dep_nombre = auth.dependencia.nombre if auth.dependencia else "Campus UAGRM"
+            asunto, html = email_autorizacion_externa(
+                empresa       = auth.empresa,
+                placa         = auth.placa,
+                dependencia   = dep_nombre,
+                motivo        = auth.motivo,
+                valido_desde  = auth.valido_desde.strftime("%d/%m/%Y %H:%M"),
+                valido_hasta  = auth.valido_hasta.strftime("%d/%m/%Y %H:%M"),
+                codigo        = auth.codigo_acceso,
+                url           = url,
+            )
+            _enviar_email_sync(
+                auth.email_proveedor, asunto,
+                f"Su código de acceso es: {auth.codigo_acceso}\n{url}",
+                html,
+            )
+        except Exception:
+            pass
+
+    threading.Thread(target=_enviar, daemon=True).start()
+
+
 def _sincronizar_rastreo(vehiculo, punto, tipo_acceso: str, registro, propietario):
     """
     Vincula el registro de acceso QR con el sistema de rastreo en vivo.
@@ -506,6 +599,38 @@ class AccesoQuery:
         if not tiene_rol(info.context.request.user, "Administrador"):
             raise Exception("Solo administradores pueden ver el registro de auditoría")
         return list(AuditLog.objects.select_related("usuario")[:limite])
+
+    @strawberry.field
+    def autorizaciones_externas(
+        self, info: Info, solo_activas: bool = True
+    ) -> List[AutorizacionAccesoExternoType]:
+        """Lista de autorizaciones externas — Admin y Guardia."""
+        from apps.usuarios.utils import tiene_rol
+        from apps.acceso.models import AutorizacionAccesoExterno
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not (tiene_rol(user, "Administrador") or tiene_rol(user, "Guardia")):
+            raise Exception("Solo admins y guardias")
+        qs = AutorizacionAccesoExterno.objects.select_related(
+            "dependencia", "autorizado_por"
+        )
+        if solo_activas:
+            qs = qs.filter(activo=True)
+        return list(qs.order_by("-fecha_creacion")[:100])
+
+    @strawberry.field
+    def verificar_autorizacion_externa(
+        self, info: Info, codigo: str
+    ) -> Optional[AutorizacionAccesoExternoType]:
+        """Query pública — el proveedor verifica su autorización sin login."""
+        from apps.acceso.models import AutorizacionAccesoExterno
+        return (
+            AutorizacionAccesoExterno.objects
+            .filter(codigo_acceso=codigo.strip().upper())
+            .select_related("dependencia", "autorizado_por")
+            .first()
+        )
 
     @strawberry.field
     def vehiculos_temporales_activos(
@@ -715,6 +840,13 @@ class AccesoMutation:
 
         registrado_por = info.context.request.user if info.context.request.user.is_authenticated else None
 
+        # ── Autorización externa: observación automática con datos del proveedor ──
+        obs_extra = ""
+        if resultado.autorizacion_externa:
+            auth = resultado.autorizacion_externa
+            dep  = auth.dependencia.nombre if auth.dependencia else "Campus"
+            obs_extra = f"Acceso autorizado: {auth.empresa} ({auth.placa}) → {dep}. Auth #{auth.pk}."
+
         registro = RegistroAcceso.objects.create(
             punto_acceso=punto,
             vehiculo=resultado.vehiculo,
@@ -722,17 +854,22 @@ class AccesoMutation:
             pase_temporal=resultado.pase_temporal,
             tipo=input.tipo,
             metodo_acceso=resultado.metodo_acceso,
+            observacion=obs_extra,
             registrado_por=registrado_por,
         )
 
+        placa_log = (
+            resultado.vehiculo.placa if resultado.vehiculo
+            else (resultado.autorizacion_externa.placa if resultado.autorizacion_externa else "?")
+        )
         log_audit(
             registrado_por,
             "registrar_acceso",
-            f"{input.tipo.capitalize()} de {resultado.vehiculo.placa} en {punto.nombre} vía {resultado.metodo_acceso}",
+            f"{input.tipo.capitalize()} de {placa_log} en {punto.nombre} vía {resultado.metodo_acceso}",
             request=info.context.request,
         )
 
-        propietario = getattr(resultado.vehiculo, "propietario", None)
+        propietario = getattr(resultado.vehiculo, "propietario", None) if resultado.vehiculo else None
 
         # ── Fix 2: Al registrar SALIDA, cerrar automáticamente la SesionParqueo activa ──
         # El espacio debe liberarse cuando el vehículo sale del campus, no solo
@@ -934,6 +1071,122 @@ class AccesoMutation:
             punto.ubicacion = ubicacion
         punto.save(update_fields=["latitud", "longitud"] + (["ubicacion"] if ubicacion is not None else []))
         return punto
+
+    # ── Autorizaciones de acceso externo ─────────────────────────────────────
+
+    @strawberry.mutation
+    def crear_autorizacion_externa(
+        self, info: Info,
+        placa:           str,
+        empresa:         str,
+        motivo:          str,
+        valido_desde:    str,    # ISO datetime string
+        valido_hasta:    str,    # ISO datetime string
+        dependencia_id:  Optional[int] = None,
+        email_proveedor: Optional[str] = "",
+        observacion:     Optional[str] = "",
+    ) -> AutorizacionAccesoExternoType:
+        """
+        Crea una pre-autorización de acceso para un proveedor o contratista externo.
+        Genera un código QR único y lo envía por email si se proporciona.
+        Solo Admin y Guardia pueden crear autorizaciones.
+        """
+        import uuid
+        from datetime import datetime as dt
+        from apps.usuarios.utils import tiene_rol
+        from apps.acceso.models import AutorizacionAccesoExterno
+        from django.utils.timezone import make_aware, is_aware
+
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not (tiene_rol(user, "Administrador") or tiene_rol(user, "Guardia")):
+            raise Exception("Solo administradores y guardias pueden crear autorizaciones")
+
+        placa_upper = placa.strip().upper()
+        if not placa_upper or not empresa.strip() or not motivo.strip():
+            raise Exception("Placa, empresa y motivo son obligatorios")
+
+        tz = timezone.get_current_timezone()
+
+        def _parsear(val: str):
+            parsed = dt.fromisoformat(val)
+            return parsed if is_aware(parsed) else make_aware(parsed, tz)
+
+        desde = _parsear(valido_desde)
+        hasta = _parsear(valido_hasta)
+
+        if hasta <= desde:
+            raise Exception("La fecha de fin debe ser posterior a la de inicio")
+        if hasta <= timezone.now():
+            raise Exception("La autorización no puede ser para una fecha ya pasada")
+
+        # Máximo 7 días de vigencia
+        from datetime import timedelta
+        if (hasta - desde) > timedelta(days=7):
+            raise Exception("El período máximo de una autorización es 7 días")
+
+        # Verificar que no haya una autorización activa para la misma placa en el mismo período
+        if AutorizacionAccesoExterno.objects.filter(
+            placa=placa_upper, activo=True, usado=False,
+            valido_desde__lt=hasta, valido_hasta__gt=desde,
+        ).exists():
+            raise Exception(f"Ya existe una autorización activa para {placa_upper} en ese período")
+
+        dependencia = None
+        if dependencia_id:
+            from apps.visitantes.models import DependenciaUAGRM
+            dependencia = DependenciaUAGRM.objects.filter(pk=dependencia_id, activo=True).first()
+
+        codigo = uuid.uuid4().hex[:20].upper()
+
+        auth = AutorizacionAccesoExterno.objects.create(
+            placa=placa_upper,
+            empresa=empresa.strip(),
+            motivo=motivo.strip(),
+            dependencia=dependencia,
+            email_proveedor=(email_proveedor or "").strip(),
+            autorizado_por=user,
+            valido_desde=desde,
+            valido_hasta=hasta,
+            codigo_acceso=codigo,
+            observacion=(observacion or "").strip(),
+        )
+
+        # Enviar email al proveedor si tiene correo
+        if auth.email_proveedor:
+            _enviar_email_autorizacion_async(auth)
+            auth.email_enviado = True
+            auth.save(update_fields=["email_enviado"])
+
+        log_audit(
+            user, "autorizacion_externa_creada",
+            f"Auth externa: {placa_upper} — {empresa} "
+            f"({desde.strftime('%d/%m %H:%M')} - {hasta.strftime('%d/%m %H:%M')})",
+            request=info.context.request,
+        )
+        return auth
+
+    @strawberry.mutation
+    def revocar_autorizacion_externa(
+        self, info: Info, auth_id: int
+    ) -> AutorizacionAccesoExternoType:
+        """Revoca una autorización activa — solo Admin."""
+        from apps.usuarios.utils import tiene_rol
+        from apps.acceso.models import AutorizacionAccesoExterno
+        user = info.context.request.user
+        if not tiene_rol(user, "Administrador") and not tiene_rol(user, "Guardia"):
+            raise Exception("Solo admins y guardias pueden revocar autorizaciones")
+        auth = AutorizacionAccesoExterno.objects.filter(pk=auth_id, activo=True).first()
+        if not auth:
+            raise Exception("Autorización no encontrada o ya revocada")
+        auth.activo = False
+        auth.observacion = (auth.observacion + " | Revocada manualmente").strip(" |")
+        auth.save(update_fields=["activo", "observacion"])
+        log_audit(user, "autorizacion_externa_revocada",
+                  f"Revocada auth #{auth_id} — {auth.empresa} ({auth.placa})",
+                  request=info.context.request)
+        return auth
 
     # ── Acceso temporal de proveedores y vehículos externos ──────────────────
 

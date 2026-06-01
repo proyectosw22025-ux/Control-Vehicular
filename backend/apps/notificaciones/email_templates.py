@@ -302,6 +302,61 @@ def email_multa_pagada(nombre: str, placa: str, monto: str, metodo: str) -> tupl
     return asunto, html
 
 
+def email_autorizacion_externa(
+    empresa: str,
+    placa: str,
+    dependencia: str,
+    motivo: str,
+    valido_desde: str,
+    valido_hasta: str,
+    codigo: str,
+    url: str,
+) -> tuple[str, str]:
+    """Email al proveedor externo con su código de acceso QR al campus UAGRM."""
+    asunto = f"Autorización de acceso al campus UAGRM — {empresa}"
+    info = f"""
+    <table width="100%" cellpadding="0" cellspacing="0" border="0"
+           style="margin:16px 0;border:1px solid #e2e8f0;border-radius:8px;
+                  overflow:hidden;font-size:13px;">
+      {_info_row("Empresa / Proveedor", empresa)}
+      {_info_row("Vehículo (placa)", placa)}
+      {_info_row("Destino en campus", dependencia)}
+      {_info_row("Motivo", motivo)}
+      {_info_row("Válido desde", valido_desde)}
+      {_info_row("Válido hasta", valido_hasta)}
+    </table>"""
+
+    contenido = f"""
+    <p>Estimado proveedor,</p>
+    <p>La <strong>Universidad Autónoma Gabriel René Moreno</strong> ha autorizado
+       el acceso al campus para el vehículo <strong>{placa}</strong>
+       de la empresa <strong>{empresa}</strong>.</p>
+
+    {info}
+
+    <div style="text-align:center;margin:24px 0;padding:20px;
+                background:#f8fafc;border:2px dashed #cbd5e1;border-radius:12px;">
+      <p style="margin:0 0 8px 0;color:#64748b;font-size:12px;font-weight:600;
+                 letter-spacing:1px;text-transform:uppercase;">Código de acceso</p>
+      <p style="margin:0;color:#1e293b;font-size:28px;font-weight:900;
+                 letter-spacing:6px;font-family:monospace;">{codigo}</p>
+    </div>
+
+    {_alert_box(
+        "Al llegar a la portería del campus, muestre este código al guardia o abra el enlace de verificación. "
+        "El código es de un solo uso y válido únicamente en el horario indicado.",
+        "info"
+    )}
+    """
+    html = _base_template(
+        f"Acceso autorizado — {empresa}",
+        contenido,
+        "Ver mi código QR",
+        url,
+    )
+    return asunto, html
+
+
 def email_pase_visitante(
     nombre_visitante: str,
     destino: str,

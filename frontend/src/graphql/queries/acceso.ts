@@ -6,6 +6,31 @@ export const PUNTOS_ACCESO_QUERY = gql`
   }
 `
 
+export const AUTORIZACIONES_EXTERNAS_QUERY = gql`
+  query AutorizacionesExternas($soloActivas: Boolean) {
+    autorizacionesExternas(soloActivas: $soloActivas) {
+      id placa empresa motivo emailProveedor
+      validoDesde validoHasta codigoAcceso
+      activo usado emailEnviado estado vigente
+      dependenciaNombre dependenciaUbicacion
+      autorizadoPorNombre urlVerificacion
+      fechaCreacion
+    }
+  }
+`
+
+export const VERIFICAR_AUTORIZACION_EXTERNA_QUERY = gql`
+  query VerificarAutorizacionExterna($codigo: String!) {
+    verificarAutorizacionExterna(codigo: $codigo) {
+      id placa empresa motivo
+      validoDesde validoHasta codigoAcceso
+      activo usado estado vigente
+      dependenciaNombre dependenciaUbicacion
+      autorizadoPorNombre urlVerificacion
+    }
+  }
+`
+
 export const VEHICULOS_TEMPORALES_QUERY = gql`
   query VehiculosTemporalesActivos {
     vehiculosTemporalesActivos {

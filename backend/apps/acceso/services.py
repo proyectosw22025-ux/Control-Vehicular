@@ -13,10 +13,11 @@ from django.utils import timezone
 
 @dataclass
 class ResultadoValidacion:
-    vehiculo: object
-    qr_delegacion: Optional[object]
-    pase_temporal: Optional[object]
-    metodo_acceso: str
+    vehiculo:              object
+    qr_delegacion:         Optional[object]
+    pase_temporal:         Optional[object]
+    metodo_acceso:         str
+    autorizacion_externa:  Optional[object] = None  # AutorizacionAccesoExterno
 
 
 def validar_estado_vehiculo(vehiculo) -> None:
@@ -120,6 +121,41 @@ def resolver_codigo(codigo: str) -> ResultadoValidacion:
             qr_delegacion=None,
             pase_temporal=pase,
             metodo_acceso="pase_temporal",
+        )
+
+    # ── Nivel 4: Autorización de acceso externo (proveedor/contratista) ─────
+    # Código de 24 chars hexadecimal generado al crear la autorización.
+    # Optimistic locking: UPDATE WHERE usado=False garantiza un solo uso atómico.
+    from apps.acceso.models import AutorizacionAccesoExterno
+
+    auth = (
+        AutorizacionAccesoExterno.objects
+        .filter(codigo_acceso=codigo_limpio, activo=True, usado=False)
+        .select_related("dependencia", "autorizado_por")
+        .first()
+    )
+    if auth:
+        ahora = timezone.now()
+        if ahora < auth.valido_desde:
+            raise Exception(
+                f"Autorización aún no válida. Disponible desde {auth.valido_desde.strftime('%d/%m %H:%M')}."
+            )
+        if ahora > auth.valido_hasta:
+            raise Exception(
+                f"Autorización vencida. Era válida hasta {auth.valido_hasta.strftime('%d/%m %H:%M')}."
+            )
+        actualizado = AutorizacionAccesoExterno.objects.filter(
+            pk=auth.pk, usado=False
+        ).update(usado=True)
+        if actualizado == 0:
+            raise Exception("Esta autorización ya fue utilizada por otro guardia.")
+        auth.usado = True
+        return ResultadoValidacion(
+            vehiculo=None,
+            qr_delegacion=None,
+            pase_temporal=None,
+            metodo_acceso="temporal",
+            autorizacion_externa=auth,
         )
 
     raise Exception("Código no reconocido. Verifique el QR o el código del pase temporal.")

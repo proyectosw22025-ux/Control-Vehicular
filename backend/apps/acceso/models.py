@@ -160,6 +160,51 @@ class VehiculoTemporal(models.Model):
         return self.activo and timezone.now() > self.hora_limite
 
 
+class AutorizacionAccesoExterno(models.Model):
+    """
+    Pre-autorización emitida por un administrativo/secretaria para que un
+    proveedor o contratista externo ingrese al campus en una ventana horaria.
+    El proveedor recibe un QR por email; el guardia lo escanea como cualquier otro QR.
+    """
+    placa           = models.CharField(max_length=15)
+    empresa         = models.CharField(max_length=150)
+    motivo          = models.CharField(max_length=250)
+    dependencia     = models.ForeignKey(
+        "visitantes.DependenciaUAGRM",
+        on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="autorizaciones_externas",
+    )
+    email_proveedor = models.CharField(max_length=254, blank=True)
+    autorizado_por  = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="autorizaciones_externas_emitidas",
+    )
+    valido_desde    = models.DateTimeField()
+    valido_hasta    = models.DateTimeField()
+    codigo_acceso   = models.CharField(max_length=24, unique=True)
+    activo          = models.BooleanField(default=True)
+    usado           = models.BooleanField(default=False)
+    email_enviado   = models.BooleanField(default=False)
+    fecha_creacion  = models.DateTimeField(auto_now_add=True)
+    observacion     = models.TextField(blank=True)
+
+    class Meta:
+        db_table     = "autorizaciones_acceso_externo"
+        verbose_name = "Autorización de acceso externo"
+        ordering     = ["-fecha_creacion"]
+
+    def __str__(self):
+        return f"Auth {self.codigo_acceso} — {self.empresa} ({self.placa})"
+
+    @property
+    def vigente(self) -> bool:
+        from django.utils import timezone
+        return (
+            self.activo and not self.usado
+            and self.valido_desde <= timezone.now() <= self.valido_hasta
+        )
+
+
 class RegistroAcceso(models.Model):
     TIPOS = [
         ("entrada", "Entrada"),

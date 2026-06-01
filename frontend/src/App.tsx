@@ -7,6 +7,8 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import PaseVisitante from './pages/PaseVisitante'
 import Disponibilidad from './pages/Disponibilidad'
+import AutorizacionesExternas from './pages/AutorizacionesExternas'
+import VerAutorizacion from './pages/VerAutorizacion'
 import Dashboard from './pages/Dashboard'
 import Usuarios from './pages/Usuarios'
 import Vehiculos from './pages/Vehiculos'
@@ -34,6 +36,7 @@ export default function App() {
           <Route path="/register" element={<Register />} />
           <Route path="/visita/:codigo" element={<PaseVisitante />} />
           <Route path="/disponibilidad" element={<Disponibilidad />} />
+          <Route path="/autorizacion/:codigo" element={<VerAutorizacion />} />
           <Route
             path="/"
             element={
@@ -47,6 +50,7 @@ export default function App() {
             <Route path="vehiculos" element={<Vehiculos />} />
             <Route path="parqueos" element={<Parqueos />} />
             <Route path="acceso" element={<PrivateRoute roles={['Administrador', 'Guardia']}><Acceso /></PrivateRoute>} />
+            <Route path="autorizaciones-externas" element={<PrivateRoute roles={['Administrador', 'Guardia']}><AutorizacionesExternas /></PrivateRoute>} />
             <Route path="visitantes" element={<PrivateRoute roles={['Administrador', 'Guardia']}><Visitantes /></PrivateRoute>} />
             <Route path="multas" element={<Multas />} />
             <Route path="notificaciones" element={<Notificaciones />} />
