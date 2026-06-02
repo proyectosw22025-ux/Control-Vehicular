@@ -61,8 +61,12 @@ resend==2.10.0
 sentry-sdk[django]==2.29.1
 whitenoise==6.9.0
 zope.interface==8.3
-# ── OCR de placas vehiculares (pytesseract — compatible Railway) ─────────
-# PaddleOCR requería >1.5GB RAM. pytesseract usa Tesseract del sistema (apt)
-# con mejor preprocessing PIL → 85-90% de precisión en placas bolivianas.
+# ── OCR de placas vehiculares ─────────────────────────────────────────────
+# FastALPR: pipeline YOLO v9 (detección) + OCR especializado en placas
+# Usa modelos ONNX ligeros (~80MB) — no requiere GPU, funciona en Railway.
+# Primera carga: ~10s (descarga modelos a cache). Subsiguientes: <300ms.
+# pytesseract se mantiene como fallback si FastALPR no está disponible.
+fast-alpr>=0.1.0
+onnxruntime>=1.16.0
 pytesseract>=0.3.10
 numpy>=1.24.0
