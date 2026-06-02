@@ -89,11 +89,34 @@ export function PlacaScanner({ activo, onPlacaDetectada }: Props) {
     onError()      { setBuscandoBD(false) },
   })
 
+  // Ref para saber el último término buscado y si ya hicimos fallback
+  const ultimaBusquedaRef = useRef<{ texto: string; hizoPrefijo: boolean }>({ texto: '', hizoPrefijo: false })
+
   const buscarEnBD = useCallback((texto: string) => {
     if (!texto || texto.length < 2) return
+    ultimaBusquedaRef.current = { texto, hizoPrefijo: false }
     setBuscandoBD(true)
     buscarVehiculos({ variables: { buscar: texto, estado: 'activo', porPagina: 8 } })
   }, [buscarVehiculos])
+
+  /**
+   * Búsqueda en cascada: cuando el primer intento no encuentra nada,
+   * intenta con solo el prefijo departamental (ej: "SCZ-1234" → "SCZ").
+   * Esto cubre placas especiales como motos con solo el código departamental.
+   */
+  useEffect(() => {
+    if (buscandoBD || vehiculosBD.length > 0) return
+    const { texto, hizoPrefijo } = ultimaBusquedaRef.current
+    if (!texto || hizoPrefijo) return
+
+    const prefijo = DEPTOS_BO.find(d => texto.toUpperCase().replace(/[-\s]/g, '').startsWith(d))
+    if (!prefijo || prefijo === texto.replace(/[-\s]/g, '').toUpperCase()) return
+
+    // Primer intento no encontró nada Y hay un prefijo diferente → buscar por prefijo
+    ultimaBusquedaRef.current = { texto: prefijo, hizoPrefijo: true }
+    setBuscandoBD(true)
+    buscarVehiculos({ variables: { buscar: prefijo, estado: 'activo', porPagina: 8 } })
+  }, [buscandoBD, vehiculosBD, buscarVehiculos])
 
   const detener = useCallback(() => {
     if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null }
