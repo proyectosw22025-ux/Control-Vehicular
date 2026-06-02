@@ -51,10 +51,11 @@ def _generar_qr_base64(texto: str) -> str:
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
-def _enviar_imagen_base64(chat_id: str, qr_base64: str, caption: str) -> bool:
+def _enviar_imagen_por_url(chat_id: str, url_imagen: str, caption: str) -> bool:
     """
-    Envía imagen QR via Green API.
-    Intenta primero sendFileByBase64 (sin prefijo data:), luego con prefijo.
+    Envía imagen via Green API usando sendFileByUrl.
+    Este método está disponible en el plan DEVELOPER (gratuito).
+    sendFileByBase64 requiere plan de pago — por eso este es el correcto.
     """
     from django.conf import settings
     instance_id = getattr(settings, "GREEN_API_INSTANCE_ID", "")
@@ -62,70 +63,61 @@ def _enviar_imagen_base64(chat_id: str, qr_base64: str, caption: str) -> bool:
     if not instance_id or not token:
         return False
 
-    base_url = f"https://7107.api.greenapi.com/waInstance{instance_id}"
+    url     = f"https://7107.api.greenapi.com/waInstance{instance_id}/sendFileByUrl/{token}"
+    payload = json.dumps({
+        "chatId":   chat_id,
+        "urlFile":  url_imagen,
+        "fileName": "qr_acceso.png",
+        "caption":  caption,
+    }).encode("utf-8")
 
-    # Intento 1: base64 puro SIN prefijo data URI (formato recomendado por Green API)
-    url = f"{base_url}/sendFileByBase64/{token}"
-    for b64_value in [qr_base64, f"data:image/png;base64,{qr_base64}"]:
-        payload = json.dumps({
-            "chatId":     chat_id,
-            "base64File": b64_value,
-            "fileName":   "qr_acceso.png",
-            "caption":    caption,
-        }).encode("utf-8")
-        try:
-            req = urllib.request.Request(
-                url, data=payload,
-                headers={"Content-Type": "application/json"}, method="POST"
-            )
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                result = json.loads(resp.read())
-                id_msg = result.get("idMessage", "")
-                if id_msg:
-                    logger.info("[WhatsApp IMG] QR enviado a %s — id: %s", chat_id, id_msg)
-                    return True
-                logger.warning("[WhatsApp IMG] Respuesta sin idMessage: %s", result)
-        except Exception as exc:
-            logger.warning("[WhatsApp IMG] Intento fallido (%s...): %s", b64_value[:20], exc)
-            continue
-
+    try:
+        req = urllib.request.Request(
+            url, data=payload,
+            headers={"Content-Type": "application/json"}, method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            result = json.loads(resp.read())
+            id_msg = result.get("idMessage", "")
+            if id_msg:
+                logger.info("[WhatsApp IMG] QR enviado a %s — id: %s", chat_id, id_msg)
+                return True
+            logger.warning("[WhatsApp IMG] Sin idMessage: %s", result)
+    except Exception as exc:
+        logger.error("[WhatsApp IMG] Error sendFileByUrl a %s: %s", chat_id, exc)
     return False
 
 
 def enviar_whatsapp_qr(telefono: str, texto_qr: str, caption: str) -> bool:
     """
-    Genera un código QR del texto_qr y lo envía como imagen a WhatsApp.
-    El destinatario puede mostrarlo al guardia directamente desde WhatsApp.
-    Se ejecuta en hilo daemon — no bloquea la request.
+    Genera un QR y lo envía como imagen a WhatsApp usando sendFileByUrl.
+    Usa api.qrserver.com para generar la imagen desde una URL pública —
+    este approach funciona en el plan DEVELOPER de Green API (gratuito).
     """
-    # Limpiar el número por si tiene espacios o formato internacional
+    import urllib.parse
     tel_limpio = telefono.strip().replace(" ", "")
     chat_id = _normalizar_telefono_bolivia(tel_limpio)
     if not chat_id:
-        logger.warning("[WhatsApp QR] Número inválido para QR: %r", telefono)
+        logger.warning("[WhatsApp QR] Número inválido: %r", telefono)
         return False
 
-    logger.info("[WhatsApp QR] Enviando QR de %s a %s", texto_qr[:12], chat_id)
+    logger.info("[WhatsApp QR] Enviando QR '%s...' a %s", texto_qr[:12], chat_id)
 
     def _enviar():
-        try:
-            qr_b64 = _generar_qr_base64(texto_qr)
-            ok = _enviar_imagen_base64(chat_id, qr_b64, caption)
-            if not ok:
-                # Fallback: enviar el texto del código si la imagen falla
-                _enviar_green_api(chat_id,
-                    f"🎓 *Pase de acceso UAGRM*\n\n"
-                    f"Código: *{texto_qr}*\n\n"
-                    f"{caption}\n\n"
-                    f"(No se pudo enviar la imagen del QR)"
-                )
-        except Exception as exc:
-            logger.error("[WhatsApp QR] Error: %s", exc)
-            # Fallback a texto plano
-            try:
-                _enviar_green_api(chat_id, f"Código de acceso: {texto_qr}\n{caption}")
-            except Exception:
-                pass
+        # Generar QR usando api.qrserver.com — URL pública que Green API puede descargar
+        texto_encoded = urllib.parse.quote(texto_qr)
+        url_qr = f"https://api.qrserver.com/v1/create-qr-code/?data={texto_encoded}&size=350x350&margin=4&ecc=H"
+
+        ok = _enviar_imagen_por_url(chat_id, url_qr, caption)
+        if not ok:
+            logger.warning("[WhatsApp QR] Imagen falló, enviando código como texto")
+            _enviar_green_api(
+                chat_id,
+                f"🎓 *Pase de acceso UAGRM*\n\n"
+                f"Código: *{texto_qr}*\n\n"
+                f"{caption}\n\n"
+                f"_(Abre la URL de verificación para ver el QR visual)_"
+            )
 
     threading.Thread(target=_enviar, daemon=True).start()
     return True
