@@ -12,8 +12,10 @@
  * Compatibilidad: interfaz idéntica al scanner anterior.
  */
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { CameraOff, Check, RefreshCw, Loader2, Zap, Keyboard } from 'lucide-react'
+import { CameraOff, Check, RefreshCw, Loader2, Zap, Search } from 'lucide-react'
+import { useLazyQuery } from '@apollo/client'
 import { useOcrPlaca, type ResultadoOcr } from '../hooks/useOcrPlaca'
+import { VEHICULOS_QUERY } from '../graphql/queries/vehiculos'
 
 const PLACA_RE     = /^[A-Z]{2,4}[-\s]?\d{3,4}[A-Z]?$/i
 const FRAMES_BATCH = 3     // frames por lote enviado al backend
@@ -42,14 +44,37 @@ export function PlacaScanner({ activo, onPlacaDetectada }: Props) {
   const framesRef    = useRef<string[]>([])
   const procesandoRef = useRef(false)
 
-  const [estado,      setEstado]     = useState<Estado>('idle')
-  const [errorMsg,    setErrorMsg]   = useState('')
-  const [resultado,   setResultado]  = useState<ResultadoOcr | null>(null)
-  const [frameCount,  setFrameCount] = useState(0)
-  const [codigoParcial, setCodigo]   = useState('')   // ej: "SCZ" sin número
-  const [numManual,   setNumManual]  = useState('')   // el guardia completa el número
+  const [estado,        setEstado]     = useState<Estado>('idle')
+  const [errorMsg,      setErrorMsg]   = useState('')
+  const [resultado,     setResultado]  = useState<ResultadoOcr | null>(null)
+  const [frameCount,    setFrameCount] = useState(0)
+  const [codigoParcial, setCodigo]     = useState('')
+  const [numManual,     setNumManual]  = useState('')
+  const [vehiculosBD,   setVehsBD]     = useState<any[]>([])
+  const [buscandoBD,    setBuscandoBD] = useState(false)
 
   const { reconocerMultiframe } = useOcrPlaca()
+
+  // Query perezosa para buscar vehículos por placa en la BD
+  const [buscarVehiculos] = useLazyQuery(VEHICULOS_QUERY, {
+    fetchPolicy: 'network-only',
+    onCompleted(data) {
+      setBuscandoBD(false)
+      setVehsBD(data?.vehiculos?.items ?? [])
+    },
+    onError() { setBuscandoBD(false) },
+  })
+
+  /**
+   * Consulta la BD con el texto OCR detectado.
+   * Si encuentra 1 vehículo → auto-confirma.
+   * Si encuentra 2-10 → muestra lista para que el guardia elija.
+   */
+  const buscarEnBD = useCallback((texto: string) => {
+    if (!texto || texto.length < 2) return
+    setBuscandoBD(true)
+    buscarVehiculos({ variables: { buscar: texto, estado: 'activo', porPagina: 10 } })
+  }, [buscarVehiculos])
 
   const detener = useCallback(() => {
     if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null }
@@ -132,34 +157,31 @@ export function PlacaScanner({ activo, onPlacaDetectada }: Props) {
         const res = await reconocerMultiframe(frames)
 
         if (res && res.placa && PLACA_RE.test(res.placa)) {
+          // ── Placa completa detectada ──────────────────────────────────────
           setResultado(res)
 
           if (res.nivel === 'alto') {
-            setEstado('detectado')
-            onPlacaDetectada(res.placa)
-            setTimeout(() => detener(), 800)
-          } else if (res.nivel === 'medio') {
-            setEstado('revisar')
+            // Alta confianza → buscar en BD antes de auto-confirmar
+            // Si la placa no existe en el sistema → el guardia necesita saberlo
+            buscarEnBD(res.placa)
+            setEstado('revisar')  // esperará el resultado de BD
           } else {
-            // Baja confianza → reintentar
-            procesandoRef.current = false
-            framesRef.current = []
-            setEstado('capturando')
-            setFrameCount(0)
-            iniciarCaptura()
+            setEstado('revisar')
+            buscarEnBD(res.placa)
           }
+
         } else if (res?.placa) {
-          // FastALPR detectó texto pero no coincide con formato completo
-          // Verificar si es solo el código departamental (ej: "SCZ")
+          // ── Placa parcial (ej: solo "SCZ") ────────────────────────────────
           const textoRaw = res.placa.replace(/[-\s]/g, '').toUpperCase()
-          const esDepto  = DEPTOS_BO.some(d => textoRaw === d || textoRaw.startsWith(d) && textoRaw.length <= d.length + 1)
           const match    = DEPTOS_BO.find(d => textoRaw.startsWith(d))
 
-          if (esDepto && match) {
-            // Detección parcial: tiene el código pero falta el número
+          if (match) {
             setCodigo(match)
             setNumManual('')
+            setVehsBD([])
             setEstado('parcial')
+            // Buscar todos los vehículos con ese código en la BD
+            buscarEnBD(match)
           } else {
             procesandoRef.current = false
             framesRef.current = []
@@ -281,66 +303,124 @@ export function PlacaScanner({ activo, onPlacaDetectada }: Props) {
         </div>
       )}
 
-      {/* Modo parcial: detectó solo el código departamental, guardia completa número */}
+      {/* Modo parcial + búsqueda en BD */}
       {estado === 'parcial' && (
         <div className="w-full space-y-3">
           <div className="bg-blue-50 border-2 border-blue-300 rounded-xl px-4 py-3">
-            <p className="text-blue-700 text-xs font-bold mb-1">
-              🔵 Detecté el departamento: <span className="font-mono text-lg">{codigoParcial}</span>
+            <p className="text-blue-700 text-xs font-bold mb-0.5 flex items-center gap-1.5">
+              <Search size={12} /> Detecté: <span className="font-mono text-base">{codigoParcial}</span>
+              {buscandoBD && <Loader2 size={11} className="animate-spin ml-1" />}
             </p>
             <p className="text-blue-600 text-xs">
-              La cámara no capturó el número. Complétalo manualmente:
+              {vehiculosBD.length > 0
+                ? `${vehiculosBD.length} vehículo${vehiculosBD.length > 1 ? 's' : ''} registrado${vehiculosBD.length > 1 ? 's' : ''} con esa placa:`
+                : 'Buscando en la base de datos...'}
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center bg-slate-100 rounded-xl px-3 py-2 flex-1">
-              <span className="font-mono font-black text-slate-700 text-lg mr-1">{codigoParcial}-</span>
-              <input
-                autoFocus
-                type="text"
-                inputMode="numeric"
-                maxLength={4}
-                placeholder="1234"
-                value={numManual}
-                onChange={e => setNumManual(e.target.value.replace(/[^0-9]/g, ''))}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && numManual.length >= 3) {
-                    onPlacaDetectada(`${codigoParcial}-${numManual}`)
-                    detener()
-                  }
-                }}
-                className="font-mono font-black text-slate-800 text-lg bg-transparent outline-none w-16 placeholder:text-slate-300"
-              />
+
+          {/* Vehículos encontrados → guardia toca el correcto */}
+          {vehiculosBD.length > 0 && (
+            <div className="space-y-2 max-h-52 overflow-y-auto">
+              {vehiculosBD.map((v: any) => (
+                <button key={v.id}
+                  onClick={() => { onPlacaDetectada(v.placa); detener() }}
+                  className="w-full text-left flex items-center gap-3 bg-white border-2 border-slate-200 hover:border-blue-400 rounded-xl px-3 py-2.5 transition-all group">
+                  <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-lg shrink-0 group-hover:bg-blue-50">
+                    {v.tipo?.nombre === 'Motocicleta' ? '🏍️' : v.tipo?.nombre === 'Camioneta' ? '🚙' : '🚗'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-mono font-black text-slate-800">{v.placa}</p>
+                    <p className="text-xs text-slate-500 truncate">
+                      {v.propietario?.nombreCompleto ?? '—'} · {v.marca} {v.modelo}
+                    </p>
+                  </div>
+                  <Check size={16} className="text-blue-500 shrink-0 opacity-0 group-hover:opacity-100" />
+                </button>
+              ))}
             </div>
-            <button
-              disabled={numManual.length < 3}
-              onClick={() => { onPlacaDetectada(`${codigoParcial}-${numManual}`); detener() }}
-              className="flex items-center gap-1.5 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm disabled:opacity-40 transition-colors shrink-0">
-              <Check size={14} /> OK
-            </button>
-          </div>
+          )}
+
+          {/* Si no hay en BD → completar manualmente */}
+          {!buscandoBD && vehiculosBD.length === 0 && (
+            <div className="space-y-2">
+              <p className="text-xs text-slate-500 text-center">No encontrado en BD. Completa el número:</p>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center bg-slate-100 rounded-xl px-3 py-2 flex-1">
+                  <span className="font-mono font-black text-slate-700 text-lg mr-1">{codigoParcial}-</span>
+                  <input autoFocus type="text" inputMode="numeric" maxLength={4} placeholder="1234"
+                    value={numManual}
+                    onChange={e => { setNumManual(e.target.value.replace(/[^0-9]/g, '')); if (e.target.value.length >= 3) buscarEnBD(`${codigoParcial}-${e.target.value}`) }}
+                    onKeyDown={e => { if (e.key === 'Enter' && numManual.length >= 3) { onPlacaDetectada(`${codigoParcial}-${numManual}`); detener() }}}
+                    className="font-mono font-black text-slate-800 text-lg bg-transparent outline-none w-16 placeholder:text-slate-300" />
+                </div>
+                <button disabled={numManual.length < 3}
+                  onClick={() => { onPlacaDetectada(`${codigoParcial}-${numManual}`); detener() }}
+                  className="flex items-center gap-1.5 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm disabled:opacity-40 shrink-0">
+                  <Check size={14} /> OK
+                </button>
+              </div>
+            </div>
+          )}
+
           <button onClick={reintentar}
-            className="w-full flex items-center justify-center gap-2 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 transition-colors">
-            <RefreshCw size={13} /> Reintentar escaneo
+            className="w-full flex items-center justify-center gap-2 py-2 border border-slate-200 text-slate-500 rounded-xl text-xs hover:bg-slate-50 transition-colors">
+            <RefreshCw size={12} /> Reintentar escaneo
           </button>
         </div>
       )}
 
-      {/* Badge de confianza y botones para nivel medio */}
+      {/* Placa detectada + búsqueda en BD */}
       {estado === 'revisar' && resultado && (
         <div className="w-full space-y-2">
           <div className={`flex items-center justify-between px-4 py-2 rounded-xl border ${nivelCfg?.borde} ${nivelCfg?.badge}`}>
-            <span className="font-semibold text-sm">{nivelCfg?.label}</span>
-            <span className="text-xs opacity-70">{Math.round(resultado.confianza * 100)}% · {resultado.ms}ms</span>
+            <span className="font-mono font-black text-base">{resultado.placa}</span>
+            <span className="text-xs opacity-70">{Math.round(resultado.confianza * 100)}% · {resultado.metodo}</span>
           </div>
-          <div className="flex gap-2">
+
+          {/* Vehículos encontrados en BD */}
+          {buscandoBD && (
+            <div className="flex items-center gap-2 text-xs text-slate-500 px-2">
+              <Loader2 size={12} className="animate-spin" />
+              Buscando en base de datos...
+            </div>
+          )}
+
+          {!buscandoBD && vehiculosBD.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-semibold text-slate-500 px-1">
+                {vehiculosBD.length === 1 ? '✅ Vehículo encontrado:' : `${vehiculosBD.length} coincidencias — elige el correcto:`}
+              </p>
+              {vehiculosBD.map((v: any) => (
+                <button key={v.id}
+                  onClick={() => { onPlacaDetectada(v.placa); detener() }}
+                  className="w-full text-left flex items-center gap-3 bg-emerald-50 border-2 border-emerald-300 hover:border-emerald-500 rounded-xl px-3 py-2.5 transition-all group">
+                  <span className="text-xl shrink-0">
+                    {v.tipo?.nombre === 'Motocicleta' ? '🏍️' : v.tipo?.nombre === 'Camioneta' ? '🚙' : '🚗'}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-mono font-black text-slate-800">{v.placa}</p>
+                    <p className="text-xs text-slate-500 truncate">
+                      {v.propietario?.nombreCompleto ?? '—'} · {v.marca} {v.modelo}
+                    </p>
+                  </div>
+                  <Check size={16} className="text-emerald-600 shrink-0" />
+                </button>
+              ))}
+            </div>
+          )}
+
+          {!buscandoBD && vehiculosBD.length === 0 && (
+            <p className="text-xs text-amber-600 px-1">⚠ Placa no encontrada en el sistema — puede ser un vehículo externo</p>
+          )}
+
+          <div className="flex gap-2 pt-1">
             <button onClick={reintentar}
-              className="flex-1 flex items-center justify-center gap-2 py-3 border border-slate-300 rounded-xl text-slate-700 hover:bg-slate-50 text-sm font-medium transition-colors">
-              <RefreshCw size={14} /> Reintentar
+              className="flex items-center justify-center gap-1.5 py-2.5 px-3 border border-slate-300 rounded-xl text-slate-600 hover:bg-slate-50 text-xs font-medium transition-colors">
+              <RefreshCw size={12} /> Reintentar
             </button>
             <button onClick={confirmar}
-              className="flex-1 flex items-center justify-center gap-2 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold text-sm transition-colors shadow">
-              <Check size={14} /> Es correcta: {resultado.placa}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 border border-amber-300 text-amber-700 rounded-xl text-xs font-semibold hover:bg-amber-50 transition-colors">
+              Usar placa: {resultado.placa}
             </button>
           </div>
         </div>
