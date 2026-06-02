@@ -12,7 +12,7 @@
  * Compatibilidad: interfaz idéntica al scanner anterior.
  */
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Camera, CameraOff, Check, RefreshCw, Loader2, FileText, Zap } from 'lucide-react'
+import { CameraOff, Check, RefreshCw, Loader2, Zap, Keyboard } from 'lucide-react'
 import { useOcrPlaca, type ResultadoOcr } from '../hooks/useOcrPlaca'
 
 const PLACA_RE     = /^[A-Z]{2,4}[-\s]?\d{3,4}[A-Z]?$/i
@@ -24,7 +24,9 @@ interface Props {
   onPlacaDetectada: (placa: string) => void
 }
 
-type Estado = 'idle' | 'iniciando' | 'capturando' | 'procesando' | 'revisar' | 'detectado' | 'error'
+type Estado = 'idle' | 'iniciando' | 'capturando' | 'procesando' | 'revisar' | 'parcial' | 'detectado' | 'error'
+
+const DEPTOS_BO = ['SCZ', 'CBB', 'LPZ', 'ORU', 'TJA', 'PTS', 'BEN', 'PAN', 'CHU']
 
 const NIVEL_CFG = {
   alto:  { label: '✅ Alta confianza',    badge: 'bg-emerald-100 text-emerald-700', borde: 'border-emerald-400' },
@@ -40,10 +42,12 @@ export function PlacaScanner({ activo, onPlacaDetectada }: Props) {
   const framesRef    = useRef<string[]>([])
   const procesandoRef = useRef(false)
 
-  const [estado,     setEstado]    = useState<Estado>('idle')
-  const [errorMsg,   setErrorMsg]  = useState('')
-  const [resultado,  setResultado] = useState<ResultadoOcr | null>(null)
-  const [frameCount, setFrameCount]= useState(0)  // frames acumulados (UI dots)
+  const [estado,      setEstado]     = useState<Estado>('idle')
+  const [errorMsg,    setErrorMsg]   = useState('')
+  const [resultado,   setResultado]  = useState<ResultadoOcr | null>(null)
+  const [frameCount,  setFrameCount] = useState(0)
+  const [codigoParcial, setCodigo]   = useState('')   // ej: "SCZ" sin número
+  const [numManual,   setNumManual]  = useState('')   // el guardia completa el número
 
   const { reconocerMultiframe } = useOcrPlaca()
 
@@ -89,29 +93,16 @@ export function PlacaScanner({ activo, onPlacaDetectada }: Props) {
     const canvas = canvasRef.current
     if (!video || !canvas || video.readyState < 2) return null
 
+    // Enviar el FRAME COMPLETO — FastALPR tiene su propio YOLO para localizar la placa.
+    // Pre-recortar manualmente puede cortar el número inferior de placas bolivianas.
     const vw = video.videoWidth, vh = video.videoHeight
-    const pw = Math.round(vw * 0.80)
-    const ph = Math.round(pw / 3.5)
-    const px = Math.round((vw - pw) / 2)
-    const py = Math.round((vh - ph) / 2)
-
-    canvas.width  = pw
-    canvas.height = ph
+    canvas.width  = vw
+    canvas.height = vh
     const ctx = canvas.getContext('2d')
     if (!ctx) return null
-    ctx.drawImage(video, px, py, pw, ph, 0, 0, pw, ph)
+    ctx.drawImage(video, 0, 0, vw, vh)
 
-    // Preprocessing: escala de grises + contraste
-    const img = ctx.getImageData(0, 0, pw, ph)
-    const d   = img.data
-    for (let i = 0; i < d.length; i += 4) {
-      const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]
-      const c    = Math.min(255, Math.max(0, (gray - 128) * 2.0 + 128))
-      d[i] = d[i + 1] = d[i + 2] = c
-    }
-    ctx.putImageData(img, 0, 0)
-
-    return canvas.toDataURL('image/jpeg', 0.90).split(',')[1]
+    return canvas.toDataURL('image/jpeg', 0.95).split(',')[1]
   }
 
   function iniciarCaptura() {
@@ -144,15 +135,32 @@ export function PlacaScanner({ activo, onPlacaDetectada }: Props) {
           setResultado(res)
 
           if (res.nivel === 'alto') {
-            // Alta confianza → auto-confirmar con flash verde
             setEstado('detectado')
             onPlacaDetectada(res.placa)
             setTimeout(() => detener(), 800)
           } else if (res.nivel === 'medio') {
-            // Confianza media → guardia confirma
             setEstado('revisar')
           } else {
-            // Baja confianza → reintentar automáticamente
+            // Baja confianza → reintentar
+            procesandoRef.current = false
+            framesRef.current = []
+            setEstado('capturando')
+            setFrameCount(0)
+            iniciarCaptura()
+          }
+        } else if (res?.placa) {
+          // FastALPR detectó texto pero no coincide con formato completo
+          // Verificar si es solo el código departamental (ej: "SCZ")
+          const textoRaw = res.placa.replace(/[-\s]/g, '').toUpperCase()
+          const esDepto  = DEPTOS_BO.some(d => textoRaw === d || textoRaw.startsWith(d) && textoRaw.length <= d.length + 1)
+          const match    = DEPTOS_BO.find(d => textoRaw.startsWith(d))
+
+          if (esDepto && match) {
+            // Detección parcial: tiene el código pero falta el número
+            setCodigo(match)
+            setNumManual('')
+            setEstado('parcial')
+          } else {
             procesandoRef.current = false
             framesRef.current = []
             setEstado('capturando')
@@ -160,7 +168,6 @@ export function PlacaScanner({ activo, onPlacaDetectada }: Props) {
             iniciarCaptura()
           }
         } else {
-          // Sin resultado → seguir capturando
           procesandoRef.current = false
           framesRef.current = []
           setEstado('capturando')
@@ -196,28 +203,26 @@ export function PlacaScanner({ activo, onPlacaDetectada }: Props) {
         <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
         <canvas ref={canvasRef} className="hidden" />
 
-        {/* Overlay + guía de encuadre */}
+        {/* Overlay — guía visual informativa (no recorta, FastALPR busca en frame completo) */}
         {(estado === 'capturando' || estado === 'procesando') && (
           <div className="absolute inset-0 pointer-events-none">
-            <div className="absolute inset-0 bg-black/40" />
-            <div className="absolute border-4 border-orange-400 rounded-xl"
-              style={{
-                left: '10%', right: '10%',
-                top: '50%', transform: 'translateY(-50%)',
-                aspectRatio: '3.5/1',
-                boxShadow: '0 0 0 9999px rgba(0,0,0,0.4)',
-              }}>
+            {/* Recuadro guía sutil — solo referencia visual */}
+            <div className="absolute border-2 border-dashed border-orange-400/70 rounded-xl"
+              style={{ left: '5%', right: '5%', top: '20%', bottom: '20%' }}>
               {estado === 'procesando' && (
-                <div className="absolute inset-0 flex items-center justify-center bg-blue-500/20 rounded-lg">
-                  <Loader2 size={28} className="text-blue-300 animate-spin" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="flex items-center gap-2 bg-black/60 rounded-xl px-4 py-2">
+                    <Loader2 size={18} className="text-blue-300 animate-spin" />
+                    <span className="text-white text-xs font-semibold">FastALPR buscando placa...</span>
+                  </div>
                 </div>
               )}
             </div>
             <p className="absolute bottom-3 left-0 right-0 text-center text-white text-xs font-medium"
               style={{ textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>
               {estado === 'procesando'
-                ? '⚡ FastALPR procesando...'
-                : 'Centra la placa en el recuadro'}
+                ? '⚡ FastALPR procesando frame completo...'
+                : '📍 Encuadra la placa completa — incluye el número inferior'}
             </p>
           </div>
         )}
@@ -273,6 +278,51 @@ export function PlacaScanner({ activo, onPlacaDetectada }: Props) {
           <span className="text-xs text-slate-500 ml-1">
             {frameCount === 0 ? 'Capturando frames...' : `${frameCount}/${FRAMES_BATCH} frames`}
           </span>
+        </div>
+      )}
+
+      {/* Modo parcial: detectó solo el código departamental, guardia completa número */}
+      {estado === 'parcial' && (
+        <div className="w-full space-y-3">
+          <div className="bg-blue-50 border-2 border-blue-300 rounded-xl px-4 py-3">
+            <p className="text-blue-700 text-xs font-bold mb-1">
+              🔵 Detecté el departamento: <span className="font-mono text-lg">{codigoParcial}</span>
+            </p>
+            <p className="text-blue-600 text-xs">
+              La cámara no capturó el número. Complétalo manualmente:
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center bg-slate-100 rounded-xl px-3 py-2 flex-1">
+              <span className="font-mono font-black text-slate-700 text-lg mr-1">{codigoParcial}-</span>
+              <input
+                autoFocus
+                type="text"
+                inputMode="numeric"
+                maxLength={4}
+                placeholder="1234"
+                value={numManual}
+                onChange={e => setNumManual(e.target.value.replace(/[^0-9]/g, ''))}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && numManual.length >= 3) {
+                    onPlacaDetectada(`${codigoParcial}-${numManual}`)
+                    detener()
+                  }
+                }}
+                className="font-mono font-black text-slate-800 text-lg bg-transparent outline-none w-16 placeholder:text-slate-300"
+              />
+            </div>
+            <button
+              disabled={numManual.length < 3}
+              onClick={() => { onPlacaDetectada(`${codigoParcial}-${numManual}`); detener() }}
+              className="flex items-center gap-1.5 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm disabled:opacity-40 transition-colors shrink-0">
+              <Check size={14} /> OK
+            </button>
+          </div>
+          <button onClick={reintentar}
+            className="w-full flex items-center justify-center gap-2 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 transition-colors">
+            <RefreshCw size={13} /> Reintentar escaneo
+          </button>
         </div>
       )}
 
