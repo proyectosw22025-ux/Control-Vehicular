@@ -37,7 +37,12 @@ from django.views import View
 
 logger = logging.getLogger(__name__)
 
-PLACA_RE = re.compile(r'([A-Z]{2,4}[-]?\d{3,4}[A-Z]?)', re.IGNORECASE)
+# Regex principal: letras + guión opcional + dígitos (formato estándar)
+PLACA_RE      = re.compile(r'([A-Z]{2,4}[-\s]?\d{3,4}[A-Z]?)', re.IGNORECASE)
+# Regex flexible: captura letras y dígitos separados (placas bolivianas dos líneas)
+LETRAS_RE     = re.compile(r'([A-Z]{2,4})', re.IGNORECASE)
+NUMEROS_RE    = re.compile(r'(\d{3,4})')
+DEPTOS_BO     = {"SCZ", "CBB", "LPZ", "ORU", "TJA", "PTS", "BEN", "PAN", "CHU"}
 
 # ── Singleton FastALPR — se carga una sola vez por proceso ────────────────────
 _fast_alpr_instance = None
@@ -152,19 +157,60 @@ def _reconocer_pytesseract(img_bytes: bytes) -> dict:
 # ── Helpers comunes ───────────────────────────────────────────────────────────
 
 def _normalizar_placa(texto_raw: str) -> str | None:
-    """Normaliza el texto OCR al formato boliviano: SCZ-1234, CBB-001, etc."""
+    """
+    Normaliza el texto OCR al formato boliviano: SCZ-1234, CBB-001, etc.
+    Maneja el caso especial de placas bolivianas de dos líneas donde
+    FastALPR devuelve "SCZ 1234", "SCZ P 1234", "S C Z 1234", etc.
+    """
     if not texto_raw:
         return None
-    limpio = re.sub(r"[^A-Z0-9-]", "", texto_raw.upper())
-    match  = PLACA_RE.search(limpio)
-    if not match:
-        return None
-    placa = match.group(0).upper()
-    if "-" not in placa:
-        m2 = re.match(r"([A-Z]{2,4})(\d{3,4}[A-Z]?)", placa)
-        if m2:
-            placa = f"{m2.group(1)}-{m2.group(2)}"
-    return placa
+
+    # Limpiar y unificar
+    upper  = texto_raw.upper()
+    limpio = re.sub(r"[^A-Z0-9\s-]", " ", upper).strip()
+
+    # Intento 1: formato estándar junto (SCZ-1234, SCZP1234, SCZ1234)
+    sin_espacios   = re.sub(r"\s+", "", limpio)
+    sin_todo_extra = re.sub(r"[-\s]", "", limpio)  # sin espacios NI guiones
+
+    # Caso Bolivia: código depto (2-3 letras) + letra de serie opcional + dígitos
+    # Ej: SCZP1234 → SCZ-1234 / SCZ1234 → SCZ-1234
+    m_bo = re.match(r"([A-Z]{2,3})([A-Z]?)(\d{3,4})([A-Z]?)$", sin_todo_extra)
+    if m_bo:
+        codigo_base = m_bo.group(1)
+        letra_serie = m_bo.group(2)   # letra de serie boliviana (P, A, B…) → descartar
+        numero      = m_bo.group(3)
+        letra_fin   = m_bo.group(4)   # letra al final de algunos países → conservar
+        if codigo_base in DEPTOS_BO or (2 <= len(codigo_base) <= 3 and letra_serie):
+            return f"{codigo_base}-{numero}{letra_fin}"
+
+    match = PLACA_RE.search(sin_espacios)
+    if match:
+        placa = match.group(0).upper()
+        if "-" not in placa:
+            m2 = re.match(r"([A-Z]{2,4})(\d{3,4}[A-Z]?)", placa)
+            if m2:
+                placa = f"{m2.group(1)}-{m2.group(2)}"
+        return placa
+
+    # Intento 2: letras y números separados (placas bolivianas dos líneas)
+    # Ej: "S C Z P 1234" → busca código depto + número
+    partes  = re.sub(r"\s+", " ", limpio)
+    numeros = NUMEROS_RE.findall(partes)
+    letras  = LETRAS_RE.findall(partes)
+
+    # Priorizar código departamental conocido
+    codigo = next((l for l in letras if l in DEPTOS_BO), None)
+    if not codigo:
+        # Tomar primeras 2-3 letras consecutivas (excluyendo palabras largas)
+        codigo = next((l for l in letras if 2 <= len(l) <= 3), None)
+
+    numero = next((n for n in numeros if 3 <= len(n) <= 4), None)
+
+    if codigo and numero:
+        return f"{codigo}-{numero}"
+
+    return None
 
 
 def _nivel_confianza(conf: float) -> str:
