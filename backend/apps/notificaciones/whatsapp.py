@@ -52,34 +52,43 @@ def _generar_qr_base64(texto: str) -> str:
 
 
 def _enviar_imagen_base64(chat_id: str, qr_base64: str, caption: str) -> bool:
-    """Envía imagen QR directamente como base64 via Green API sendFileByBase64."""
+    """
+    Envía imagen QR via Green API.
+    Intenta primero sendFileByBase64 (sin prefijo data:), luego con prefijo.
+    """
     from django.conf import settings
     instance_id = getattr(settings, "GREEN_API_INSTANCE_ID", "")
     token       = getattr(settings, "GREEN_API_TOKEN", "")
     if not instance_id or not token:
         return False
 
-    url     = f"https://7107.api.greenapi.com/waInstance{instance_id}/sendFileByBase64/{token}"
-    payload = json.dumps({
-        "chatId":   chat_id,
-        "base64File": f"data:image/png;base64,{qr_base64}",
-        "fileName": "qr_acceso.png",
-        "caption":  caption,
-    }).encode("utf-8")
+    base_url = f"https://7107.api.greenapi.com/waInstance{instance_id}"
 
-    try:
-        req = urllib.request.Request(
-            url, data=payload,
-            headers={"Content-Type": "application/json"}, method="POST"
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            result = json.loads(resp.read())
-            id_msg = result.get("idMessage", "")
-            if id_msg:
-                logger.info("[WhatsApp IMG] QR enviado a %s — id: %s", chat_id, id_msg)
-                return True
-    except Exception as exc:
-        logger.error("[WhatsApp IMG] Error enviando QR a %s: %s", chat_id, exc)
+    # Intento 1: base64 puro SIN prefijo data URI (formato recomendado por Green API)
+    url = f"{base_url}/sendFileByBase64/{token}"
+    for b64_value in [qr_base64, f"data:image/png;base64,{qr_base64}"]:
+        payload = json.dumps({
+            "chatId":     chat_id,
+            "base64File": b64_value,
+            "fileName":   "qr_acceso.png",
+            "caption":    caption,
+        }).encode("utf-8")
+        try:
+            req = urllib.request.Request(
+                url, data=payload,
+                headers={"Content-Type": "application/json"}, method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                result = json.loads(resp.read())
+                id_msg = result.get("idMessage", "")
+                if id_msg:
+                    logger.info("[WhatsApp IMG] QR enviado a %s — id: %s", chat_id, id_msg)
+                    return True
+                logger.warning("[WhatsApp IMG] Respuesta sin idMessage: %s", result)
+        except Exception as exc:
+            logger.warning("[WhatsApp IMG] Intento fallido (%s...): %s", b64_value[:20], exc)
+            continue
+
     return False
 
 
