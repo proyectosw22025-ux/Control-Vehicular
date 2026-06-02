@@ -119,20 +119,19 @@ def procesar_respuesta(telefono: str, texto_usuario: str) -> str | None:
         limpiar_sesion(telefono)
 
         if texto in ("1", "guia", "guía", "parqueo", "si", "sí", "yes"):
+            disp = _obtener_disponibilidad_texto()
             if vehiculo_id:
                 url = f"{FRONTEND_URL}/parqueo-demo?vehiculoId={vehiculo_id}"
-                disp = _obtener_disponibilidad_texto()
                 return (
-                    f"🅿 *Guía de parqueo — {placa}*\n\n"
+                    f"🅿 *Disponibilidad ahora*\n\n"
                     f"{disp}\n\n"
-                    f"📱 Abre la guía interactiva:\n{url}\n\n"
-                    f"_La ruta se calcula desde la portería donde ingresaste._"
+                    f"📱 Ver guía interactiva:\n{url}"
                 )
             else:
                 return (
                     f"🅿 *Disponibilidad de parqueo*\n\n"
-                    f"{_obtener_disponibilidad_texto()}\n\n"
-                    f"📱 Ver mapa completo:\n{FRONTEND_URL}/disponibilidad"
+                    f"{disp}\n\n"
+                    f"📱 Ver mapa: {FRONTEND_URL}/disponibilidad"
                 )
 
         if texto in ("2", "ok", "no", "gracias"):

@@ -523,9 +523,26 @@ class VisitantesMutation:
                 destino_sugerido_texto=(input.destino_sugerido_texto or "").strip(),
             )
 
-        # Generar PaseTemporal + enviar email (en hilo daemon — no bloquea la request)
+        # Generar PaseTemporal + enviar email + QR por WhatsApp
         codigo, url = _crear_pase_visitante(visitante)
         email_ok    = _enviar_pase_email_async(visitante, codigo, url)
+
+        # WhatsApp: enviar QR como imagen si el visitante tiene teléfono
+        telefono_v = getattr(visitante, "telefono", "") or ""
+        if telefono_v:
+            try:
+                from apps.notificaciones.whatsapp import enviar_whatsapp_qr, enviar_whatsapp
+                destino = visitante.destino_sugerido_texto or "Campus UAGRM"
+                caption = (
+                    f"🎓 *Pase de acceso UAGRM*\n"
+                    f"Código: *{codigo}*\n"
+                    f"Destino: {destino}\n"
+                    f"Muestra este QR al guardia en portería.\n"
+                    f"Válido hasta las 23:00 de hoy."
+                )
+                enviar_whatsapp_qr(telefono_v, codigo, caption)
+            except Exception:
+                pass
 
         return PreRegistroResultType(
             visitante=visitante,

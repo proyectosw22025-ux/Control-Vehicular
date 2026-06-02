@@ -15,10 +15,89 @@ Formato de números Bolivia:
   Con prefijo: +59172345678 → 59172345678@c.us
   Con 591:      59172345678 → 59172345678@c.us
 """
+import base64
+import io
+import json
 import logging
 import threading
+import urllib.request
 
 logger = logging.getLogger(__name__)
+
+
+# ── Generación de QR como imagen ─────────────────────────────────────────────
+
+def _generar_qr_base64(texto: str, size: int = 300) -> str:
+    """Genera un QR del texto y retorna la imagen como base64 PNG."""
+    import qrcode
+    from qrcode.image.pure import PyPNGImage
+
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        box_size=10,
+        border=3,
+    )
+    qr.add_data(texto)
+    qr.make(fit=True)
+    img = qr.make_image(image_factory=PyPNGImage)
+
+    buf = io.BytesIO()
+    img.save(buf)
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
+def _enviar_imagen_base64(chat_id: str, qr_base64: str, caption: str) -> bool:
+    """Envía imagen QR directamente como base64 via Green API sendFileByBase64."""
+    from django.conf import settings
+    instance_id = getattr(settings, "GREEN_API_INSTANCE_ID", "")
+    token       = getattr(settings, "GREEN_API_TOKEN", "")
+    if not instance_id or not token:
+        return False
+
+    url     = f"https://7107.api.greenapi.com/waInstance{instance_id}/sendFileByBase64/{token}"
+    payload = json.dumps({
+        "chatId":   chat_id,
+        "base64File": f"data:image/png;base64,{qr_base64}",
+        "fileName": "qr_acceso.png",
+        "caption":  caption,
+    }).encode("utf-8")
+
+    try:
+        req = urllib.request.Request(
+            url, data=payload,
+            headers={"Content-Type": "application/json"}, method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            result = json.loads(resp.read())
+            id_msg = result.get("idMessage", "")
+            if id_msg:
+                logger.info("[WhatsApp IMG] QR enviado a %s — id: %s", chat_id, id_msg)
+                return True
+    except Exception as exc:
+        logger.error("[WhatsApp IMG] Error enviando QR a %s: %s", chat_id, exc)
+    return False
+
+
+def enviar_whatsapp_qr(telefono: str, texto_qr: str, caption: str) -> bool:
+    """
+    Genera un código QR del texto_qr y lo envía como imagen a WhatsApp.
+    El destinatario puede mostrarlo al guardia directamente desde WhatsApp.
+    Se ejecuta en hilo daemon — no bloquea la request.
+    """
+    chat_id = _normalizar_telefono_bolivia(telefono)
+    if not chat_id:
+        return False
+
+    def _enviar():
+        try:
+            qr_b64 = _generar_qr_base64(texto_qr)
+            _enviar_imagen_base64(chat_id, qr_b64, caption)
+        except Exception as exc:
+            logger.error("[WhatsApp QR] Error generando/enviando QR: %s", exc)
+
+    threading.Thread(target=_enviar, daemon=True).start()
+    return True
 
 
 def _normalizar_telefono_bolivia(telefono: str) -> str | None:

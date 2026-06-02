@@ -1175,11 +1175,36 @@ class AccesoMutation:
             observacion=(observacion or "").strip(),
         )
 
-        # Enviar email al proveedor si tiene correo
+        # Enviar email + QR por WhatsApp al proveedor
         if auth.email_proveedor:
             _enviar_email_autorizacion_async(auth)
             auth.email_enviado = True
             auth.save(update_fields=["email_enviado"])
+
+        # WhatsApp: si el campo email_proveedor tiene formato de teléfono boliviano
+        # O si hay un número en el campo de observación → enviar QR como imagen
+        # Convención: admin puede poner "+59172345678" en email_proveedor si no tiene email
+        telefono_prov = auth.email_proveedor if auth.email_proveedor and not "@" in auth.email_proveedor else ""
+        if telefono_prov:
+            try:
+                from apps.notificaciones.whatsapp import enviar_whatsapp_qr
+                base = getattr(__import__('django.conf', fromlist=['settings']).settings,
+                               'FRONTEND_URL', 'https://control-vehicular-six.vercel.app')
+                url_auth = f"{base}/autorizacion/{auth.codigo_acceso}"
+                dep_nombre = auth.dependencia.nombre if auth.dependencia else "Campus"
+                desde_str  = auth.valido_desde.strftime("%d/%m %H:%M")
+                hasta_str  = auth.valido_hasta.strftime("%H:%M")
+                caption = (
+                    f"✅ *Autorización de acceso — UAGRM*\n"
+                    f"Empresa: {auth.empresa}\n"
+                    f"Placa: *{auth.placa}*\n"
+                    f"Destino: {dep_nombre}\n"
+                    f"Válido: {desde_str} - {hasta_str}\n"
+                    f"Muestra este QR al guardia en portería."
+                )
+                enviar_whatsapp_qr(telefono_prov, auth.codigo_acceso, caption)
+            except Exception:
+                pass
 
         log_audit(
             user, "autorizacion_externa_creada",
