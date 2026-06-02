@@ -11,6 +11,7 @@ from apps.reportes.views import (
 from apps.vehiculos.views import SubirArchivoDocumentoView, SubirFotoVehiculoView
 from apps.vehiculos.ocr_view import OcrPlacaView, OcrDiagnosticoView
 from apps.acceso.rastreo_views import ActualizarUbicacionView
+from apps.notificaciones.whatsapp_webhook import WhatsAppWebhookView
 from apps.usuarios.views import SubirFotoPerfilView
 
 urlpatterns = [
@@ -36,4 +37,7 @@ urlpatterns = [
          csrf_exempt(ActualizarUbicacionView.as_view()), name="rastreo_salida"),
     path("api/perfil/foto/",
          csrf_exempt(SubirFotoPerfilView.as_view()), name="subir_foto_perfil"),
+    # WhatsApp webhook — Green API envía mensajes entrantes aquí
+    path("api/whatsapp/webhook/",
+         WhatsAppWebhookView.as_view(), name="whatsapp_webhook"),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

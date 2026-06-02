@@ -896,16 +896,20 @@ class AccesoMutation:
 
         if propietario:
             from apps.notificaciones.utils import enviar_notificacion
-            accion = "entró a" if input.tipo == "entrada" else "salió de"
+            from django.utils import timezone as _tz
+            hora_str = _tz.localtime().strftime("%H:%M")
+            accion   = "entró a" if input.tipo == "entrada" else "salió de"
+
+            # Notificación en app (WebSocket) — siempre
             enviar_notificacion(
                 usuario=propietario,
                 titulo=f"Vehículo {accion} la universidad",
                 mensaje=f"{resultado.vehiculo.placa} registró {input.tipo} en {punto.nombre}.",
                 tipo_codigo="acceso_vehiculo",
             )
-            # Fix 3: Incluir vehiculo_id en datos_extra para que el frontend
-            # pueda pre-seleccionar el vehículo en el demo de guía de parqueo.
+
             if input.tipo == "entrada":
+                # Notificación de orientación de parqueo (abre modal en la app)
                 enviar_notificacion(
                     usuario=propietario,
                     titulo=f"🏫 Bienvenido al campus — {resultado.vehiculo.placa}",
@@ -920,6 +924,24 @@ class AccesoMutation:
                         "punto_lng":       float(punto.longitud) if punto.longitud is not None else None,
                     },
                 )
+
+                # WhatsApp: mensaje con menú interactivo (solo si tiene WA activo)
+                if getattr(propietario, "whatsapp_activo", False) and propietario.telefono:
+                    from apps.notificaciones.whatsapp import enviar_whatsapp
+                    from apps.notificaciones.whatsapp_bot import menu_entrada_campus, guardar_sesion
+                    telefono_clean = propietario.telefono.strip()
+                    texto_wa, sesion = menu_entrada_campus(
+                        placa       = resultado.vehiculo.placa,
+                        punto       = punto.nombre,
+                        hora        = hora_str,
+                        vehiculo_id = resultado.vehiculo.pk,
+                    )
+                    if enviar_whatsapp(telefono_clean, texto_wa):
+                        # Normalizar el número para guardar la sesión
+                        from apps.notificaciones.whatsapp import _normalizar_telefono_bolivia
+                        chat_id = _normalizar_telefono_bolivia(telefono_clean)
+                        if chat_id:
+                            guardar_sesion(chat_id.replace("@c.us", ""), sesion)
 
         # ── Detección de anomalías en tiempo real ─────────────────────────────
         # Detecta frecuencia excesiva y multas pendientes; crea AlertaAcceso
