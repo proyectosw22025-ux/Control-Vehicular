@@ -27,23 +27,27 @@ logger = logging.getLogger(__name__)
 
 # ── Generación de QR como imagen ─────────────────────────────────────────────
 
-def _generar_qr_base64(texto: str, size: int = 300) -> str:
-    """Genera un QR del texto y retorna la imagen como base64 PNG."""
+def _generar_qr_base64(texto: str) -> str:
+    """Genera un QR del texto y retorna la imagen como base64 PNG usando PIL."""
     import qrcode
-    from qrcode.image.pure import PyPNGImage
+    from PIL import Image
 
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_H,
-        box_size=10,
-        border=3,
+        box_size=12,
+        border=4,
     )
     qr.add_data(texto)
     qr.make(fit=True)
-    img = qr.make_image(image_factory=PyPNGImage)
+    # PIL es más confiable que PyPNGImage y ya está instalado (Pillow)
+    img = qr.make_image(fill_color="black", back_color="white")
+    # Redimensionar a 400x400 para buena resolución en celular
+    img = img.resize((400, 400), Image.NEAREST)
 
     buf = io.BytesIO()
-    img.save(buf)
+    img.save(buf, format="PNG")
+    buf.seek(0)
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
@@ -85,16 +89,34 @@ def enviar_whatsapp_qr(telefono: str, texto_qr: str, caption: str) -> bool:
     El destinatario puede mostrarlo al guardia directamente desde WhatsApp.
     Se ejecuta en hilo daemon — no bloquea la request.
     """
-    chat_id = _normalizar_telefono_bolivia(telefono)
+    # Limpiar el número por si tiene espacios o formato internacional
+    tel_limpio = telefono.strip().replace(" ", "")
+    chat_id = _normalizar_telefono_bolivia(tel_limpio)
     if not chat_id:
+        logger.warning("[WhatsApp QR] Número inválido para QR: %r", telefono)
         return False
+
+    logger.info("[WhatsApp QR] Enviando QR de %s a %s", texto_qr[:12], chat_id)
 
     def _enviar():
         try:
             qr_b64 = _generar_qr_base64(texto_qr)
-            _enviar_imagen_base64(chat_id, qr_b64, caption)
+            ok = _enviar_imagen_base64(chat_id, qr_b64, caption)
+            if not ok:
+                # Fallback: enviar el texto del código si la imagen falla
+                _enviar_green_api(chat_id,
+                    f"🎓 *Pase de acceso UAGRM*\n\n"
+                    f"Código: *{texto_qr}*\n\n"
+                    f"{caption}\n\n"
+                    f"(No se pudo enviar la imagen del QR)"
+                )
         except Exception as exc:
-            logger.error("[WhatsApp QR] Error generando/enviando QR: %s", exc)
+            logger.error("[WhatsApp QR] Error: %s", exc)
+            # Fallback a texto plano
+            try:
+                _enviar_green_api(chat_id, f"Código de acceso: {texto_qr}\n{caption}")
+            except Exception:
+                pass
 
     threading.Thread(target=_enviar, daemon=True).start()
     return True

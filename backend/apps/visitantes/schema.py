@@ -498,14 +498,17 @@ class VisitantesMutation:
         existente = Visitante.objects.filter(ci=ci_limpio).first()
         if existente:
             actualizar = {}
+            # Siempre actualizar teléfono y email si se proporcionan (necesario para WhatsApp)
+            if input.telefono and input.telefono.strip():
+                actualizar["telefono"] = input.telefono.strip()
+            if input.email and input.email.strip():
+                actualizar["email"] = input.email.strip()
             if input.placa_habitual and input.placa_habitual.strip():
                 actualizar["placa_habitual"] = input.placa_habitual.strip().upper()
             if input.destino_sugerido_texto and input.destino_sugerido_texto.strip():
                 actualizar["destino_sugerido_texto"] = input.destino_sugerido_texto.strip()
             if input.procedencia and input.procedencia.strip():
                 actualizar["procedencia"] = input.procedencia.strip()
-            if input.email and input.email.strip():
-                actualizar["email"] = input.email.strip()
             if actualizar:
                 for campo, valor in actualizar.items():
                     setattr(existente, campo, valor)
