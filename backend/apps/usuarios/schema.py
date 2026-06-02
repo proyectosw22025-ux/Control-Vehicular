@@ -43,11 +43,12 @@ class UsuarioType:
     email: str
     nombre: str
     apellido: str
-    telefono: str
-    is_active: bool
-    is_superuser: bool
-    date_joined: datetime
-    totp_activo: bool
+    telefono:        str
+    whatsapp_activo: bool
+    is_active:       bool
+    is_superuser:    bool
+    date_joined:     datetime
+    totp_activo:     bool
 
     @strawberry.field
     def foto_url(self) -> Optional[str]:
@@ -120,10 +121,11 @@ class CrearUsuarioInput:
 
 @strawberry.input
 class ActualizarUsuarioInput:
-    nombre: Optional[str] = None
-    apellido: Optional[str] = None
-    telefono: Optional[str] = None
-    email: Optional[str] = None
+    nombre:          Optional[str]  = None
+    apellido:        Optional[str]  = None
+    telefono:        Optional[str]  = None
+    email:           Optional[str]  = None
+    whatsapp_activo: Optional[bool] = None
 
 
 @strawberry.input
@@ -316,6 +318,8 @@ class UsuariosMutation:
             user.telefono = input.telefono
         if input.email is not None:
             user.email = input.email
+        if input.whatsapp_activo is not None:
+            user.whatsapp_activo = input.whatsapp_activo
         user.save()
         return user
 

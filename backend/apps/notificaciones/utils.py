@@ -107,10 +107,10 @@ def enviar_email(usuario, asunto: str, cuerpo: str, html: str = "") -> None:
     hilo.start()
 
 
-def enviar_notificacion(usuario, titulo: str, mensaje: str, tipo_codigo: str | None = None, datos_extra: dict | None = None) -> Notificacion:
+def enviar_notificacion(usuario, titulo: str, mensaje: str, tipo_codigo: str | None = None, datos_extra: dict | None = None) -> "Notificacion":
     """
-    Guarda la notificación en BD y la entrega en tiempo real por WebSocket
-    al canal del usuario (si hay una conexión activa).
+    Guarda la notificación en BD, la entrega por WebSocket y por WhatsApp
+    si el usuario tiene whatsapp_activo=True y tiene teléfono registrado.
     """
     tipo = None
     if tipo_codigo:
@@ -130,16 +130,27 @@ def enviar_notificacion(usuario, titulo: str, mensaje: str, tipo_codigo: str | N
             async_to_sync(channel_layer.group_send)(
                 f"notificaciones_usuario_{usuario.pk}",
                 {
-                    "type":       "notificacion_nueva",
-                    "id":         notif.id,
-                    "titulo":     titulo,
-                    "mensaje":    mensaje,
-                    "fecha":      notif.fecha.isoformat(),
+                    "type":        "notificacion_nueva",
+                    "id":          notif.id,
+                    "titulo":      titulo,
+                    "mensaje":     mensaje,
+                    "fecha":       notif.fecha.isoformat(),
                     "tipo_codigo": tipo_codigo or "",
-                    "datos_extra": datos_extra or {},  # contexto para acciones del frontend
+                    "datos_extra": datos_extra or {},
                 },
             )
         except Exception:
-            pass  # El usuario no tiene WS activo; la notificación queda en BD
+            pass
+
+    # ── WhatsApp — solo si el usuario activó la preferencia ──────────────────
+    try:
+        whatsapp_activo = getattr(usuario, "whatsapp_activo", False)
+        telefono        = getattr(usuario, "telefono", "") or ""
+        if whatsapp_activo and telefono:
+            from .whatsapp import enviar_whatsapp
+            texto_wa = f"*{titulo}*\n{mensaje}"
+            enviar_whatsapp(telefono, texto_wa)
+    except Exception:
+        pass  # WhatsApp nunca debe interrumpir el flujo principal
 
     return notif

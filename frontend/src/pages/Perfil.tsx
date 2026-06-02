@@ -3,6 +3,7 @@ import { useQuery, useMutation, gql } from '@apollo/client'
 import {
   Lock, Save, CheckCircle, AlertCircle, Calendar, ShieldCheck, Shield,
   ShieldOff, Smartphone, Copy, Check, Sun, Moon, Monitor, Camera, Upload,
+  MessageCircle,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useTheme, type Theme } from '../hooks/useTheme'
@@ -20,6 +21,7 @@ const ME_PERFIL_QUERY = gql`
       nombreCompleto
       email
       telefono
+      whatsappActivo
       dateJoined
       isSuperuser
       totpActivo
@@ -161,10 +163,11 @@ export default function Perfil() {
   const [perfil, setPerfil] = useState(() => {
     const nc = (usuario.nombreCompleto || '').trim().split(' ')
     return {
-      nombre:    nc[0] ?? '',
-      apellido:  nc.slice(1).join(' ') ?? '',
-      email:     usuario.email ?? '',
-      telefono:  '',
+      nombre:         nc[0] ?? '',
+      apellido:       nc.slice(1).join(' ') ?? '',
+      email:          usuario.email ?? '',
+      telefono:       '',
+      whatsappActivo: false,
     }
   })
   const [perfilMsg, setPerfilMsg] = useState<{ tipo: 'ok' | 'err'; msg: string } | null>(null)
@@ -176,10 +179,11 @@ export default function Perfil() {
   useEffect(() => {
     if (!me) return
     setPerfil({
-      nombre:   me.nombre    ?? '',
-      apellido: me.apellido  ?? '',
-      email:    me.email     ?? '',
-      telefono: me.telefono  ?? '',
+      nombre:         me.nombre          ?? '',
+      apellido:       me.apellido        ?? '',
+      email:          me.email           ?? '',
+      telefono:       me.telefono        ?? '',
+      whatsappActivo: me.whatsappActivo  ?? false,
     })
   }, [me])
 
@@ -222,10 +226,11 @@ export default function Perfil() {
       variables: {
         id: me?.id ?? usuario.id,
         input: {
-          nombre:   perfil.nombre.trim(),
-          apellido: perfil.apellido.trim(),
-          email:    perfil.email.trim(),
-          telefono: perfil.telefono.trim(),
+          nombre:         perfil.nombre.trim(),
+          apellido:       perfil.apellido.trim(),
+          email:          perfil.email.trim(),
+          telefono:       perfil.telefono.trim(),
+          whatsappActivo: perfil.whatsappActivo,
         },
       },
     })
@@ -406,6 +411,53 @@ export default function Perfil() {
                 </Field>
               </div>
             )}
+
+              {/* ── Notificaciones WhatsApp ─────────────────────────────── */}
+              <div className={`rounded-2xl border-2 p-4 transition-all ${
+                perfil.whatsappActivo
+                  ? 'border-emerald-400 bg-emerald-50'
+                  : 'border-slate-200 bg-slate-50'
+              }`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${
+                      perfil.whatsappActivo ? 'bg-emerald-100' : 'bg-slate-100'
+                    }`}>
+                      <MessageCircle size={18} className={perfil.whatsappActivo ? 'text-emerald-600' : 'text-slate-400'} />
+                    </div>
+                    <div>
+                      <p className="font-bold text-slate-800 text-sm">Notificaciones por WhatsApp</p>
+                      <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">
+                        Recibe mensajes automáticos cuando tu vehículo entre al campus,
+                        se registre una multa o tengas una visita.
+                      </p>
+                      {perfil.whatsappActivo && !perfil.telefono && (
+                        <p className="text-amber-600 text-xs mt-1.5 font-semibold">
+                          ⚠ Agrega tu número de teléfono para recibir mensajes
+                        </p>
+                      )}
+                      {perfil.whatsappActivo && perfil.telefono && (
+                        <p className="text-emerald-600 text-xs mt-1.5 font-semibold">
+                          ✓ Los mensajes llegarán al +591 {perfil.telefono}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  {/* Toggle switch moderno */}
+                  <button
+                    type="button"
+                    onClick={() => setPerfil(p => ({ ...p, whatsappActivo: !p.whatsappActivo }))}
+                    className={`relative shrink-0 w-12 h-6 rounded-full transition-colors duration-200 focus:outline-none ${
+                      perfil.whatsappActivo ? 'bg-emerald-500' : 'bg-slate-300'
+                    }`}
+                    aria-label="Activar WhatsApp"
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                      perfil.whatsappActivo ? 'translate-x-6' : 'translate-x-0'
+                    }`} />
+                  </button>
+                </div>
+              </div>
 
             {perfilMsg && <Alert tipo={perfilMsg.tipo} msg={perfilMsg.msg} />}
 

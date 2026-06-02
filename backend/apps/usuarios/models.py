@@ -24,7 +24,11 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(unique=True)
     nombre = models.CharField(max_length=100)
     apellido = models.CharField(max_length=100)
-    telefono = models.CharField(max_length=20, blank=True)
+    telefono         = models.CharField(max_length=20, blank=True)
+    whatsapp_activo  = models.BooleanField(
+        default=False,
+        help_text="Si True, el usuario recibe notificaciones por WhatsApp en su teléfono registrado.",
+    )
     foto = models.ImageField(upload_to="usuarios/fotos/", blank=True, null=True)
     foto_url = models.URLField(blank=True, default="",
         help_text="URL Cloudinary de la foto de perfil (evita problemas con STORAGES)")
