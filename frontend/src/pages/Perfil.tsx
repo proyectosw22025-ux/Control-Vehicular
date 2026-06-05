@@ -438,7 +438,10 @@ export default function Perfil() {
                       )}
                       {perfil.whatsappActivo && perfil.telefono && (
                         <p className="text-emerald-600 text-xs mt-1.5 font-semibold">
-                          ✓ Los mensajes llegarán al +591 {perfil.telefono}
+                          ✓ Los mensajes llegarán al{' '}
+                          {perfil.telefono.startsWith('+') || perfil.telefono.startsWith('591')
+                            ? perfil.telefono
+                            : `+591 ${perfil.telefono}`}
                         </p>
                       )}
                     </div>

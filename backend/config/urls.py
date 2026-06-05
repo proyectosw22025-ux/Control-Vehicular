@@ -40,4 +40,9 @@ urlpatterns = [
     # WhatsApp webhook — Green API envía mensajes entrantes aquí
     path("api/whatsapp/webhook/",
          WhatsAppWebhookView.as_view(), name="whatsapp_webhook"),
+    # WhatsApp diagnóstico — probar envío (solo admin, GET con ?tel=72604635)
+    path("api/whatsapp/test/",
+         csrf_exempt(__import__('apps.notificaciones.whatsapp_diagnostico',
+                                fromlist=['WhatsAppTestView']).WhatsAppTestView.as_view()),
+         name="whatsapp_test"),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
