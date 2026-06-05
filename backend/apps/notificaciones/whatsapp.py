@@ -119,9 +119,10 @@ def _enviar_imagen_por_url(telefono: str, url_imagen: str, caption: str) -> bool
         return False
 
     payload = json.dumps({
-        "target": telefono,
-        "message": caption,
-        "url": url_imagen,
+        "target":      telefono,
+        "message":     caption,
+        "url":         url_imagen,
+        "filename":    "qr_acceso.png",
         "countryCode": "591",
     }).encode("utf-8")
 
@@ -135,14 +136,16 @@ def _enviar_imagen_por_url(telefono: str, url_imagen: str, caption: str) -> bool
             },
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            result = json.loads(resp.read())
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read()
+            result = json.loads(raw)
+            logger.info("[WhatsApp IMG] Respuesta Fonnte: %s", result)
             if result.get("status"):
-                logger.info("[WhatsApp IMG] QR enviado a %s", telefono)
+                logger.info("[WhatsApp IMG] ✓ QR enviado a +591%s", telefono)
                 return True
-            logger.warning("[WhatsApp IMG] Respuesta Fonnte: %s", result)
+            logger.warning("[WhatsApp IMG] ✗ Fonnte rechazó imagen: %s", result)
     except Exception as exc:
-        logger.error("[WhatsApp IMG] Error enviando imagen a %s: %s", telefono, exc)
+        logger.error("[WhatsApp IMG] Error enviando imagen a +591%s: %s", telefono, exc)
     return False
 
 
@@ -151,7 +154,6 @@ def enviar_whatsapp_qr(telefono: str, texto_qr: str, caption: str) -> bool:
     Genera un QR y lo envía como imagen a WhatsApp usando Fonnte.
     Fallback: envía el código como texto si falla la imagen.
     """
-    import urllib.parse
     tel_limpio = telefono.strip().replace(" ", "")
     tel_normalizado = _normalizar_telefono_bolivia(tel_limpio)
     if not tel_normalizado:
@@ -161,8 +163,13 @@ def enviar_whatsapp_qr(telefono: str, texto_qr: str, caption: str) -> bool:
     logger.info("[WhatsApp QR] Enviando QR '%s...' a %s", texto_qr[:12], tel_normalizado)
 
     def _enviar():
-        texto_encoded = urllib.parse.quote(texto_qr)
-        url_qr = f"https://api.qrserver.com/v1/create-qr-code/?data={texto_encoded}&size=350x350&margin=4&ecc=H"
+        import urllib.parse as _up
+        texto_encoded = _up.quote(texto_qr)
+        # Fonnte descarga esta URL y la adjunta como imagen
+        url_qr = (
+            f"https://api.qrserver.com/v1/create-qr-code/"
+            f"?data={texto_encoded}&size=400x400&margin=4&ecc=H&format=png"
+        )
 
         ok = _enviar_imagen_por_url(tel_normalizado, url_qr, caption)
         if not ok:
@@ -170,9 +177,8 @@ def enviar_whatsapp_qr(telefono: str, texto_qr: str, caption: str) -> bool:
             _enviar_fonnte(
                 tel_normalizado,
                 f"🎓 *Pase de acceso UAGRM*\n\n"
-                f"Código: *{texto_qr}*\n\n"
-                f"{caption}\n\n"
-                f"_(Abre la URL de verificación para ver el QR visual)_"
+                f"🔑 Código: *{texto_qr}*\n\n"
+                f"{caption}"
             )
 
     threading.Thread(target=_enviar, daemon=True).start()
