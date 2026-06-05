@@ -130,9 +130,19 @@ function FormularioCuenta() {
           {tocado.ci && v.ci && <p className="text-red-500 text-xs mt-1">{v.ci}</p>}
         </div>
         <div>
-          <label className="block text-xs font-semibold text-slate-600 mb-1">Teléfono</label>
-          <input type="text" value={form.telefono} placeholder="7xxxxxxx"
-            onChange={e => set('telefono', e.target.value)} className={inputOk} />
+          <label className="block text-xs font-semibold text-slate-600 mb-1">
+            Teléfono WhatsApp
+          </label>
+          <div className="relative">
+            <input type="tel" value={form.telefono} placeholder="72345678"
+              onChange={e => set('telefono', e.target.value)} className={inputOk} />
+            {form.telefono.replace(/\D/g, '').length >= 8 && (
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500 text-xs font-bold">✓</span>
+            )}
+          </div>
+          <p className="text-[10px] text-slate-400 mt-0.5">
+            📲 Recibirás alertas de acceso, multas y parqueo por WhatsApp
+          </p>
         </div>
       </div>
 

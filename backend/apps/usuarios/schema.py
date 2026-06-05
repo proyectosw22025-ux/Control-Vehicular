@@ -251,13 +251,17 @@ class UsuariosMutation:
             raise Exception(f"Ya existe un usuario con CI {input.ci}")
         if Usuario.objects.filter(email=input.email).exists():
             raise Exception(f"El email {input.email} ya está registrado")
+        telefono_limpio = (input.telefono or "").strip()
         user = Usuario.objects.create_user(
             ci=input.ci,
             email=input.email,
             nombre=input.nombre,
             apellido=input.apellido,
-            telefono=input.telefono or "",
+            telefono=telefono_limpio,
             password=input.password,
+            # Auto-activar WhatsApp si el usuario proporcionó un número
+            # El usuario no tiene que ir a Mi Perfil para activarlo manualmente
+            whatsapp_activo=bool(telefono_limpio),
         )
         from apps.acceso.utils import log_audit
         from apps.notificaciones.email_templates import email_bienvenida
