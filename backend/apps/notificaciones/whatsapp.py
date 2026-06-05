@@ -164,20 +164,19 @@ def enviar_whatsapp_qr(telefono: str, texto_qr: str, caption: str) -> bool:
 
     def _enviar():
         from django.conf import settings
-        # Usamos nuestro propio endpoint en Railway — Fonnte siempre puede descargarlo
         backend = getattr(settings, "BACKEND_URL",
                           "https://control-vehicular-production.up.railway.app")
         url_qr = f"{backend}/api/qr/{texto_qr}.png"
 
-        ok = _enviar_imagen_por_url(tel_normalizado, url_qr, caption)
+        # Incluir URL en el caption: Fonnte plan gratuito entrega solo el texto
+        # del campo message aunque se envíe con url (no soporta media en free).
+        # Con la URL en el caption el usuario puede tocarla para abrir el QR.
+        caption_con_url = f"{caption}\n\n📷 *Ver QR:* {url_qr}"
+
+        ok = _enviar_imagen_por_url(tel_normalizado, url_qr, caption_con_url)
         if not ok:
-            logger.warning("[WhatsApp QR] Imagen falló, enviando código como texto")
-            _enviar_fonnte(
-                tel_normalizado,
-                f"🎓 *Pase de acceso UAGRM*\n\n"
-                f"🔑 Código: *{texto_qr}*\n\n"
-                f"{caption}"
-            )
+            logger.warning("[WhatsApp QR] Imagen falló, enviando texto con URL")
+            _enviar_fonnte(tel_normalizado, caption_con_url)
 
     threading.Thread(target=_enviar, daemon=True).start()
     return True
