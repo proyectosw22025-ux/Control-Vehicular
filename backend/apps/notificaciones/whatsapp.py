@@ -165,10 +165,10 @@ def enviar_whatsapp_qr(telefono: str, texto_qr: str, caption: str) -> bool:
     def _enviar():
         import urllib.parse as _up
         texto_encoded = _up.quote(texto_qr)
-        # Fonnte descarga esta URL y la adjunta como imagen
+        # quickchart.io genera QR PNG estable que Fonnte puede descargar sin timeout
         url_qr = (
-            f"https://api.qrserver.com/v1/create-qr-code/"
-            f"?data={texto_encoded}&size=400x400&margin=4&ecc=H&format=png"
+            f"https://quickchart.io/qr?text={texto_encoded}"
+            f"&size=400&margin=2&ecLevel=H&format=png"
         )
 
         ok = _enviar_imagen_por_url(tel_normalizado, url_qr, caption)
