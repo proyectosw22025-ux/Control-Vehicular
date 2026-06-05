@@ -12,6 +12,7 @@ from apps.vehiculos.views import SubirArchivoDocumentoView, SubirFotoVehiculoVie
 from apps.vehiculos.ocr_view import OcrPlacaView, OcrDiagnosticoView
 from apps.acceso.rastreo_views import ActualizarUbicacionView
 from apps.notificaciones.whatsapp_webhook import WhatsAppWebhookView
+from apps.notificaciones.qr_view import qr_png
 from apps.usuarios.views import SubirFotoPerfilView
 
 urlpatterns = [
@@ -37,7 +38,9 @@ urlpatterns = [
          csrf_exempt(ActualizarUbicacionView.as_view()), name="rastreo_salida"),
     path("api/perfil/foto/",
          csrf_exempt(SubirFotoPerfilView.as_view()), name="subir_foto_perfil"),
-    # WhatsApp webhook — Green API envía mensajes entrantes aquí
+    # QR como imagen PNG — usado por Fonnte para enviar QR por WhatsApp
+    path("api/qr/<str:code>.png", qr_png, name="qr_image"),
+    # WhatsApp webhook — Fonnte envía mensajes entrantes aquí
     path("api/whatsapp/webhook/",
          WhatsAppWebhookView.as_view(), name="whatsapp_webhook"),
     # WhatsApp diagnóstico — probar envío (solo admin, GET con ?tel=72604635)

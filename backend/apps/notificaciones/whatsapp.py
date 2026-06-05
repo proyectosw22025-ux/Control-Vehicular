@@ -163,13 +163,11 @@ def enviar_whatsapp_qr(telefono: str, texto_qr: str, caption: str) -> bool:
     logger.info("[WhatsApp QR] Enviando QR '%s...' a %s", texto_qr[:12], tel_normalizado)
 
     def _enviar():
-        import urllib.parse as _up
-        texto_encoded = _up.quote(texto_qr)
-        # quickchart.io genera QR PNG estable que Fonnte puede descargar sin timeout
-        url_qr = (
-            f"https://quickchart.io/qr?text={texto_encoded}"
-            f"&size=400&margin=2&ecLevel=H&format=png"
-        )
+        from django.conf import settings
+        # Usamos nuestro propio endpoint en Railway — Fonnte siempre puede descargarlo
+        backend = getattr(settings, "BACKEND_URL",
+                          "https://control-vehicular-production.up.railway.app")
+        url_qr = f"{backend}/api/qr/{texto_qr}.png"
 
         ok = _enviar_imagen_por_url(tel_normalizado, url_qr, caption)
         if not ok:
