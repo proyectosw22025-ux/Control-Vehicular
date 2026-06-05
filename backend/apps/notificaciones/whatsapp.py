@@ -52,7 +52,8 @@ def _generar_qr_base64(texto: str) -> str:
 
 def _normalizar_telefono_bolivia(telefono: str) -> str | None:
     """
-    Normaliza cualquier formato de número boliviano al formato internacional para Fonnte.
+    Normaliza cualquier formato de número boliviano a 8 dígitos locales.
+    Fonnte recibe los 8 dígitos + countryCode="591" en el payload.
     Retorna None si el número no es válido.
     """
     num = telefono.strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
@@ -60,13 +61,12 @@ def _normalizar_telefono_bolivia(telefono: str) -> str | None:
     if num.startswith("+"):
         num = num[1:]
 
+    # Con prefijo 591: 59172345678 → 72345678
     if num.startswith("591") and len(num) == 11:
-        return num
+        return num[3:]
 
+    # Ya son 8 dígitos locales
     if num.isdigit() and len(num) == 8:
-        return f"591{num}"
-
-    if num.startswith("591") and len(num) > 8:
         return num
 
     logger.warning("[WhatsApp] Número no reconocido como boliviano: %s", telefono)
@@ -85,6 +85,7 @@ def _enviar_fonnte(telefono: str, mensaje: str) -> bool:
     payload = json.dumps({
         "target": telefono,
         "message": mensaje,
+        "countryCode": "591",
     }).encode("utf-8")
 
     try:
@@ -100,7 +101,7 @@ def _enviar_fonnte(telefono: str, mensaje: str) -> bool:
         with urllib.request.urlopen(req, timeout=10) as resp:
             result = json.loads(resp.read())
             if result.get("status"):
-                logger.info("[WhatsApp] ✓ Enviado a %s", telefono)
+                logger.info("[WhatsApp] ✓ Enviado a +591%s", telefono)
                 return True
             logger.warning("[WhatsApp] Respuesta Fonnte: %s", result)
             return False
@@ -121,6 +122,7 @@ def _enviar_imagen_por_url(telefono: str, url_imagen: str, caption: str) -> bool
         "target": telefono,
         "message": caption,
         "url": url_imagen,
+        "countryCode": "591",
     }).encode("utf-8")
 
     try:

@@ -25,16 +25,16 @@ from apps.notificaciones.whatsapp import (
 class TestNormalizarTelefono:
 
     def test_numero_local_8_digitos(self):
-        assert _normalizar_telefono_bolivia("72345678") == "59172345678"
+        assert _normalizar_telefono_bolivia("72345678") == "72345678"
 
     def test_numero_con_prefijo_591(self):
-        assert _normalizar_telefono_bolivia("59172345678") == "59172345678"
+        assert _normalizar_telefono_bolivia("59172345678") == "72345678"
 
     def test_numero_con_plus_591(self):
-        assert _normalizar_telefono_bolivia("+59172345678") == "59172345678"
+        assert _normalizar_telefono_bolivia("+59172345678") == "72345678"
 
     def test_numero_con_espacios(self):
-        assert _normalizar_telefono_bolivia("  72 34 56 78  ") == "59172345678"
+        assert _normalizar_telefono_bolivia("  72 34 56 78  ") == "72345678"
 
     def test_numero_invalido_retorna_none(self):
         assert _normalizar_telefono_bolivia("123") is None
@@ -43,7 +43,7 @@ class TestNormalizarTelefono:
 
     def test_numero_local_tigo(self):
         resultado = _normalizar_telefono_bolivia("62521671")
-        assert resultado == "59162521671"
+        assert resultado == "62521671"
 
 
 # ── Tests de envío (mockeado) ─────────────────────────────────────────────────
