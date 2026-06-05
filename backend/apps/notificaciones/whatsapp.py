@@ -1,19 +1,18 @@
 """
-Servicio de WhatsApp via Green API.
+Servicio de WhatsApp via Fonnte API.
 
 Flujo:
   Django detecta evento (entrada, multa, visita, etc.)
     → enviar_whatsapp(telefono, mensaje)
-    → Green API → número Bolivia conectado → WhatsApp del destinatario
+    → Fonnte API → número Bolivia conectado → WhatsApp del destinatario
 
 Configuración Railway:
-  GREEN_API_INSTANCE_ID = 7107639603
-  GREEN_API_TOKEN       = tu_token_de_green_api
+  FONNTE_TOKEN = tu_token_de_fonnte
 
 Formato de números Bolivia:
-  Local:        72345678    → 59172345678@c.us
-  Con prefijo: +59172345678 → 59172345678@c.us
-  Con 591:      59172345678 → 59172345678@c.us
+  Local:        72345678    → 59172345678
+  Con prefijo: +59172345678 → 59172345678
+  Con 591:      59172345678 → 59172345678
 """
 import base64
 import io
@@ -23,6 +22,8 @@ import threading
 import urllib.request
 
 logger = logging.getLogger(__name__)
+
+FONNTE_API_URL = "https://api.fonnte.com/send"
 
 
 # ── Generación de QR como imagen ─────────────────────────────────────────────
@@ -40,9 +41,7 @@ def _generar_qr_base64(texto: str) -> str:
     )
     qr.add_data(texto)
     qr.make(fit=True)
-    # PIL es más confiable que PyPNGImage y ya está instalado (Pillow)
     img = qr.make_image(fill_color="black", back_color="white")
-    # Redimensionar a 400x400 para buena resolución en celular
     img = img.resize((400, 400), Image.NEAREST)
 
     buf = io.BytesIO()
@@ -51,68 +50,123 @@ def _generar_qr_base64(texto: str) -> str:
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
-def _enviar_imagen_por_url(chat_id: str, url_imagen: str, caption: str) -> bool:
+def _normalizar_telefono_bolivia(telefono: str) -> str | None:
     """
-    Envía imagen via Green API usando sendFileByUrl.
-    Este método está disponible en el plan DEVELOPER (gratuito).
-    sendFileByBase64 requiere plan de pago — por eso este es el correcto.
+    Normaliza cualquier formato de número boliviano al formato internacional para Fonnte.
+    Retorna None si el número no es válido.
     """
+    num = telefono.strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+
+    if num.startswith("+"):
+        num = num[1:]
+
+    if num.startswith("591") and len(num) == 11:
+        return num
+
+    if num.isdigit() and len(num) == 8:
+        return f"591{num}"
+
+    if num.startswith("591") and len(num) > 8:
+        return num
+
+    logger.warning("[WhatsApp] Número no reconocido como boliviano: %s", telefono)
+    return None
+
+
+def _enviar_fonnte(telefono: str, mensaje: str) -> bool:
+    """Envía mensaje de texto via Fonnte API. Retorna True si fue exitoso."""
     from django.conf import settings
-    instance_id = getattr(settings, "GREEN_API_INSTANCE_ID", "")
-    token       = getattr(settings, "GREEN_API_TOKEN", "")
-    if not instance_id or not token:
+
+    token = getattr(settings, "FONNTE_TOKEN", "")
+    if not token:
+        logger.warning("[WhatsApp] FONNTE_TOKEN no configurado")
         return False
 
-    url     = f"https://7107.api.greenapi.com/waInstance{instance_id}/sendFileByUrl/{token}"
     payload = json.dumps({
-        "chatId":   chat_id,
-        "urlFile":  url_imagen,
-        "fileName": "qr_acceso.png",
-        "caption":  caption,
+        "target": telefono,
+        "message": mensaje,
     }).encode("utf-8")
 
     try:
         req = urllib.request.Request(
-            url, data=payload,
-            headers={"Content-Type": "application/json"}, method="POST"
+            FONNTE_API_URL,
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": token,
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            result = json.loads(resp.read())
+            if result.get("status"):
+                logger.info("[WhatsApp] ✓ Enviado a %s", telefono)
+                return True
+            logger.warning("[WhatsApp] Respuesta Fonnte: %s", result)
+            return False
+    except Exception as exc:
+        logger.error("[WhatsApp] Error enviando a %s: %s", telefono, exc)
+        return False
+
+
+def _enviar_imagen_por_url(telefono: str, url_imagen: str, caption: str) -> bool:
+    """Envía imagen via Fonnte API usando URL pública."""
+    from django.conf import settings
+
+    token = getattr(settings, "FONNTE_TOKEN", "")
+    if not token:
+        return False
+
+    payload = json.dumps({
+        "target": telefono,
+        "message": caption,
+        "url": url_imagen,
+    }).encode("utf-8")
+
+    try:
+        req = urllib.request.Request(
+            FONNTE_API_URL,
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": token,
+            },
+            method="POST",
         )
         with urllib.request.urlopen(req, timeout=20) as resp:
             result = json.loads(resp.read())
-            id_msg = result.get("idMessage", "")
-            if id_msg:
-                logger.info("[WhatsApp IMG] QR enviado a %s — id: %s", chat_id, id_msg)
+            if result.get("status"):
+                logger.info("[WhatsApp IMG] QR enviado a %s", telefono)
                 return True
-            logger.warning("[WhatsApp IMG] Sin idMessage: %s", result)
+            logger.warning("[WhatsApp IMG] Respuesta Fonnte: %s", result)
     except Exception as exc:
-        logger.error("[WhatsApp IMG] Error sendFileByUrl a %s: %s", chat_id, exc)
+        logger.error("[WhatsApp IMG] Error enviando imagen a %s: %s", telefono, exc)
     return False
 
 
 def enviar_whatsapp_qr(telefono: str, texto_qr: str, caption: str) -> bool:
     """
-    Genera un QR y lo envía como imagen a WhatsApp usando sendFileByUrl.
-    Usa api.qrserver.com para generar la imagen desde una URL pública —
-    este approach funciona en el plan DEVELOPER de Green API (gratuito).
+    Genera un QR y lo envía como imagen a WhatsApp usando Fonnte.
+    Fallback: envía el código como texto si falla la imagen.
     """
     import urllib.parse
     tel_limpio = telefono.strip().replace(" ", "")
-    chat_id = _normalizar_telefono_bolivia(tel_limpio)
-    if not chat_id:
+    tel_normalizado = _normalizar_telefono_bolivia(tel_limpio)
+    if not tel_normalizado:
         logger.warning("[WhatsApp QR] Número inválido: %r", telefono)
         return False
 
-    logger.info("[WhatsApp QR] Enviando QR '%s...' a %s", texto_qr[:12], chat_id)
+    logger.info("[WhatsApp QR] Enviando QR '%s...' a %s", texto_qr[:12], tel_normalizado)
 
     def _enviar():
-        # Generar QR usando api.qrserver.com — URL pública que Green API puede descargar
         texto_encoded = urllib.parse.quote(texto_qr)
         url_qr = f"https://api.qrserver.com/v1/create-qr-code/?data={texto_encoded}&size=350x350&margin=4&ecc=H"
 
-        ok = _enviar_imagen_por_url(chat_id, url_qr, caption)
+        ok = _enviar_imagen_por_url(tel_normalizado, url_qr, caption)
         if not ok:
             logger.warning("[WhatsApp QR] Imagen falló, enviando código como texto")
-            _enviar_green_api(
-                chat_id,
+            _enviar_fonnte(
+                tel_normalizado,
                 f"🎓 *Pase de acceso UAGRM*\n\n"
                 f"Código: *{texto_qr}*\n\n"
                 f"{caption}\n\n"
@@ -123,84 +177,20 @@ def enviar_whatsapp_qr(telefono: str, texto_qr: str, caption: str) -> bool:
     return True
 
 
-def _normalizar_telefono_bolivia(telefono: str) -> str | None:
-    """
-    Normaliza cualquier formato de número boliviano al formato @c.us de Green API.
-    Retorna None si el número no es válido.
-    """
-    num = telefono.strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
-
-    # Quitar el + si lo tiene
-    if num.startswith("+"):
-        num = num[1:]
-
-    # Ya tiene prefijo 591
-    if num.startswith("591") and len(num) == 11:
-        return f"{num}@c.us"
-
-    # Número local de 8 dígitos → agregar 591
-    if num.isdigit() and len(num) == 8:
-        return f"591{num}@c.us"
-
-    # Número con 591 pero diferente longitud
-    if num.startswith("591") and len(num) > 8:
-        return f"{num}@c.us"
-
-    logger.warning("[WhatsApp] Número no reconocido como boliviano: %s", telefono)
-    return None
-
-
-def _enviar_green_api(chat_id: str, mensaje: str) -> bool:
-    """Envía mensaje via Green API REST. Retorna True si fue exitoso."""
-    from django.conf import settings
-    import json
-    import urllib.request
-
-    instance_id = getattr(settings, "GREEN_API_INSTANCE_ID", "")
-    token        = getattr(settings, "GREEN_API_TOKEN", "")
-
-    if not instance_id or not token:
-        logger.warning("[WhatsApp] GREEN_API_INSTANCE_ID o GREEN_API_TOKEN no configurados en Railway")
-        return False
-
-    url = f"https://7107.api.greenapi.com/waInstance{instance_id}/sendMessage/{token}"
-    payload = json.dumps({"chatId": chat_id, "message": mensaje}).encode("utf-8")
-
-    try:
-        req = urllib.request.Request(
-            url,
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            result = json.loads(resp.read())
-            id_msg = result.get("idMessage", "")
-            if id_msg:
-                logger.info("[WhatsApp] ✓ Enviado a %s — id: %s", chat_id, id_msg)
-                return True
-            logger.warning("[WhatsApp] Respuesta sin idMessage: %s", result)
-            return False
-    except Exception as exc:
-        logger.error("[WhatsApp] Error enviando a %s: %s", chat_id, exc)
-        return False
-
-
 def enviar_whatsapp(telefono: str, mensaje: str) -> bool:
     """
     Envía un mensaje de WhatsApp en un hilo daemon (no bloquea la request).
     Retorna True si el número es válido y el envío se programó.
-    Retorna False si no hay configuración o el número es inválido.
     """
     if not telefono:
         return False
 
-    chat_id = _normalizar_telefono_bolivia(telefono)
-    if not chat_id:
+    tel_normalizado = _normalizar_telefono_bolivia(telefono)
+    if not tel_normalizado:
         return False
 
     def _enviar():
-        _enviar_green_api(chat_id, mensaje)
+        _enviar_fonnte(tel_normalizado, mensaje)
 
     threading.Thread(target=_enviar, daemon=True).start()
     return True

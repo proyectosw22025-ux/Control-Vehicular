@@ -114,9 +114,8 @@ if _cloudinary_configurado:
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# Green API — WhatsApp (producción lo sobreescribe con valores reales)
-GREEN_API_INSTANCE_ID = ""
-GREEN_API_TOKEN       = ""
+# Fonnte — WhatsApp (producción lo sobreescribe con el token real)
+FONNTE_TOKEN = ""
 
 # ── Cache — local memory en desarrollo, Redis en producción ──────────────────
 # production.py sobreescribe esto con RedisCache.

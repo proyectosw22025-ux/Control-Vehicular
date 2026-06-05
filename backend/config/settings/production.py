@@ -57,9 +57,8 @@ CACHES = {
     }
 }
 
-# ── Green API — WhatsApp automático ──────────────────────────────────────────
-GREEN_API_INSTANCE_ID = config("GREEN_API_INSTANCE_ID", default="")
-GREEN_API_TOKEN       = config("GREEN_API_TOKEN",       default="")
+# ── Fonnte — WhatsApp automático ─────────────────────────────────────────────
+FONNTE_TOKEN = config("FONNTE_TOKEN", default="")
 
 # Brevo HTTP API — usa HTTPS puerto 443, no bloqueado por Railway (recomendado)
 BREVO_API_KEY = config("BREVO_API_KEY", default="")

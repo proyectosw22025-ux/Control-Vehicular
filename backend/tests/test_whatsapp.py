@@ -1,9 +1,9 @@
 """
-Tests del módulo WhatsApp via Green API.
+Tests del módulo WhatsApp via Fonnte API.
 
 Verifica:
-  - Normalización de números bolivianos al formato @c.us
-  - Envío real mockeado (no llama a Green API en tests)
+  - Normalización de números bolivianos al formato internacional
+  - Envío real mockeado (no llama a Fonnte en tests)
   - Integración con enviar_notificacion (solo si whatsapp_activo=True)
   - No envía si no hay número o no está activo
   - El campo whatsapp_activo persiste en el modelo Usuario
@@ -25,27 +25,25 @@ from apps.notificaciones.whatsapp import (
 class TestNormalizarTelefono:
 
     def test_numero_local_8_digitos(self):
-        assert _normalizar_telefono_bolivia("72345678") == "59172345678@c.us"
+        assert _normalizar_telefono_bolivia("72345678") == "59172345678"
 
     def test_numero_con_prefijo_591(self):
-        assert _normalizar_telefono_bolivia("59172345678") == "59172345678@c.us"
+        assert _normalizar_telefono_bolivia("59172345678") == "59172345678"
 
     def test_numero_con_plus_591(self):
-        assert _normalizar_telefono_bolivia("+59172345678") == "59172345678@c.us"
+        assert _normalizar_telefono_bolivia("+59172345678") == "59172345678"
 
     def test_numero_con_espacios(self):
-        assert _normalizar_telefono_bolivia("  72 34 56 78  ") == "59172345678@c.us"
+        assert _normalizar_telefono_bolivia("  72 34 56 78  ") == "59172345678"
 
     def test_numero_invalido_retorna_none(self):
         assert _normalizar_telefono_bolivia("123") is None
         assert _normalizar_telefono_bolivia("") is None
         assert _normalizar_telefono_bolivia("abcdefgh") is None
 
-    def test_numero_del_chip_tigo(self):
-        # Número real de la instancia Green API: 59162521671
-        # 591 + 62521671 (8 dígitos) = 59162521671
+    def test_numero_local_tigo(self):
         resultado = _normalizar_telefono_bolivia("62521671")
-        assert resultado == "59162521671@c.us"
+        assert resultado == "59162521671"
 
 
 # ── Tests de envío (mockeado) ─────────────────────────────────────────────────
@@ -61,32 +59,27 @@ class TestEnviarWhatsapp:
         assert result is False
 
     def test_no_envía_sin_configuración_railway(self):
-        """Si GREEN_API_INSTANCE_ID está vacío, retorna False."""
-        with patch("apps.notificaciones.whatsapp._enviar_green_api") as mock:
-            # Sin config → el número es válido pero las vars de entorno están vacías
-            with patch("django.conf.settings") as mock_settings:
-                mock_settings.GREEN_API_INSTANCE_ID = ""
-                mock_settings.GREEN_API_TOKEN = ""
-                result = enviar_whatsapp("72345678", "Test")
-        # El thread se inicia de todas formas, pero el envío falla silenciosamente
+        """Si FONNTE_TOKEN está vacío, el envío falla silenciosamente."""
+        with patch("django.conf.settings") as mock_settings:
+            mock_settings.FONNTE_TOKEN = ""
+            result = enviar_whatsapp("72345678", "Test")
+        # El thread se inicia pero el envío falla internamente
 
     def test_envía_correctamente_con_config(self):
-        """Con configuración válida, el envío se realiza sin excepciones."""
+        """Con token válido, el envío se realiza sin excepciones."""
         import time
-        from unittest.mock import patch, MagicMock
 
         mock_resp = MagicMock()
-        mock_resp.read.return_value = json.dumps({"idMessage": "abc123"}).encode()
+        mock_resp.read.return_value = json.dumps({"status": True, "process": "send"}).encode()
         mock_resp.__enter__ = lambda s: s
         mock_resp.__exit__ = MagicMock(return_value=False)
 
         with patch("urllib.request.urlopen", return_value=mock_resp):
             with patch("django.conf.settings") as mock_settings:
-                mock_settings.GREEN_API_INSTANCE_ID = "7107639603"
-                mock_settings.GREEN_API_TOKEN       = "fake_token"
+                mock_settings.FONNTE_TOKEN = "fake_fonnte_token"
                 result = enviar_whatsapp("72345678", "Mensaje de prueba")
                 assert result is True
-                time.sleep(0.15)  # esperar el thread daemon
+                time.sleep(0.15)
 
 
 # ── Tests de mensajes predefinidos ───────────────────────────────────────────
@@ -184,7 +177,5 @@ class TestIntegracionNotificacion:
             }),
             content_type="application/json",
         ).json()
-        # Puede fallar por id=0 pero valida que el campo existe en el schema
-        # Lo importante es que no dé "Field 'whatsappActivo' not found"
         if "errors" in data:
             assert "whatsappActivo" not in str(data["errors"])
