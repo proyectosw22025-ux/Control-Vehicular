@@ -39,13 +39,13 @@ def _enviar_notificacion_ws(usuario_id: int, titulo: str, mensaje: str, tipo_cod
     return notif
 
 
-@shared_task(name="notificaciones.notificar_multa")
-def notificar_multa(usuario_id: int, placa: str, monto: str):
+@shared_task(name="notificaciones.notificar_infraccion")
+def notificar_infraccion(usuario_id: int, placa: str, monto: str):
     _enviar_notificacion_ws(
         usuario_id=usuario_id,
-        titulo="Nueva multa registrada",
-        mensaje=f"Su vehículo {placa} tiene una multa de Bs {monto}.",
-        tipo_codigo="multa_nueva",
+        titulo="Nueva infracción registrada",
+        mensaje=f"Su vehículo {placa} tiene una sanción de Bs {monto}.",
+        tipo_codigo="infraccion_nueva",
         datos_extra={"placa": placa, "monto": monto},
     )
 

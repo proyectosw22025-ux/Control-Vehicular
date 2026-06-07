@@ -409,7 +409,7 @@ export default function Usuarios() {
               </select>
               {form.tipoUsuario === 'guardia' && (
                 <p className="text-xs text-amber-600 mt-1.5 flex items-center gap-1">
-                  <AlertTriangle size={11} /> El guardia tendrá acceso a registrar accesos, multas y visitantes.
+                  <AlertTriangle size={11} /> El guardia tendrá acceso a registrar accesos, infracciones y visitantes.
                 </p>
               )}
             </div>

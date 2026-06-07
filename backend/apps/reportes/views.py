@@ -204,38 +204,45 @@ class VisitasPDFView(View):
         return _build_response(f"visitas_{datetime.now().strftime('%Y%m%d')}.pdf", build)
 
 
-class MultasPDFView(View):
+class InfraccionesPDFView(View):
     def get(self, request: Any) -> HttpResponse:
         if not _auth(request):
             return HttpResponseForbidden("Autenticación requerida")
 
-        from apps.multas.models import Multa
-        qs = Multa.objects.select_related(
-            "tipo", "vehiculo__propietario"
+        from apps.multas.models import Infraccion
+        qs = Infraccion.objects.select_related(
+            "tipo", "vehiculo__propietario", "sancion"
         ).order_by("-fecha")[:200]
-        multas = list(qs)
+        infracciones = list(qs)
 
         def build(title_style: Any, sub_style: Any) -> list:
             elements: list[Any] = [
                 Paragraph("Sistema de Parqueo Universitario", title_style),
-                Paragraph(f"Reporte de Multas — {_fecha()}", sub_style),
+                Paragraph(f"Reporte de Infracciones — {_fecha()}", sub_style),
             ]
-            headers = ["Placa", "Propietario", "Tipo", "Monto (Bs)", "Descripción", "Fecha", "Estado"]
+            headers = ["Placa", "Propietario", "Tipo", "Sanción", "Descripción", "Fecha", "Estado"]
             rows: list[Any] = [headers]
-            for m in multas:
+            for i in infracciones:
+                sancion = getattr(i, "sancion", None)
+                if sancion is None:
+                    sancion_txt = "—"
+                elif sancion.tipo_sancion == "multa_economica":
+                    sancion_txt = f"Multa Bs {sancion.monto}"
+                else:
+                    sancion_txt = sancion.get_tipo_sancion_display()
                 rows.append([
-                    m.vehiculo.placa,
-                    f"{m.vehiculo.propietario.nombre} {m.vehiculo.propietario.apellido}",
-                    m.tipo.nombre,
-                    str(m.monto),
-                    m.descripcion[:35],
-                    m.fecha.strftime("%d/%m/%Y %H:%M"),
-                    m.estado.upper(),
+                    i.vehiculo.placa,
+                    f"{i.vehiculo.propietario.nombre} {i.vehiculo.propietario.apellido}",
+                    i.tipo.nombre,
+                    sancion_txt,
+                    i.descripcion[:35],
+                    i.fecha.strftime("%d/%m/%Y %H:%M"),
+                    i.estado.upper(),
                 ])
-            widths = [w * cm for w in [2.5, 4, 3.5, 2.5, 5, 3.5, 2.5]]
+            widths = [w * cm for w in [2.5, 4, 3.5, 3, 4.5, 3.5, 2.5]]
             elements.append(_table(rows, widths))
             elements.append(Spacer(1, 0.5 * cm))
-            elements.append(Paragraph(f"Total: {len(multas)} multas (últimas 200)", sub_style))
+            elements.append(Paragraph(f"Total: {len(infracciones)} infracciones (últimas 200)", sub_style))
             return elements
 
-        return _build_response(f"multas_{datetime.now().strftime('%Y%m%d')}.pdf", build)
+        return _build_response(f"infracciones_{datetime.now().strftime('%Y%m%d')}.pdf", build)

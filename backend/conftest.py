@@ -14,7 +14,7 @@ from apps.usuarios.models import Usuario, Rol, UsuarioRol
 from apps.vehiculos.models import TipoVehiculo, Vehiculo
 from apps.acceso.models import PuntoAcceso, AuditLog
 from apps.parqueos.models import CategoriaEspacio, ZonaParqueo, EspacioParqueo
-from apps.multas.models import TipoMulta
+from apps.multas.models import TipoInfraccion
 
 
 # ── Usuarios ────────────────────────────────────────────────────────────────
@@ -154,13 +154,18 @@ def espacio_ocupado(db, zona, categoria_espacio):
     )
 
 
-# ── Multas ───────────────────────────────────────────────────────────────────
+# ── Infracciones ─────────────────────────────────────────────────────────────
 
 @pytest.fixture
-def tipo_multa(db):
-    t, _ = TipoMulta.objects.get_or_create(
+def tipo_infraccion(db):
+    t, _ = TipoInfraccion.objects.get_or_create(
         nombre="Estacionamiento indebido",
-        defaults={"descripcion": "Vehículo mal estacionado", "monto_base": 50.00},
+        defaults={
+            "descripcion": "Vehículo mal estacionado",
+            "gravedad": "leve",
+            "tipo_sancion_sugerido": "multa_economica",
+            "monto_base": 50.00,
+        },
     )
     return t
 

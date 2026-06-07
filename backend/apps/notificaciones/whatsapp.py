@@ -2,7 +2,7 @@
 Servicio de WhatsApp via Fonnte API.
 
 Flujo:
-  Django detecta evento (entrada, multa, visita, etc.)
+  Django detecta evento (entrada, infracción, visita, etc.)
     → enviar_whatsapp(telefono, mensaje)
     → Fonnte API → número Bolivia conectado → WhatsApp del destinatario
 
@@ -221,12 +221,12 @@ def msg_salida_campus(placa: str, punto: str, hora: str) -> str:
     )
 
 
-def msg_multa_registrada(placa: str, tipo_multa: str, monto: str) -> str:
+def msg_infraccion_registrada(placa: str, tipo_infraccion: str, monto: str) -> str:
     return (
         f"⚠️ *Control Vehicular UAGRM*\n\n"
-        f"Se registró una multa para *{placa}*.\n"
-        f"📋 Infracción: {tipo_multa}\n"
-        f"💰 Monto: Bs {monto}\n\n"
+        f"Se registró una infracción para *{placa}*.\n"
+        f"📋 Infracción: {tipo_infraccion}\n"
+        f"💰 Sanción: Bs {monto}\n\n"
         f"Regulariza en el sistema para rehabilitar tu vehículo."
     )
 

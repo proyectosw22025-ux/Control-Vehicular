@@ -10,7 +10,7 @@ query V(
   $tipoId: Int
   $fechaDesde: String
   $fechaHasta: String
-  $tieneMultas: Boolean
+  $tieneInfraccionesActivas: Boolean
   $tieneDocumentosVencidos: Boolean
   $ordenarPor: String
   $color: String
@@ -20,7 +20,7 @@ query V(
     tipoId: $tipoId
     fechaDesde: $fechaDesde
     fechaHasta: $fechaHasta
-    tieneMultas: $tieneMultas
+    tieneInfraccionesActivas: $tieneInfraccionesActivas
     tieneDocumentosVencidos: $tieneDocumentosVencidos
     ordenarPor: $ordenarPor
     color: $color
@@ -92,24 +92,26 @@ def test_filtro_fecha_hasta_incluye_hoy(gql_admin, vehiculo_rojo):
 
 
 @pytest.mark.django_db
-def test_filtro_tiene_multas_sin_multas(gql_admin, vehiculo_rojo):
-    """vehiculo_rojo no tiene multas → filtrar por tieneMultas=False lo incluye."""
-    r = graphql(gql_admin, VEHICULOS_FILTRADOS, {"tieneMultas": False})
+def test_filtro_tiene_infracciones_activas_sin_infracciones(gql_admin, vehiculo_rojo):
+    """vehiculo_rojo sin infracciones → filtrar por tieneInfraccionesActivas=False lo incluye."""
+    r = graphql(gql_admin, VEHICULOS_FILTRADOS, {"tieneInfraccionesActivas": False})
     assert "errors" not in r
     placas = [i["placa"] for i in r["data"]["vehiculos"]["items"]]
     assert "ROJ-001" in placas
 
 
 @pytest.mark.django_db
-def test_filtro_tiene_multas_con_multa(gql_admin, vehiculo_rojo, tipo_vehiculo):
-    """vehiculo_rojo con multa pendiente → aparece con tieneMultas=True."""
-    from apps.multas.models import Multa, TipoMulta
-    tipo_m, _ = TipoMulta.objects.get_or_create(nombre="Velocidad", defaults={"monto_base": "50.00"})
-    Multa.objects.create(
-        vehiculo=vehiculo_rojo, tipo=tipo_m,
-        descripcion="Test", monto="50.00", estado="pendiente",
+def test_filtro_tiene_infracciones_activas_con_sancion_pendiente(gql_admin, vehiculo_rojo, tipo_vehiculo):
+    """vehiculo_rojo con sanción pendiente → aparece con tieneInfraccionesActivas=True."""
+    from apps.multas.models import Infraccion, TipoInfraccion, Sancion
+    tipo_i, _ = TipoInfraccion.objects.get_or_create(nombre="Velocidad", defaults={"monto_base": "50.00"})
+    infraccion = Infraccion.objects.create(
+        vehiculo=vehiculo_rojo, tipo=tipo_i, descripcion="Test", estado="registrada",
     )
-    r = graphql(gql_admin, VEHICULOS_FILTRADOS, {"tieneMultas": True})
+    Sancion.objects.create(
+        infraccion=infraccion, tipo_sancion="multa_economica", monto="50.00", estado="pendiente",
+    )
+    r = graphql(gql_admin, VEHICULOS_FILTRADOS, {"tieneInfraccionesActivas": True})
     assert "errors" not in r
     placas = [i["placa"] for i in r["data"]["vehiculos"]["items"]]
     assert "ROJ-001" in placas

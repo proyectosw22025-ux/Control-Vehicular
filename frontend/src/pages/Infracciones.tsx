@@ -2,26 +2,26 @@ import { useState, FormEvent, useEffect, useRef } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import {
   AlertTriangle, Plus, CreditCard, MessageSquare, CheckCircle, X, FileDown,
-  Upload, QrCode, Smartphone, Banknote, Clock, CheckCircle2, XCircle,
+  Upload, QrCode, Smartphone, Banknote, Clock, CheckCircle2, ShieldCheck,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../hooks/useToast'
 import { ToastContainer } from '../components/ToastContainer'
 import { QrImage } from '../components/QrImage'
 import {
-  MULTAS_PENDIENTES_QUERY,
-  MULTAS_VEHICULO_QUERY,
-  TIPOS_MULTA_QUERY,
+  SANCIONES_PENDIENTES_QUERY,
+  INFRACCIONES_VEHICULO_QUERY,
+  TIPOS_INFRACCION_QUERY,
   APELACIONES_PENDIENTES_QUERY,
-} from '../graphql/queries/multas'
+} from '../graphql/queries/infracciones'
 import { VEHICULOS_QUERY } from '../graphql/queries/vehiculos'
 import {
-  REGISTRAR_MULTA_MUTATION,
-  PAGAR_MULTA_MUTATION,
-  APELAR_MULTA_MUTATION,
+  REGISTRAR_INFRACCION_MUTATION,
+  PAGAR_SANCION_MUTATION,
+  APELAR_INFRACCION_MUTATION,
   RESOLVER_APELACION_MUTATION,
-  CONFIRMAR_PAGO_MUTATION,
-} from '../graphql/mutations/multas'
+  MARCAR_SANCION_CUMPLIDA_MUTATION,
+} from '../graphql/mutations/infracciones'
 
 // ── Métodos de pago Bolivia ────────────────────────────────────
 const METODOS_PAGO = [
@@ -69,38 +69,106 @@ const CUENTA_UAGRM = {
 const ESTADO_BADGE: Record<string, string> = {
   pendiente:   'bg-orange-100 text-orange-700',
   en_revision: 'bg-blue-100 text-blue-700',
-  pagada:      'bg-green-100 text-green-700',
+  cumplida:    'bg-green-100 text-green-700',
+  cancelada:   'bg-slate-100 text-slate-500',
+  registrada:  'bg-orange-100 text-orange-700',
   apelada:     'bg-blue-100 text-blue-700',
-  cancelada: 'bg-slate-100 text-slate-500',
+  confirmada:  'bg-green-100 text-green-700',
+  anulada:     'bg-slate-100 text-slate-500',
 }
 
-type Multa = {
-  id: number; monto: number; descripcion: string; fecha: string; estado: string;
-  tipo: { nombre: string }; placaVehiculo: string; registradoPorNombre: string; tieneApelacion: boolean
+const TIPO_SANCION_LABELS: Record<string, string> = {
+  amonestacion:      'Amonestación',
+  multa_economica:   'Multa económica',
+  suspension_acceso: 'Suspensión de acceso',
+  reporte_bienestar: 'Reporte a Bienestar',
+}
+
+type TipoInfraccion = {
+  id: number; nombre: string; descripcion: string; gravedad: string;
+  tipoSancionSugerido: string; montoBase: number | null
+}
+type Sancion = { id: number; tipoSancion: string; monto: number | null; estado: string; fecha: string }
+type Infraccion = {
+  id: number; descripcion: string; fecha: string; estado: string;
+  tipo: { nombre: string }; placaVehiculo: string; registradoPorNombre: string;
+  tieneApelacion: boolean; sancion: Sancion | null
+}
+type SancionPendiente = {
+  id: number; tipoSancion: string; monto: number | null; estado: string; fecha: string;
+  infraccionId: number; placaVehiculo: string; tipoInfraccionNombre: string; descripcionInfraccion: string
 }
 type Apelacion = {
   id: number; motivo: string; estado: string; respuesta: string; fecha: string; usuarioNombre: string
 }
 
-type Tab = 'pendientes' | 'todas' | 'apelaciones'
-type Modal = 'registrar' | 'pagar' | 'apelar' | 'resolver' | null
+// Fila normalizada para la tabla — unifica el origen "sanciones pendientes"
+// (overview de personal) con "infracciones por vehículo" (detalle completo).
+type Fila = {
+  infraccionId: number
+  sancionId: number | null
+  placaVehiculo: string
+  tipoNombre: string
+  descripcion: string
+  tipoSancion: string | null
+  monto: number | null
+  estadoSancion: string | null
+  estadoInfraccion: string | null
+  tieneApelacion: boolean
+  fecha: string
+}
 
-export default function Multas() {
+function filaDesdeInfraccion(i: Infraccion): Fila {
+  return {
+    infraccionId: i.id,
+    sancionId: i.sancion?.id ?? null,
+    placaVehiculo: i.placaVehiculo,
+    tipoNombre: i.tipo.nombre,
+    descripcion: i.descripcion,
+    tipoSancion: i.sancion?.tipoSancion ?? null,
+    monto: i.sancion?.monto ?? null,
+    estadoSancion: i.sancion?.estado ?? null,
+    estadoInfraccion: i.estado,
+    tieneApelacion: i.tieneApelacion,
+    fecha: i.fecha,
+  }
+}
+
+function filaDesdeSancion(s: SancionPendiente): Fila {
+  return {
+    infraccionId: s.infraccionId,
+    sancionId: s.id,
+    placaVehiculo: s.placaVehiculo,
+    tipoNombre: s.tipoInfraccionNombre,
+    descripcion: s.descripcionInfraccion,
+    tipoSancion: s.tipoSancion,
+    monto: s.monto,
+    estadoSancion: s.estado,
+    estadoInfraccion: null,
+    tieneApelacion: false,
+    fecha: s.fecha,
+  }
+}
+
+type Tab = 'pendientes' | 'todas' | 'apelaciones'
+type Modal = 'registrar' | 'pagar' | 'apelar' | 'resolver' | 'marcar_cumplida' | null
+
+export default function Infracciones() {
   const { usuario, esAdmin, esGuardia } = useAuth()
   const toast = useToast()
   const esPersonal = esAdmin || esGuardia
   const [tab, setTab] = useState<Tab>(esPersonal ? 'pendientes' : 'todas')
   const [modal, setModal] = useState<Modal>(null)
-  const [seleccionada, setSeleccionada] = useState<Multa | null>(null)
+  const [seleccionada, setSeleccionada] = useState<Fila | null>(null)
   const [apelacionSel, setApelacionSel] = useState<Apelacion | null>(null)
   const [vehiculoFiltro, setVehiculoFiltro] = useState<number | null>(null)
   const [error, setError] = useState('')
 
-  const { data: pendientesData, refetch: refetchPendientes } = useQuery(MULTAS_PENDIENTES_QUERY, {
+  const { data: pendientesData, refetch: refetchPendientes } = useQuery(SANCIONES_PENDIENTES_QUERY, {
     skip: !esPersonal,
   })
   // Admin/guardia: solo activos (no cargar toda la BD). Usuario: todos sus vehículos
-  // incluyendo sancionados, porque precisamente necesita ver las multas de ese vehículo.
+  // incluyendo sancionados, porque precisamente necesita ver las infracciones de ese vehículo.
   const { data: misVehiculosData } = useQuery(VEHICULOS_QUERY, {
     variables: {
       propietarioId: esPersonal ? undefined : usuario.id,
@@ -109,30 +177,34 @@ export default function Multas() {
     },
     fetchPolicy: 'cache-and-network',
   })
-  const { data: multasVehData, refetch: refetchVeh } = useQuery(MULTAS_VEHICULO_QUERY, {
+  const { data: infraccionesVehData, refetch: refetchVeh } = useQuery(INFRACCIONES_VEHICULO_QUERY, {
     variables: { vehiculoId: vehiculoFiltro },
     skip: !vehiculoFiltro,
   })
-  const { data: tiposData } = useQuery(TIPOS_MULTA_QUERY)
+  const { data: tiposData } = useQuery(TIPOS_INFRACCION_QUERY)
   const { data: apelacionesData, refetch: refetchApelaciones } = useQuery(APELACIONES_PENDIENTES_QUERY, {
     skip: !esAdmin,
   })
 
-  const [registrarMulta, { loading: loadingRegistrar }] = useMutation(REGISTRAR_MULTA_MUTATION, {
+  const [registrarInfraccion, { loading: loadingRegistrar }] = useMutation(REGISTRAR_INFRACCION_MUTATION, {
     onCompleted(d) {
       cerrarModal(); refetchPendientes()
-      toast.exito('Multa registrada', `${d.registrarMulta.placaVehiculo} sancionado`)
+      const sancion = d.registrarInfraccion.sancion
+      const detalle = sancion?.tipoSancion === 'multa_economica'
+        ? `Sanción: multa de Bs. ${sancion.monto}`
+        : `Sanción: ${TIPO_SANCION_LABELS[sancion?.tipoSancion] ?? sancion?.tipoSancion}`
+      toast.exito('Infracción registrada', `${d.registrarInfraccion.placaVehiculo} — ${detalle}`)
     },
-    onError(e) { setError(e.message); toast.error('Error al registrar multa', e.message) },
+    onError(e) { setError(e.message); toast.error('Error al registrar infracción', e.message) },
   })
-  const [pagarMulta, { loading: loadingPagar }] = useMutation(PAGAR_MULTA_MUTATION, {
+  const [pagarSancion, { loading: loadingPagar }] = useMutation(PAGAR_SANCION_MUTATION, {
     onCompleted() {
       cerrarModal(); refetchPendientes(); if (vehiculoFiltro) refetchVeh()
-      toast.exito('Pago registrado', 'El vehículo ha sido rehabilitado si no tiene más multas')
+      toast.exito('Pago registrado', 'El vehículo ha sido rehabilitado si no tiene más sanciones pendientes')
     },
     onError(e) { setError(e.message); toast.error('Error al registrar pago', e.message) },
   })
-  const [apelarMulta, { loading: loadingApelar }] = useMutation(APELAR_MULTA_MUTATION, {
+  const [apelarInfraccion, { loading: loadingApelar }] = useMutation(APELAR_INFRACCION_MUTATION, {
     onCompleted() {
       cerrarModal(); refetchPendientes(); if (vehiculoFiltro) refetchVeh()
       toast.info('Apelación enviada', 'Un administrador revisará tu caso')
@@ -144,14 +216,21 @@ export default function Multas() {
       cerrarModal(); refetchApelaciones()
       const aprobada = d.resolverApelacion.estado === 'aprobada'
       aprobada
-        ? toast.exito('Apelación aprobada', 'La multa fue cancelada')
-        : toast.alerta('Apelación rechazada', 'La multa vuelve a estado pendiente')
+        ? toast.exito('Apelación aprobada', 'La infracción fue anulada y su sanción cancelada')
+        : toast.alerta('Apelación rechazada', 'La infracción queda confirmada')
     },
     onError(e) { setError(e.message); toast.error('Error al resolver apelación', e.message) },
   })
+  const [marcarSancionCumplida, { loading: loadingMarcar }] = useMutation(MARCAR_SANCION_CUMPLIDA_MUTATION, {
+    onCompleted() {
+      cerrarModal(); refetchPendientes(); if (vehiculoFiltro) refetchVeh()
+      toast.exito('Sanción marcada como cumplida', 'El vehículo ha sido rehabilitado si no tiene más sanciones pendientes')
+    },
+    onError(e) { setError(e.message); toast.error('Error al marcar la sanción', e.message) },
+  })
 
   const misVehiculos = misVehiculosData?.vehiculos?.items ?? []
-  const tipos = tiposData?.tiposMulta ?? []
+  const tipos: TipoInfraccion[] = tiposData?.tiposInfraccion ?? []
 
   // Auto-seleccionar si el residente solo tiene 1 vehículo — elimina el paso del dropdown
   useEffect(() => {
@@ -159,28 +238,43 @@ export default function Multas() {
       setVehiculoFiltro(misVehiculos[0].id)
     }
   }, [misVehiculos, esPersonal, vehiculoFiltro])
-  const multasPendientes: Multa[] = pendientesData?.multasPendientes ?? []
-  const multasVehiculo: Multa[] = multasVehData?.multasVehiculo ?? []
+
+  const filasPendientes: Fila[] = (pendientesData?.sancionesPendientes ?? []).map(filaDesdeSancion)
+  const filasVehiculo: Fila[] = (infraccionesVehData?.infraccionesVehiculo ?? []).map(filaDesdeInfraccion)
   const apelaciones: Apelacion[] = apelacionesData?.apelacionesPendientes ?? []
 
-  function cerrarModal() { setModal(null); setSeleccionada(null); setApelacionSel(null); setError('') }
+  function cerrarModal() { setModal(null); setSeleccionada(null); setApelacionSel(null); setError(''); setTipoSel(null); setTipoSancionSel('') }
+
+  // ── Registrar infracción ──────────────────────────────────────
+  const [tipoSel, setTipoSel] = useState<TipoInfraccion | null>(null)
+  const [tipoSancionSel, setTipoSancionSel] = useState<string>('')
+
+  function handleSeleccionarTipo(tipoId: string) {
+    const tipo = tipos.find(t => String(t.id) === tipoId) ?? null
+    setTipoSel(tipo)
+    setTipoSancionSel(tipo?.tipoSancionSugerido ?? '')
+  }
 
   function handleRegistrar(e: FormEvent<HTMLFormElement>) {
     e.preventDefault(); setError('')
     const f = new FormData(e.currentTarget)
+    const tipoSancionOverride = (f.get('tipoSancionOverride') as string) || null
     const montoStr = f.get('montoOverride') as string
-    registrarMulta({
+    const tipoSancionFinal = tipoSancionOverride ?? tipoSel?.tipoSancionSugerido
+    registrarInfraccion({
       variables: {
         input: {
-          vehiculoId:    parseInt(f.get('vehiculoId') as string),
-          tipoId:        parseInt(f.get('tipoId') as string),
-          descripcion:   (f.get('descripcion') as string).trim(),
-          montoOverride: montoStr ? parseFloat(montoStr) : null,
+          vehiculoId:          parseInt(f.get('vehiculoId') as string),
+          tipoId:              parseInt(f.get('tipoId') as string),
+          descripcion:         (f.get('descripcion') as string).trim(),
+          tipoSancionOverride,
+          montoOverride: tipoSancionFinal === 'multa_economica' && montoStr ? parseFloat(montoStr) : null,
         },
       },
     })
   }
 
+  // ── Pagar sanción ─────────────────────────────────────────────
   const [metodoPagoSel, setMetodoPagoSel] = useState('qr_pago')
   const [comprobanteUrl, setComprobanteUrl] = useState('')
   const [referenciaPago, setReferenciaPago] = useState('')
@@ -221,10 +315,10 @@ export default function Multas() {
       setError('Debes subir el comprobante de pago para continuar')
       return
     }
-    pagarMulta({
+    pagarSancion({
       variables: {
         input: {
-          multaId:        seleccionada!.id,
+          sancionId:      seleccionada!.sancionId,
           metodoPago:     metodoPagoSel,
           comprobanteUrl: comprobanteUrl,
           referenciaPago: referenciaPago.trim(),
@@ -237,11 +331,11 @@ export default function Multas() {
   function handleApelar(e: FormEvent<HTMLFormElement>) {
     e.preventDefault(); setError('')
     const f = new FormData(e.currentTarget)
-    apelarMulta({
+    apelarInfraccion({
       variables: {
         input: {
-          multaId: seleccionada!.id,
-          motivo:  (f.get('motivo') as string).trim(),
+          infraccionId: seleccionada!.infraccionId,
+          motivo:       (f.get('motivo') as string).trim(),
         },
       },
     })
@@ -254,15 +348,28 @@ export default function Multas() {
     resolverApelacion({ variables: { input: { apelacionId: apelacionSel!.id, aprobada, respuesta } } })
   }
 
+  function handleMarcarCumplida(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault(); setError('')
+    const f = new FormData(e.currentTarget)
+    marcarSancionCumplida({
+      variables: {
+        input: {
+          sancionId:   seleccionada!.sancionId,
+          observacion: (f.get('observacion') as string).trim(),
+        },
+      },
+    })
+  }
+
   return (
     <div className="p-4 sm:p-8">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <div className="bg-red-500 text-white p-2 rounded-xl"><AlertTriangle size={20} /></div>
           <div>
-            <h1 className="text-xl font-bold text-slate-800">Multas</h1>
+            <h1 className="text-xl font-bold text-slate-800">Infracciones</h1>
             <p className="text-slate-500 text-xs">
-              {esPersonal ? 'Gestión de multas del sistema' : 'Multas de mis vehículos'}
+              {esPersonal ? 'Gestión de infracciones y sanciones del sistema' : 'Infracciones de mis vehículos'}
             </p>
           </div>
         </div>
@@ -271,18 +378,18 @@ export default function Multas() {
             <button onClick={async () => {
               const t = localStorage.getItem('access_token') || ''
               const base = (import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/').replace(/\/graphql\/?$/, '')
-              const resp = await fetch(`${base}/api/pdf/multas/`, { headers: { Authorization: `Bearer ${t}` } })
+              const resp = await fetch(`${base}/api/pdf/infracciones/`, { headers: { Authorization: `Bearer ${t}` } })
               if (!resp.ok) { alert(`Error al generar PDF (${resp.status})`); return }
               const blob = await resp.blob()
               const url = URL.createObjectURL(blob)
-              const a = document.createElement('a'); a.href = url; a.download = `multas_${new Date().toISOString().slice(0,10)}.pdf`; a.click(); URL.revokeObjectURL(url)
+              const a = document.createElement('a'); a.href = url; a.download = `infracciones_${new Date().toISOString().slice(0,10)}.pdf`; a.click(); URL.revokeObjectURL(url)
             }}
               className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
               <FileDown size={15} /> PDF
             </button>
             <button onClick={() => setModal('registrar')}
               className="flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-              <Plus size={16} /> Registrar Multa
+              <Plus size={16} /> Registrar Infracción
             </button>
           </div>
         )}
@@ -292,7 +399,7 @@ export default function Multas() {
       <div className="flex gap-1 mb-4 border-b border-slate-200">
         {esPersonal && (
           <TabBtn active={tab === 'pendientes'} onClick={() => setTab('pendientes')}
-            label={`Pendientes${multasPendientes.length > 0 ? ` (${multasPendientes.length})` : ''}`} />
+            label={`Sanciones pendientes${filasPendientes.length > 0 ? ` (${filasPendientes.length})` : ''}`} />
         )}
         <TabBtn active={tab === 'todas'} onClick={() => setTab('todas')} label="Por vehículo" />
         {esAdmin && (
@@ -301,11 +408,12 @@ export default function Multas() {
         )}
       </div>
 
-      {/* Pendientes */}
+      {/* Sanciones pendientes */}
       {tab === 'pendientes' && esPersonal && (
-        <TablaMultas multas={multasPendientes} esPersonal={esPersonal}
-          onPagar={m => { setSeleccionada(m); setModal('pagar') }}
-          onApelar={m => { setSeleccionada(m); setModal('apelar') }} />
+        <TablaInfracciones filas={filasPendientes} esPersonal={esPersonal} esAdmin={esAdmin}
+          onPagar={f => { setSeleccionada(f); setModal('pagar') }}
+          onApelar={f => { setSeleccionada(f); setModal('apelar') }}
+          onMarcarCumplida={f => { setSeleccionada(f); setModal('marcar_cumplida') }} />
       )}
 
       {/* Por vehículo */}
@@ -323,10 +431,11 @@ export default function Multas() {
             </select>
           </div>
           {vehiculoFiltro
-            ? <TablaMultas multas={multasVehiculo} esPersonal={esPersonal}
-                onPagar={m => { setSeleccionada(m); setModal('pagar') }}
-                onApelar={m => { setSeleccionada(m); setModal('apelar') }} />
-            : <div className="text-center py-10 text-slate-400 text-sm">Selecciona un vehículo para ver sus multas</div>
+            ? <TablaInfracciones filas={filasVehiculo} esPersonal={esPersonal} esAdmin={esAdmin}
+                onPagar={f => { setSeleccionada(f); setModal('pagar') }}
+                onApelar={f => { setSeleccionada(f); setModal('apelar') }}
+                onMarcarCumplida={f => { setSeleccionada(f); setModal('marcar_cumplida') }} />
+            : <div className="text-center py-10 text-slate-400 text-sm">Selecciona un vehículo para ver sus infracciones</div>
           }
         </div>
       )}
@@ -356,7 +465,7 @@ export default function Multas() {
 
       {/* Modal Registrar */}
       {modal === 'registrar' && (
-        <ModalWrap titulo="Registrar Multa" onClose={cerrarModal}>
+        <ModalWrap titulo="Registrar Infracción" onClose={cerrarModal}>
           <form onSubmit={handleRegistrar} className="space-y-3">
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Vehículo *</label>
@@ -368,38 +477,67 @@ export default function Multas() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Tipo de multa *</label>
-              <select name="tipoId" required className={cls}>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Tipo de infracción *</label>
+              <select name="tipoId" required className={cls} onChange={e => handleSeleccionarTipo(e.target.value)}>
                 <option value="">Seleccionar...</option>
-                {tipos.map((t: any) => (
-                  <option key={t.id} value={t.id}>{t.nombre} — Bs. {t.montoBase}</option>
+                {tipos.map(t => (
+                  <option key={t.id} value={t.id}>
+                    {t.nombre} — {TIPO_SANCION_LABELS[t.tipoSancionSugerido] ?? t.tipoSancionSugerido}
+                    {t.tipoSancionSugerido === 'multa_economica' && t.montoBase != null ? ` (Bs. ${t.montoBase})` : ''}
+                  </option>
                 ))}
               </select>
+              {tipoSel && (
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Gravedad: <span className="font-medium text-slate-500">{tipoSel.gravedad}</span>
+                  {tipoSel.descripcion && ` · ${tipoSel.descripcion}`}
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Descripción *</label>
               <textarea name="descripcion" required rows={3} placeholder="Detalle de la infracción..."
                 className={cls + ' resize-none'} />
             </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Monto personalizado (Bs.) — opcional</label>
-              <input type="number" step="0.01" name="montoOverride" placeholder="Deja vacío para usar monto base" className={cls} />
-            </div>
+            {tipoSel && (
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Sanción a aplicar</label>
+                <select name="tipoSancionOverride" value={tipoSancionSel}
+                  onChange={e => setTipoSancionSel(e.target.value)}
+                  className={cls}>
+                  {Object.entries(TIPO_SANCION_LABELS).map(([valor, label]) => (
+                    <option key={valor} value={valor}>{label}</option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Sugerida para este tipo: <strong>{TIPO_SANCION_LABELS[tipoSel.tipoSancionSugerido]}</strong>.
+                  Puedes ajustarla según la gravedad real del caso.
+                </p>
+              </div>
+            )}
+            {tipoSancionSel === 'multa_economica' && (
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Monto (Bs.) — opcional</label>
+                <input type="number" step="0.01" name="montoOverride"
+                  placeholder={tipoSel?.montoBase != null ? `Deja vacío para usar Bs. ${tipoSel.montoBase}` : 'Monto de la sanción'}
+                  className={cls} />
+              </div>
+            )}
             {error && <Err t={error} />}
-            <Btn loading={loadingRegistrar} label="Registrar multa" />
+            <Btn loading={loadingRegistrar} label="Registrar infracción" />
           </form>
         </ModalWrap>
       )}
 
       {/* Modal Pagar — métodos bolivianos con verificación */}
       {modal === 'pagar' && seleccionada && (
-        <ModalWrap titulo={`Pagar Multa — Bs. ${seleccionada.monto}`} onClose={cerrarModal}>
+        <ModalWrap titulo={`Pagar Sanción — Bs. ${seleccionada.monto}`} onClose={cerrarModal}>
 
-          {/* Resumen de la multa */}
+          {/* Resumen de la infracción y su sanción */}
           <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 mb-4 text-sm text-orange-700">
             <div className="flex justify-between items-center">
               <div>
-                <p className="font-bold">{seleccionada.tipo?.nombre}</p>
+                <p className="font-bold">{seleccionada.tipoNombre}</p>
                 <p className="text-xs mt-0.5 opacity-80">{seleccionada.descripcion}</p>
                 <p className="text-xs mt-0.5 font-mono">Placa: {seleccionada.placaVehiculo}</p>
               </div>
@@ -441,12 +579,12 @@ export default function Multas() {
                 <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Escanea con tu app bancaria</p>
                 <div className="flex justify-center">
                   <QrImage
-                    value={`PAGO:UAGRM:MULTA:${seleccionada.id}:${seleccionada.monto}:${seleccionada.placaVehiculo}`}
+                    value={`PAGO:UAGRM:SANCION:${seleccionada.sancionId}:${seleccionada.monto}:${seleccionada.placaVehiculo}`}
                     size={140}
                     showDownload={false}
                   />
                 </div>
-                <p className="text-xs text-blue-600">Referencia: <strong>MULTA-{seleccionada.id}</strong></p>
+                <p className="text-xs text-blue-600">Referencia: <strong>SANCION-{seleccionada.sancionId}</strong></p>
                 <p className="text-[10px] text-blue-500">Compatible con Banco Mercantil SC, Bancosol, BCP, BNB y otros</p>
               </div>
             )}
@@ -462,7 +600,7 @@ export default function Multas() {
                   <span className="text-slate-500">Titular:</span>
                   <span className="font-medium text-slate-800">{CUENTA_UAGRM.titular}</span>
                   <span className="text-slate-500">Glosa:</span>
-                  <span className="font-mono text-violet-700">MULTA-{seleccionada.id}</span>
+                  <span className="font-mono text-violet-700">SANCION-{seleccionada.sancionId}</span>
                 </div>
               </div>
             )}
@@ -471,15 +609,15 @@ export default function Multas() {
               <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm">
                 <p className="font-bold text-emerald-800 text-xs uppercase tracking-wide mb-2">Tigo Money / Unitel</p>
                 <p className="text-xs text-emerald-700">Envía el pago a: <strong className="font-mono">70123456</strong> (UAGRM Pagos)</p>
-                <p className="text-xs text-emerald-600 mt-1">Concepto: <strong>MULTA-{seleccionada.id}</strong></p>
+                <p className="text-xs text-emerald-600 mt-1">Concepto: <strong>SANCION-{seleccionada.sancionId}</strong></p>
               </div>
             )}
 
             {metodoPagoSel === 'efectivo' && (
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-600">
                 <p className="font-semibold text-slate-700 mb-1">💰 Pago en ventanilla</p>
-                <p className="text-xs">Dirígete a la <strong>Oficina de Administración UAGRM</strong> con el número de multa:</p>
-                <p className="text-lg font-mono font-black text-slate-800 text-center mt-2">MULTA-{seleccionada.id}</p>
+                <p className="text-xs">Dirígete a la <strong>Oficina de Administración UAGRM</strong> con el número de sanción:</p>
+                <p className="text-lg font-mono font-black text-slate-800 text-center mt-2">SANCION-{seleccionada.sancionId}</p>
               </div>
             )}
 
@@ -551,19 +689,39 @@ export default function Multas() {
 
       {/* Modal Apelar */}
       {modal === 'apelar' && seleccionada && (
-        <ModalWrap titulo={`Apelar — ${seleccionada.tipo.nombre}`} onClose={cerrarModal}>
+        <ModalWrap titulo={`Apelar — ${seleccionada.tipoNombre}`} onClose={cerrarModal}>
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-sm text-blue-700">
-            <p>Monto: <strong>Bs. {seleccionada.monto}</strong></p>
+            <p>Sanción: <strong>{TIPO_SANCION_LABELS[seleccionada.tipoSancion ?? ''] ?? '—'}{seleccionada.tipoSancion === 'multa_economica' ? ` (Bs. ${seleccionada.monto})` : ''}</strong></p>
             <p>Vehículo: <span className="font-mono">{seleccionada.placaVehiculo}</span></p>
           </div>
           <form onSubmit={handleApelar} className="space-y-3">
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Motivo de apelación *</label>
-              <textarea name="motivo" required rows={4} placeholder="Explica por qué apelas esta multa..."
+              <textarea name="motivo" required rows={4} placeholder="Explica por qué apelas esta infracción..."
                 className={cls + ' resize-none'} />
             </div>
             {error && <Err t={error} />}
             <Btn loading={loadingApelar} label="Enviar apelación" color="bg-blue-500 hover:bg-blue-600" />
+          </form>
+        </ModalWrap>
+      )}
+
+      {/* Modal Marcar sanción como cumplida (suspensión / reporte a Bienestar) */}
+      {modal === 'marcar_cumplida' && seleccionada && (
+        <ModalWrap titulo="Marcar sanción como cumplida" onClose={cerrarModal}>
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 mb-4 text-sm text-emerald-700">
+            <p className="font-bold">{TIPO_SANCION_LABELS[seleccionada.tipoSancion ?? ''] ?? seleccionada.tipoSancion}</p>
+            <p className="text-xs mt-0.5 opacity-80">{seleccionada.tipoNombre} — {seleccionada.descripcion}</p>
+            <p className="text-xs mt-0.5 font-mono">Placa: {seleccionada.placaVehiculo}</p>
+          </div>
+          <form onSubmit={handleMarcarCumplida} className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Observación — opcional</label>
+              <textarea name="observacion" rows={3} placeholder="Ej: el área de Bienestar confirmó el cierre del caso..."
+                className={cls + ' resize-none'} />
+            </div>
+            {error && <Err t={error} />}
+            <Btn loading={loadingMarcar} label="Marcar como cumplida" color="bg-emerald-500 hover:bg-emerald-600" />
           </form>
         </ModalWrap>
       )}
@@ -600,12 +758,18 @@ export default function Multas() {
   )
 }
 
-function TablaMultas({ multas, esPersonal, onPagar, onApelar }: {
-  multas: Multa[]; esPersonal: boolean;
-  onPagar: (m: Multa) => void; onApelar: (m: Multa) => void
+function CeldaSancion({ tipoSancion, monto }: { tipoSancion: string | null; monto: number | null }) {
+  if (!tipoSancion) return <span className="text-slate-400 text-xs">—</span>
+  if (tipoSancion === 'multa_economica') return <span className="font-medium text-slate-800">Bs. {monto}</span>
+  return <span className="text-slate-600 text-xs">{TIPO_SANCION_LABELS[tipoSancion] ?? tipoSancion}</span>
+}
+
+function TablaInfracciones({ filas, esPersonal, esAdmin, onPagar, onApelar, onMarcarCumplida }: {
+  filas: Fila[]; esPersonal: boolean; esAdmin: boolean;
+  onPagar: (f: Fila) => void; onApelar: (f: Fila) => void; onMarcarCumplida: (f: Fila) => void
 }) {
-  if (multas.length === 0)
-    return <div className="text-center py-10 text-slate-400 text-sm">No hay multas registradas</div>
+  if (filas.length === 0)
+    return <div className="text-center py-10 text-slate-400 text-sm">No hay infracciones registradas</div>
   return (
     <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
       <table className="w-full text-sm">
@@ -614,44 +778,56 @@ function TablaMultas({ multas, esPersonal, onPagar, onApelar }: {
             <th className="px-4 py-3 text-left">Placa</th>
             <th className="px-4 py-3 text-left">Tipo</th>
             <th className="px-4 py-3 text-left">Descripción</th>
-            <th className="px-4 py-3 text-left">Monto</th>
+            <th className="px-4 py-3 text-left">Sanción</th>
             <th className="px-4 py-3 text-left">Estado</th>
             <th className="px-4 py-3 text-left">Fecha</th>
             <th className="px-4 py-3 text-left">Acciones</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {multas.map(m => (
-            <tr key={m.id} className="hover:bg-slate-50 transition-colors">
-              <td className="px-4 py-3 font-mono font-bold text-slate-800">{m.placaVehiculo}</td>
-              <td className="px-4 py-3 text-slate-700">{m.tipo.nombre}</td>
-              <td className="px-4 py-3 text-slate-600 max-w-[200px] truncate">{m.descripcion}</td>
-              <td className="px-4 py-3 font-medium text-slate-800">Bs. {m.monto}</td>
-              <td className="px-4 py-3">
-                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ESTADO_BADGE[m.estado] ?? 'bg-slate-100'}`}>
-                  {m.estado}
-                </span>
-              </td>
-              <td className="px-4 py-3 text-slate-500 text-xs">{new Date(m.fecha).toLocaleDateString('es-BO')}</td>
-              <td className="px-4 py-3">
-                <div className="flex items-center gap-1">
-                  {m.estado === 'pendiente' && (
-                    <button onClick={() => onPagar(m)}
-                      className="flex items-center gap-1 bg-green-50 hover:bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-medium transition-colors">
-                      <CreditCard size={12} /> Pagar
-                    </button>
-                  )}
-                  {m.estado === 'pendiente' && !m.tieneApelacion && !esPersonal && (
-                    <button onClick={() => onApelar(m)}
-                      className="flex items-center gap-1 bg-blue-50 hover:bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-medium transition-colors">
-                      <MessageSquare size={12} /> Apelar
-                    </button>
-                  )}
-                  {m.tieneApelacion && <span className="text-xs text-blue-400 italic">En apelación</span>}
-                </div>
-              </td>
-            </tr>
-          ))}
+          {filas.map(f => {
+            const estado = f.estadoSancion ?? f.estadoInfraccion ?? '—'
+            const puedePagar = f.tipoSancion === 'multa_economica' && f.estadoSancion === 'pendiente'
+            const puedeMarcarCumplida = esAdmin && !!f.tipoSancion && f.tipoSancion !== 'multa_economica' && f.estadoSancion === 'pendiente'
+            const puedeApelar = !esPersonal && f.estadoInfraccion === 'registrada' && !f.tieneApelacion
+            return (
+              <tr key={`${f.infraccionId}-${f.sancionId ?? 'na'}`} className="hover:bg-slate-50 transition-colors">
+                <td className="px-4 py-3 font-mono font-bold text-slate-800">{f.placaVehiculo}</td>
+                <td className="px-4 py-3 text-slate-700">{f.tipoNombre}</td>
+                <td className="px-4 py-3 text-slate-600 max-w-[200px] truncate">{f.descripcion}</td>
+                <td className="px-4 py-3"><CeldaSancion tipoSancion={f.tipoSancion} monto={f.monto} /></td>
+                <td className="px-4 py-3">
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ESTADO_BADGE[estado] ?? 'bg-slate-100'}`}>
+                    {estado}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-slate-500 text-xs">{new Date(f.fecha).toLocaleDateString('es-BO')}</td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-1">
+                    {puedePagar && (
+                      <button onClick={() => onPagar(f)}
+                        className="flex items-center gap-1 bg-green-50 hover:bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-medium transition-colors">
+                        <CreditCard size={12} /> Pagar
+                      </button>
+                    )}
+                    {puedeMarcarCumplida && (
+                      <button onClick={() => onMarcarCumplida(f)}
+                        className="flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-2 py-1 rounded text-xs font-medium transition-colors">
+                        <ShieldCheck size={12} /> Marcar cumplida
+                      </button>
+                    )}
+                    {puedeApelar && (
+                      <button onClick={() => onApelar(f)}
+                        className="flex items-center gap-1 bg-blue-50 hover:bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-medium transition-colors">
+                        <MessageSquare size={12} /> Apelar
+                      </button>
+                    )}
+                    {f.tieneApelacion && <span className="text-xs text-blue-400 italic">En apelación</span>}
+                  </div>
+                </td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>

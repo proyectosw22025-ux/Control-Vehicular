@@ -6,14 +6,14 @@ import { useBusquedaGlobal, ResultadoBusqueda } from '../hooks/useBusquedaGlobal
 const TIPO_ICON: Record<string, React.ElementType> = {
   vehiculo:  Car,
   usuario:   Users,
-  multa:     AlertTriangle,
+  infraccion: AlertTriangle,
   visitante: UserCheck,
 }
 
 const TIPO_COLOR: Record<string, string> = {
   vehiculo:  'text-emerald-600 bg-emerald-50',
   usuario:   'text-blue-600 bg-blue-50',
-  multa:     'text-amber-600 bg-amber-50',
+  infraccion: 'text-amber-600 bg-amber-50',
   visitante: 'text-violet-600 bg-violet-50',
 }
 
@@ -29,7 +29,7 @@ const ESTADO_BADGE: Record<string, string> = {
 const HINTS = [
   { prefijo: 'v:', desc: 'solo vehículos' },
   { prefijo: 'u:', desc: 'solo usuarios' },
-  { prefijo: 'm:', desc: 'solo multas' },
+  { prefijo: 'i:', desc: 'solo infracciones' },
   { prefijo: 'vis:', desc: 'solo visitantes' },
 ]
 
@@ -104,7 +104,7 @@ export default function BusquedaGlobalModal({ onClose }: Props) {
             value={termino}
             onChange={e => buscar(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Buscar vehículo, usuario, multa... (v: u: m: vis:)"
+            placeholder="Buscar vehículo, usuario, infracción... (v: u: i: vis:)"
             className="flex-1 text-sm outline-none placeholder:text-slate-400 bg-transparent"
           />
           {termino && (

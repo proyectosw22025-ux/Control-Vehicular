@@ -9,7 +9,7 @@ const PASOS = [
     color: 'bg-blue-500',
     titulo: '¡Bienvenido al Sistema de Control Vehicular!',
     descripcion:
-      'Este sistema te permite gestionar el acceso de vehículos, parqueos, multas y visitantes de forma centralizada y en tiempo real.',
+      'Este sistema te permite gestionar el acceso de vehículos, parqueos, infracciones y visitantes de forma centralizada y en tiempo real.',
     detalle: 'Desde el Dashboard puedes ver un resumen de toda la actividad del día.',
   },
   {
@@ -35,7 +35,7 @@ const PASOS = [
     color: 'bg-violet-500',
     titulo: 'Notificaciones en Tiempo Real',
     descripcion:
-      'Recibirás notificaciones instantáneas sobre accesos de tu vehículo, aprobaciones y multas directamente en el sistema.',
+      'Recibirás notificaciones instantáneas sobre accesos de tu vehículo, aprobaciones e infracciones directamente en el sistema.',
     detalle: 'Las alertas aparecen en la esquina inferior derecha y también se guardan en "Notificaciones".',
   },
 ]

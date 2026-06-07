@@ -429,7 +429,7 @@ export default function Perfil() {
                       <p className="font-bold text-slate-800 text-sm">Notificaciones por WhatsApp</p>
                       <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">
                         Recibe mensajes automáticos cuando tu vehículo entre al campus,
-                        se registre una multa o tengas una visita.
+                        se registre una infracción o tengas una visita.
                       </p>
                       {perfil.whatsappActivo && !perfil.telefono && (
                         <p className="text-amber-600 text-xs mt-1.5 font-semibold">

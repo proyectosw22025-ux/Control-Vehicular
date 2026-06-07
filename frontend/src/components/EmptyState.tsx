@@ -9,7 +9,7 @@
  */
 
 interface Props {
-  tipo?: 'vehiculos' | 'multas' | 'visitas' | 'parqueo' | 'notificaciones' | 'documentos' | 'acceso' | 'generico'
+  tipo?: 'vehiculos' | 'infracciones' | 'visitas' | 'parqueo' | 'notificaciones' | 'documentos' | 'acceso' | 'generico'
   titulo: string
   sub?: string
   accion?: { label: string; onClick: () => void }
@@ -31,7 +31,7 @@ const SVG_VEHICULO = (
   </svg>
 )
 
-const SVG_MULTA = (
+const SVG_INFRACCION = (
   <svg viewBox="0 0 200 120" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-40 h-24">
     <rect x="60" y="20" width="80" height="90" rx="8" fill="#fee2e2"/>
     <rect x="70" y="35" width="60" height="6" rx="3" fill="#fca5a5"/>
@@ -108,7 +108,7 @@ const SVG_GENERICO = (
 
 const SVGS = {
   vehiculos:      SVG_VEHICULO,
-  multas:         SVG_MULTA,
+  infracciones:   SVG_INFRACCION,
   visitas:        SVG_VISITA,
   parqueo:        SVG_PARQUEO,
   notificaciones: SVG_NOTIF,

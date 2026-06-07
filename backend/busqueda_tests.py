@@ -57,11 +57,11 @@ def test_prefijo_u_solo_usuarios(gql_admin, usuario_normal):
 
 
 @pytest.mark.django_db
-def test_prefijo_m_solo_multas(gql_admin):
-    r = graphql(gql_admin, BUSQUEDA, {"termino": "m: ABC"})
+def test_prefijo_i_solo_infracciones(gql_admin):
+    r = graphql(gql_admin, BUSQUEDA, {"termino": "i: ABC"})
     assert "errors" not in r
     tipos = [x["tipo"] for x in r["data"]["busquedaGlobal"]]
-    assert all(t == "multa" for t in tipos)
+    assert all(t == "infraccion" for t in tipos)
 
 
 @pytest.mark.django_db

@@ -3,7 +3,7 @@ Tests de Mejora 3 — Panel de Alertas en Tiempo Real para el Guardia.
 
 Verifica:
   - Detección de frecuencia excesiva (>3 entradas en 2 horas)
-  - Detección de multas pendientes → alerta crítica
+  - Detección de sanciones pendientes → alerta crítica
   - alertas_activas_panel devuelve alertas no revisadas de las últimas 24h
   - Guardia puede marcar alertas como revisadas
   - La detección no genera alertas duplicadas en la misma ventana de tiempo
@@ -89,16 +89,21 @@ class TestDeteccionAnomalias:
         frecuencia = [a for a in alertas if a.tipo_anomalia == "frecuencia_excesiva"]
         assert len(frecuencia) == 0
 
-    def test_detecta_multa_pendiente(self, db, vehiculo_activo):
-        """Vehículo con multa pendiente genera alerta crítica."""
-        from apps.multas.models import Multa, TipoMulta
-        tipo_multa, _ = TipoMulta.objects.get_or_create(
+    def test_detecta_sancion_pendiente(self, db, vehiculo_activo):
+        """Vehículo con sanción pendiente genera alerta crítica."""
+        from apps.multas.models import Infraccion, TipoInfraccion, Sancion
+        tipo_infraccion, _ = TipoInfraccion.objects.get_or_create(
             nombre="Test", defaults={"monto_base": 50.0}
         )
-        Multa.objects.create(
+        infraccion = Infraccion.objects.create(
             vehiculo=vehiculo_activo,
-            tipo=tipo_multa,
-            descripcion="Test multa",
+            tipo=tipo_infraccion,
+            descripcion="Test infracción",
+            estado="registrada",
+        )
+        Sancion.objects.create(
+            infraccion=infraccion,
+            tipo_sancion="multa_economica",
             monto=50.0,
             estado="pendiente",
         )
@@ -106,9 +111,9 @@ class TestDeteccionAnomalias:
         with patch("apps.acceso.schema._broadcast_alerta_ws"):
             alertas = _detectar_anomalias_acceso(vehiculo_activo, "entrada")
 
-        multa_alerta = next((a for a in alertas if a.tipo_anomalia == "vehiculo_sancionado"), None)
-        assert multa_alerta is not None
-        assert multa_alerta.severidad == "critica"
+        sancion_alerta = next((a for a in alertas if a.tipo_anomalia == "vehiculo_sancionado"), None)
+        assert sancion_alerta is not None
+        assert sancion_alerta.severidad == "critica"
 
     def test_no_crea_alerta_duplicada_en_ventana(self, db, vehiculo_activo, punto_acceso, guardia):
         """No crea alerta duplicada si ya existe una no revisada en la misma ventana."""

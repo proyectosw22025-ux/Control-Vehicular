@@ -401,7 +401,7 @@ def _detectar_anomalias_acceso(vehiculo, tipo_acceso: str) -> list:
 
     Detecta:
       1. Frecuencia excesiva: >3 entradas en las últimas 2 horas
-      2. Multas pendientes/apeladas: vehículo con deudas activas
+      2. Sanciones pendientes: vehículo con deudas activas
     """
     from datetime import timedelta
     if tipo_acceso != "entrada":
@@ -438,13 +438,13 @@ def _detectar_anomalias_acceso(vehiculo, tipo_acceso: str) -> list:
             _broadcast_alerta_ws(a, vehiculo)
             nuevas.append(a)
 
-    # ── 2. Multas pendientes o apeladas ───────────────────────────────────────
+    # ── 2. Sanciones pendientes ────────────────────────────────────────────────
     try:
-        from apps.multas.models import Multa
-        multas = Multa.objects.filter(
-            vehiculo=vehiculo, estado__in=["pendiente", "apelada"]
+        from apps.multas.models import Sancion
+        sanciones = Sancion.objects.filter(
+            infraccion__vehiculo=vehiculo, estado__in=["pendiente", "en_revision"]
         ).count()
-        if multas > 0:
+        if sanciones > 0:
             ya_existe = AlertaAcceso.objects.filter(
                 vehiculo=vehiculo,
                 tipo_anomalia="vehiculo_sancionado",
@@ -457,11 +457,11 @@ def _detectar_anomalias_acceso(vehiculo, tipo_acceso: str) -> list:
                     tipo_anomalia="vehiculo_sancionado",
                     severidad="critica",
                     descripcion=(
-                        f"{vehiculo.placa} tiene {multas} multa(s) sin pagar. "
+                        f"{vehiculo.placa} tiene {sanciones} sanción(es) sin cumplir. "
                         "El vehículo debería estar sancionado."
                     ),
                     fecha_analisis=hoy,
-                    datos_extra={"multas_pendientes": multas},
+                    datos_extra={"sanciones_pendientes": sanciones},
                 )
                 _broadcast_alerta_ws(a, vehiculo)
                 nuevas.append(a)
@@ -1081,7 +1081,7 @@ class AccesoMutation:
                             guardar_sesion(chat_id.replace("@c.us", ""), sesion)
 
         # ── Detección de anomalías en tiempo real ─────────────────────────────
-        # Detecta frecuencia excesiva y multas pendientes; crea AlertaAcceso
+        # Detecta frecuencia excesiva y sanciones pendientes; crea AlertaAcceso
         # y hace broadcast WS a guardias. El response incluye las alertas.
         alertas_detectadas: list = []
         if resultado.vehiculo:
@@ -1126,7 +1126,7 @@ class AccesoMutation:
         if vehiculo.estado == "pendiente":
             raise Exception("Vehículo pendiente de aprobación. No puede ingresar hasta ser aprobado por el administrador.")
         if vehiculo.estado == "sancionado":
-            raise Exception("Vehículo sancionado. No puede ingresar hasta regularizar sus multas.")
+            raise Exception("Vehículo sancionado. No puede ingresar hasta regularizar sus sanciones pendientes.")
         if vehiculo.estado == "inactivo":
             raise Exception("Vehículo inactivo. Contacte a la administración.")
 

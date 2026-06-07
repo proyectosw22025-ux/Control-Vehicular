@@ -1,8 +1,8 @@
 """
 Búsqueda global unificada — Sprint C2.
 
-Un solo endpoint busca en Vehiculo, Usuario, Multa y Visitante
-con soporte de prefijos (v:, u:, m:, vis:) para filtrar por categoría.
+Un solo endpoint busca en Vehiculo, Usuario, Infraccion y Visitante
+con soporte de prefijos (v:, u:, i:, vis:) para filtrar por categoría.
 """
 import strawberry
 from strawberry.types import Info
@@ -12,9 +12,9 @@ from apps.usuarios.utils import tiene_rol
 
 @strawberry.type
 class ResultadoBusquedaType:
-    tipo: str      # 'vehiculo' | 'usuario' | 'multa' | 'visitante'
+    tipo: str      # 'vehiculo' | 'usuario' | 'infraccion' | 'visitante'
     id: int
-    titulo: str    # texto principal (placa, nombre, "Multa #42")
+    titulo: str    # texto principal (placa, nombre, "Infracción #42")
     subtitulo: str # texto secundario
     estado: str    # para el badge de color
     url: str       # ruta de navegación en el frontend
@@ -75,31 +75,38 @@ def _buscar_usuarios(termino: str, limite: int) -> List[ResultadoBusquedaType]:
     ]
 
 
-def _buscar_multas(termino: str, limite: int) -> List[ResultadoBusquedaType]:
+def _buscar_infracciones(termino: str, limite: int) -> List[ResultadoBusquedaType]:
     from django.db.models import Q
-    from apps.multas.models import Multa
+    from apps.multas.models import Infraccion
     qs = (
-        Multa.objects
-        .select_related("vehiculo", "tipo")
+        Infraccion.objects
+        .select_related("vehiculo", "tipo", "sancion")
         .filter(
             Q(vehiculo__placa__icontains=termino)
             | Q(descripcion__icontains=termino)
             | Q(tipo__nombre__icontains=termino)
-            | Q(monto__icontains=termino)
+            | Q(sancion__monto__icontains=termino)
         )[:limite]
     )
-    return [
-        ResultadoBusquedaType(
-            tipo="multa",
-            id=m.id,
-            titulo=f"Multa #{m.id} · {m.vehiculo.placa if m.vehiculo else '—'}",
-            subtitulo=m.descripcion[:60] if m.descripcion else "",
-            estado=m.estado,
-            url=f"/multas?resaltar={m.id}",
-            meta=f"Bs {m.monto}",
-        )
-        for m in qs
-    ]
+    resultados = []
+    for i in qs:
+        sancion = getattr(i, "sancion", None)
+        if sancion is None:
+            meta = "—"
+        elif sancion.tipo_sancion == "multa_economica":
+            meta = f"Bs {sancion.monto}"
+        else:
+            meta = sancion.get_tipo_sancion_display()
+        resultados.append(ResultadoBusquedaType(
+            tipo="infraccion",
+            id=i.id,
+            titulo=f"Infracción #{i.id} · {i.vehiculo.placa if i.vehiculo else '—'}",
+            subtitulo=i.descripcion[:60] if i.descripcion else "",
+            estado=i.estado,
+            url=f"/infracciones?resaltar={i.id}",
+            meta=meta,
+        ))
+    return resultados
 
 
 def _buscar_visitantes(termino: str, limite: int) -> List[ResultadoBusquedaType]:
@@ -131,7 +138,7 @@ def _buscar_visitantes(termino: str, limite: int) -> List[ResultadoBusquedaType]
 _PREFIJOS = {
     "v:":   ("vehiculo",   _buscar_vehiculos),
     "u:":   ("usuario",    _buscar_usuarios),
-    "m:":   ("multa",      _buscar_multas),
+    "i:":   ("infraccion", _buscar_infracciones),
     "vis:": ("visitante",  _buscar_visitantes),
 }
 
@@ -169,6 +176,6 @@ class BusquedaQuery:
         resultados: List[ResultadoBusquedaType] = []
         resultados += _buscar_vehiculos(termino, limite)
         resultados += _buscar_usuarios(termino, limite)
-        resultados += _buscar_multas(termino, limite)
+        resultados += _buscar_infracciones(termino, limite)
         resultados += _buscar_visitantes(termino, limite)
         return resultados

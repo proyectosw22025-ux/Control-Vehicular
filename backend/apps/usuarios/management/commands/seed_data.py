@@ -19,7 +19,7 @@ class Command(BaseCommand):
             self._seed_categorias_espacio()
             self._seed_zonas_y_espacios()
             self._seed_puntos_acceso()
-            self._seed_tipos_multa()
+            self._seed_tipos_infraccion()
             self._seed_tipos_notificacion()
             self._seed_usuarios_demo()
             self._seed_vehiculos_demo()
@@ -32,7 +32,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.HTTP_INFO("\n[1/8] Roles..."))
         roles = [
             ("Administrador",           "Control total del sistema. Accede a todos los módulos."),
-            ("Guardia",                 "Registra accesos vehiculares, emite multas y gestiona visitantes."),
+            ("Guardia",                 "Registra accesos vehiculares, emite infracciones y gestiona visitantes."),
             ("Estudiante",              "Gestiona sus vehículos y consulta su historial."),
             ("Docente",                 "Gestiona sus vehículos con privilegios de zona preferencial."),
             ("Personal Administrativo", "Personal de la UAGRM. Gestiona sus vehículos."),
@@ -158,24 +158,32 @@ class Command(BaseCommand):
             )
             self.stdout.write(f"  {'CREADO' if created else 'existe'}  → {nombre}")
 
-    # ── TIPOS DE MULTA ─────────────────────────────────────────
-    def _seed_tipos_multa(self):
-        from apps.multas.models import TipoMulta
-        self.stdout.write(self.style.HTTP_INFO("\n[6/8] Tipos de multa..."))
+    # ── TIPOS DE INFRACCIÓN ────────────────────────────────────
+    def _seed_tipos_infraccion(self):
+        from apps.multas.models import TipoInfraccion
+        self.stdout.write(self.style.HTTP_INFO("\n[6/8] Tipos de infracción..."))
+        # (nombre, gravedad, tipo_sancion_sugerido, monto_base, descripcion)
         tipos = [
-            ("Estacionamiento en zona prohibida",              50.00,  "Vehículo en área señalizada como prohibida para parqueo"),
-            ("Vehículo en espacio de discapacitado sin permiso", 150.00, "Ocupar espacio reservado sin autorización"),
-            ("Obstrucción de vía peatonal",                    60.00,  "Vehículo bloqueando aceras o rampas dentro del campus"),
-            ("Exceso de velocidad en campus",                 100.00,  "Velocidad superior a 20 km/h dentro del recinto"),
-            ("Vehículo sin registro en el sistema",            80.00,  "Circulación con vehículo no registrado"),
-            ("Documentación vehicular vencida",                40.00,  "SOAT o revisión técnica con vencimiento superado"),
-            ("Ingreso no autorizado",                         120.00,  "Acceso evadiendo puntos de control o con QR ajeno"),
+            ("Estacionamiento en zona prohibida",               "leve",     "multa_economica",   50.00,  "Vehículo en área señalizada como prohibida para parqueo"),
+            ("Vehículo en espacio de discapacitado sin permiso","grave",    "multa_economica",  150.00,  "Ocupar espacio reservado sin autorización"),
+            ("Obstrucción de vía peatonal",                     "moderada", "multa_economica",   60.00,  "Vehículo bloqueando aceras o rampas dentro del campus"),
+            ("Exceso de velocidad en campus",                   "grave",    "suspension_acceso", None,   "Velocidad superior a 20 km/h dentro del recinto"),
+            ("Vehículo sin registro en el sistema",             "moderada", "multa_economica",   80.00,  "Circulación con vehículo no registrado"),
+            ("Documentación vehicular vencida",                 "leve",     "amonestacion",      None,   "SOAT o revisión técnica con vencimiento superado"),
+            ("Ingreso no autorizado",                           "grave",    "reporte_bienestar", None,   "Acceso evadiendo puntos de control o con QR ajeno"),
         ]
-        for nombre, monto, descripcion in tipos:
-            _, created = TipoMulta.objects.get_or_create(
-                nombre=nombre, defaults={"monto_base": monto, "descripcion": descripcion}
+        for nombre, gravedad, tipo_sancion, monto, descripcion in tipos:
+            _, created = TipoInfraccion.objects.get_or_create(
+                nombre=nombre,
+                defaults={
+                    "gravedad": gravedad,
+                    "tipo_sancion_sugerido": tipo_sancion,
+                    "monto_base": monto,
+                    "descripcion": descripcion,
+                },
             )
-            self.stdout.write(f"  {'CREADO' if created else 'existe'}  → {nombre} (Bs {monto})")
+            detalle = f"Bs {monto}" if monto is not None else tipo_sancion.replace("_", " ")
+            self.stdout.write(f"  {'CREADO' if created else 'existe'}  → {nombre} [{gravedad}] ({detalle})")
 
     # ── USUARIOS DEMO ──────────────────────────────────────────
     def _seed_usuarios_demo(self):
@@ -260,11 +268,11 @@ class Command(BaseCommand):
         tipos = [
             ("acceso_vehiculo",    "Acceso vehicular",         "Tu vehículo fue registrado en un punto de acceso",
              "Movimiento de {placa}",           "Tu vehículo {placa} registró {tipo} en {punto}."),
-            ("multa_registrada",   "Multa registrada",         "Se registró una infracción en tu vehículo",
-             "Multa en {placa}",                "Tu vehículo {placa} tiene una multa de Bs {monto}. {descripcion}"),
-            ("multa_pagada",       "Multa pagada",             "Confirmación de pago de multa",
-             "Pago confirmado",                 "Tu multa de Bs {monto} fue registrada como pagada vía {metodo}."),
-            ("apelacion_resuelta", "Apelación resuelta",       "Resultado de tu apelación de multa",
+            ("infraccion_registrada", "Infracción registrada", "Se registró una infracción en tu vehículo",
+             "Infracción en {placa}",           "Tu vehículo {placa} tiene una infracción registrada. Sanción: {sancion}. {descripcion}"),
+            ("sancion_cumplida",   "Sanción cumplida",         "Tu sanción fue marcada como cumplida",
+             "Sanción cumplida",                "Tu sanción fue registrada como cumplida. Tu vehículo está activo nuevamente."),
+            ("apelacion_resuelta", "Apelación resuelta",       "Resultado de tu apelación de infracción",
              "Resolución de apelación",         "Tu apelación fue {resultado}. {respuesta}"),
             ("visita_registrada",  "Visita registrada",        "Un visitante solicita verte en la UAGRM",
              "Visita de {visitante}",            "{visitante} (CI: {ci}) desea verte. Motivo: {motivo}"),

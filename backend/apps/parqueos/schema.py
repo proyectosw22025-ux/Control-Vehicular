@@ -561,7 +561,7 @@ class ParqueosMutation:
             )
 
         ESTADOS_BLOQUEADOS = {
-            "sancionado": "Vehículo sancionado. Regularice sus multas antes de estacionar.",
+            "sancionado": "Vehículo sancionado. Regularice sus sanciones pendientes antes de estacionar.",
             "pendiente":  "Vehículo pendiente de aprobación. No puede estacionar.",
             "inactivo":   "Vehículo inactivo. Contacte a la administración.",
         }

@@ -141,7 +141,7 @@ function FormularioCuenta() {
             )}
           </div>
           <p className="text-[10px] text-slate-400 mt-0.5">
-            📲 Recibirás alertas de acceso, multas y parqueo por WhatsApp
+            📲 Recibirás alertas de acceso, infracciones y parqueo por WhatsApp
           </p>
         </div>
       </div>

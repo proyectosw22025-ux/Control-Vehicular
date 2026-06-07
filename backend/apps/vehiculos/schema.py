@@ -27,9 +27,9 @@ ESTADOS_VALIDOS = ["pendiente", "activo", "inactivo", "sancionado"]
 # Cualquier otra combinación es un error de operador.
 TRANSICIONES_VALIDAS: dict[str, list[str]] = {
     "pendiente":  ["activo", "inactivo"],   # aprobar o rechazar
-    "activo":     ["inactivo", "sancionado"],# desactivar o multar
+    "activo":     ["inactivo", "sancionado"],# desactivar o sancionar
     "inactivo":   ["activo"],               # reactivar (admin)
-    "sancionado": ["activo"],               # pago de multas (solo via pagar_multa)
+    "sancionado": ["activo"],               # cumplir sanción (solo via pagar_sancion / marcar_sancion_cumplida)
 }
 
 
@@ -386,7 +386,7 @@ class VehiculosQuery:
         tipo_id: Optional[int] = None,
         fecha_desde: Optional[str] = None,
         fecha_hasta: Optional[str] = None,
-        tiene_multas: Optional[bool] = None,
+        tiene_infracciones_activas: Optional[bool] = None,
         tiene_documentos_vencidos: Optional[bool] = None,
         ordenar_por: Optional[str] = None,
         color: Optional[str] = None,
@@ -432,15 +432,15 @@ class VehiculosQuery:
             except ValueError:
                 pass
 
-        if tiene_multas is not None:
-            from apps.multas.models import Multa
-            multas_activas = Multa.objects.filter(
-                vehiculo_id=OuterRef("pk"), estado__in=["pendiente", "en_revision"]
+        if tiene_infracciones_activas is not None:
+            from apps.multas.models import Sancion
+            sanciones_activas = Sancion.objects.filter(
+                infraccion__vehiculo_id=OuterRef("pk"), estado__in=["pendiente", "en_revision"]
             )
-            if tiene_multas:
-                qs = qs.filter(Exists(multas_activas))
+            if tiene_infracciones_activas:
+                qs = qs.filter(Exists(sanciones_activas))
             else:
-                qs = qs.exclude(Exists(multas_activas))
+                qs = qs.exclude(Exists(sanciones_activas))
 
         if tiene_documentos_vencidos is not None:
             from django.utils import timezone as tz

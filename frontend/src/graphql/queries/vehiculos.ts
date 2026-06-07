@@ -10,7 +10,7 @@ export const VEHICULOS_QUERY = gql`
     $tipoId: Int
     $fechaDesde: String
     $fechaHasta: String
-    $tieneMultas: Boolean
+    $tieneInfraccionesActivas: Boolean
     $tieneDocumentosVencidos: Boolean
     $ordenarPor: String
     $color: String
@@ -24,7 +24,7 @@ export const VEHICULOS_QUERY = gql`
       tipoId: $tipoId
       fechaDesde: $fechaDesde
       fechaHasta: $fechaHasta
-      tieneMultas: $tieneMultas
+      tieneInfraccionesActivas: $tieneInfraccionesActivas
       tieneDocumentosVencidos: $tieneDocumentosVencidos
       ordenarPor: $ordenarPor
       color: $color

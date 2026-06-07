@@ -15,7 +15,7 @@ import Vehiculos from './pages/Vehiculos'
 import Parqueos from './pages/Parqueos'
 import Acceso from './pages/Acceso'
 import Visitantes from './pages/Visitantes'
-import Multas from './pages/Multas'
+import Infracciones from './pages/Infracciones'
 import Notificaciones from './pages/Notificaciones'
 import Perfil from './pages/Perfil'
 import Reportes from './pages/Reportes'
@@ -52,7 +52,7 @@ export default function App() {
             <Route path="acceso" element={<PrivateRoute roles={['Administrador', 'Guardia']}><Acceso /></PrivateRoute>} />
             <Route path="autorizaciones-externas" element={<PrivateRoute roles={['Administrador', 'Guardia']}><AutorizacionesExternas /></PrivateRoute>} />
             <Route path="visitantes" element={<PrivateRoute roles={['Administrador', 'Guardia']}><Visitantes /></PrivateRoute>} />
-            <Route path="multas" element={<Multas />} />
+            <Route path="infracciones" element={<Infracciones />} />
             <Route path="notificaciones" element={<Notificaciones />} />
             <Route path="perfil" element={<Perfil />} />
             <Route path="reportes" element={<PrivateRoute roles={['Administrador']}><Reportes /></PrivateRoute>} />

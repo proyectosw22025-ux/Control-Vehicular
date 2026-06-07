@@ -10,7 +10,7 @@ const BUSQUEDA_QUERY = gql`
 `
 
 export interface ResultadoBusqueda {
-  tipo: 'vehiculo' | 'usuario' | 'multa' | 'visitante'
+  tipo: 'vehiculo' | 'usuario' | 'infraccion' | 'visitante'
   id: number
   titulo: string
   subtitulo: string
@@ -28,7 +28,7 @@ export interface GrupoResultados {
 const TIPO_LABEL: Record<string, string> = {
   vehiculo:  'Vehículos',
   usuario:   'Usuarios',
-  multa:     'Multas',
+  infraccion: 'Infracciones',
   visitante: 'Visitantes',
 }
 

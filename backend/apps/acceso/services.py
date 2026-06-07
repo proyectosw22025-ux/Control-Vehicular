@@ -27,7 +27,7 @@ def validar_estado_vehiculo(vehiculo) -> None:
     """
     MENSAJES = {
         "pendiente":  "Vehículo pendiente de aprobación. Espere confirmación del administrador.",
-        "sancionado": "Vehículo sancionado. Regularice sus multas pendientes.",
+        "sancionado": "Vehículo sancionado. Regularice sus sanciones pendientes.",
         "inactivo":   "Vehículo inactivo. Comuníquese con la administración.",
     }
     if vehiculo.estado in MENSAJES:

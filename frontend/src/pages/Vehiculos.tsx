@@ -115,22 +115,22 @@ export default function Vehiculos() {
   const [filtroTipo,       setFiltroTipo]      = useState(() => searchParams.get('tipoId') || '')
   const [filtroFechaDesde, setFiltroFechaDesde]= useState(() => searchParams.get('fechaDesde') || '')
   const [filtroFechaHasta, setFiltroFechaHasta]= useState(() => searchParams.get('fechaHasta') || '')
-  const [filtroMultas,     setFiltroMultas]    = useState<'si' | 'no' | ''>(() => (searchParams.get('multas') as 'si' | 'no' | '') || '')
+  const [filtroInfracciones, setFiltroInfracciones] = useState<'si' | 'no' | ''>(() => (searchParams.get('infracciones') as 'si' | 'no' | '') || '')
   const [filtroDocsVenc,   setFiltroDocsVenc]  = useState<'si' | 'no' | ''>(() => (searchParams.get('docsVenc') as 'si' | 'no' | '') || '')
   const [filtroColor,      setFiltroColor]     = useState(() => searchParams.get('color') || '')
   const [filtroOrden,      setFiltroOrden]     = useState(() => searchParams.get('orden') || '')
 
   const filtrosActivos = useMemo(() =>
-    [filtroTipo, filtroFechaDesde, filtroFechaHasta, filtroMultas, filtroDocsVenc, filtroColor, filtroOrden]
+    [filtroTipo, filtroFechaDesde, filtroFechaHasta, filtroInfracciones, filtroDocsVenc, filtroColor, filtroOrden]
       .filter(Boolean).length,
-  [filtroTipo, filtroFechaDesde, filtroFechaHasta, filtroMultas, filtroDocsVenc, filtroColor, filtroOrden])
+  [filtroTipo, filtroFechaDesde, filtroFechaHasta, filtroInfracciones, filtroDocsVenc, filtroColor, filtroOrden])
 
   function aplicarFiltros() {
     const params: Record<string, string> = {}
     if (filtroTipo)       params.tipoId    = filtroTipo
     if (filtroFechaDesde) params.fechaDesde= filtroFechaDesde
     if (filtroFechaHasta) params.fechaHasta= filtroFechaHasta
-    if (filtroMultas)     params.multas    = filtroMultas
+    if (filtroInfracciones) params.infracciones = filtroInfracciones
     if (filtroDocsVenc)   params.docsVenc  = filtroDocsVenc
     if (filtroColor)      params.color     = filtroColor
     if (filtroOrden)      params.orden     = filtroOrden
@@ -142,7 +142,7 @@ export default function Vehiculos() {
 
   function limpiarFiltros() {
     setFiltroTipo(''); setFiltroFechaDesde(''); setFiltroFechaHasta('')
-    setFiltroMultas(''); setFiltroDocsVenc(''); setFiltroColor(''); setFiltroOrden('')
+    setFiltroInfracciones(''); setFiltroDocsVenc(''); setFiltroColor(''); setFiltroOrden('')
     setSearchParams({})
     setPagina(1)
   }
@@ -179,7 +179,7 @@ export default function Vehiculos() {
       tipoId:                  filtroTipo       ? parseInt(filtroTipo) : undefined,
       fechaDesde:              filtroFechaDesde || undefined,
       fechaHasta:              filtroFechaHasta || undefined,
-      tieneMultas:             filtroMultas     === 'si' ? true : filtroMultas === 'no' ? false : undefined,
+      tieneInfraccionesActivas: filtroInfracciones === 'si' ? true : filtroInfracciones === 'no' ? false : undefined,
       tieneDocumentosVencidos: filtroDocsVenc   === 'si' ? true : filtroDocsVenc === 'no' ? false : undefined,
       ordenarPor:              filtroOrden      || undefined,
       color:                   filtroColor      || undefined,
@@ -503,14 +503,14 @@ export default function Vehiculos() {
               </div>
 
               <div className="flex flex-wrap items-center gap-4">
-                {/* Multas activas */}
+                {/* Infracciones activas */}
                 <div className="flex items-center gap-2 text-sm">
-                  <span className="text-slate-500 text-xs">Multas:</span>
-                  {[['', 'Todos'], ['si', 'Con multas'], ['no', 'Sin multas']].map(([val, label]) => (
+                  <span className="text-slate-500 text-xs">Infracciones:</span>
+                  {[['', 'Todos'], ['si', 'Con infracciones'], ['no', 'Sin infracciones']].map(([val, label]) => (
                     <label key={val} className="flex items-center gap-1 cursor-pointer">
-                      <input type="radio" name="filtroMultas" value={val}
-                        checked={filtroMultas === val}
-                        onChange={() => setFiltroMultas(val as 'si' | 'no' | '')}
+                      <input type="radio" name="filtroInfracciones" value={val}
+                        checked={filtroInfracciones === val}
+                        onChange={() => setFiltroInfracciones(val as 'si' | 'no' | '')}
                         className="accent-emerald-500" />
                       <span className="text-xs text-slate-600">{label}</span>
                     </label>
@@ -1061,7 +1061,7 @@ export default function Vehiculos() {
             {seleccionado.estado === 'sancionado' && (
               <div className="w-full bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-2 text-red-700 text-xs">
                 <AlertTriangle size={14} className="shrink-0 mt-0.5" />
-                Vehículo <strong>sancionado</strong>. El QR será rechazado hasta regularizar todas las multas pendientes.
+                Vehículo <strong>sancionado</strong>. El QR será rechazado hasta regularizar todas las sanciones pendientes.
               </div>
             )}
 

@@ -144,7 +144,7 @@ def email_bienvenida(nombre: str) -> tuple[str, str]:
     <ul style="color:#475569;font-size:14px;line-height:2;padding-left:20px;">
       <li>Registrar y gestionar tus vehículos</li>
       <li>Ver tu historial de accesos al campus</li>
-      <li>Consultar y pagar multas</li>
+      <li>Consultar y regularizar sanciones</li>
       <li>Recibir notificaciones en tiempo real</li>
     </ul>
     {_alert_box("Para acceder al sistema necesitas que un administrador apruebe tu vehículo tras registrarlo.", "info")}
@@ -243,58 +243,65 @@ def email_vehiculo_rechazado(nombre_propietario: str, placa: str, marca: str, mo
     return asunto, html
 
 
-def email_multa_registrada(nombre: str, placa: str, tipo_multa: str, monto: str, descripcion: str) -> tuple[str, str]:
-    """Email al propietario cuando se registra una multa."""
-    asunto = f"⚠️ Multa registrada — Vehículo {placa}"
+def email_infraccion_registrada(nombre: str, placa: str, tipo_nombre: str, tipo_sancion: str, monto, descripcion: str) -> tuple[str, str]:
+    """Email al propietario cuando se registra una infracción y su sanción."""
+    asunto = f"⚠️ Infracción registrada — Vehículo {placa}"
+    detalle_sancion = f"Multa económica — Bs {monto}" if monto is not None else tipo_sancion.replace("_", " ").title()
+    bloquea = tipo_sancion != "amonestacion"
     info = f"""
     <table width="100%" cellpadding="0" cellspacing="0" border="0"
            style="margin:16px 0;border:1px solid #e2e8f0;border-radius:8px;
                   overflow:hidden;font-size:13px;">
       {_info_row("Vehículo", placa)}
-      {_info_row("Tipo de infracción", tipo_multa)}
-      {_info_row("Monto", f"Bs {monto}")}
+      {_info_row("Tipo de infracción", tipo_nombre)}
+      {_info_row("Sanción aplicada", detalle_sancion)}
       {_info_row("Descripción", descripcion)}
-      {_info_row("Estado", "🔴 Pendiente de pago")}
+      {_info_row("Estado", "🔴 Pendiente de regularizar" if bloquea else "ℹ️ Informativa")}
     </table>"""
+    alerta = (
+        "Tu vehículo ha sido suspendido temporalmente. No podrá acceder al campus hasta que regularices la sanción."
+        if bloquea else
+        "Esta es una amonestación informativa: tu vehículo no ha sido suspendido."
+    )
     contenido = f"""
     <p>Hola, <strong>{nombre}</strong>.</p>
-    <p>Se ha registrado una multa para tu vehículo en el campus universitario.</p>
+    <p>Se ha registrado una infracción para tu vehículo en el campus universitario.</p>
     {info}
-    {_alert_box("Tu vehículo ha sido suspendido temporalmente. No podrá acceder al campus hasta que regularices el pago.", "danger")}
+    {_alert_box(alerta, "danger" if bloquea else "info")}
     <p style="color:#64748b;font-size:13px;">
-      Dirígete a la oficina de Control Vehicular o realiza el pago desde el sistema.
+      Dirígete a la oficina de Control Vehicular o gestiona la sanción desde el sistema.
     </p>
     """
     html = _base_template(
-        "Multa registrada en tu vehículo",
+        "Infracción registrada en tu vehículo",
         contenido,
-        "Ver y pagar multa",
-        "https://control-vehicular-six.vercel.app/multas",
+        "Ver mi infracción",
+        "https://control-vehicular-six.vercel.app/infracciones",
     )
     return asunto, html
 
 
-def email_multa_pagada(nombre: str, placa: str, monto: str, metodo: str) -> tuple[str, str]:
-    """Email al propietario cuando paga una multa."""
-    asunto = f"✅ Pago confirmado — Vehículo {placa} rehabilitado"
+def email_sancion_cumplida(nombre: str, placa: str, tipo_sancion: str, monto) -> tuple[str, str]:
+    """Email al propietario cuando su sanción es marcada como cumplida (pago confirmado o cierre administrativo)."""
+    asunto = f"✅ Sanción cumplida — Vehículo {placa} rehabilitado"
+    detalle_sancion = f"Multa económica — Bs {monto}" if monto is not None else tipo_sancion.replace("_", " ").title()
     info = f"""
     <table width="100%" cellpadding="0" cellspacing="0" border="0"
            style="margin:16px 0;border:1px solid #e2e8f0;border-radius:8px;
                   overflow:hidden;font-size:13px;">
       {_info_row("Vehículo", placa)}
-      {_info_row("Monto pagado", f"Bs {monto}")}
-      {_info_row("Método de pago", metodo.replace("_", " ").title())}
+      {_info_row("Sanción", detalle_sancion)}
       {_info_row("Estado del vehículo", "✅ Activo")}
     </table>"""
     contenido = f"""
     <p>Hola, <strong>{nombre}</strong>.</p>
-    <p>Tu pago ha sido registrado correctamente. Tu vehículo está <strong>habilitado</strong>
+    <p>Tu sanción ha sido marcada como <strong>cumplida</strong>. Tu vehículo está <strong>habilitado</strong>
        nuevamente para acceder al campus.</p>
     {info}
     {_alert_box("Recuerda respetar las normas de tránsito dentro del campus para evitar futuras sanciones.", "success")}
     """
     html = _base_template(
-        "Pago de multa confirmado",
+        "Sanción cumplida",
         contenido,
         "Ver mi vehículo",
         "https://control-vehicular-six.vercel.app/vehiculos",

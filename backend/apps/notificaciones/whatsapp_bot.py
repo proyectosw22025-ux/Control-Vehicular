@@ -59,19 +59,19 @@ def menu_entrada_campus(placa: str, punto: str, hora: str,
     return texto, sesion
 
 
-def menu_multa(placa: str, tipo_multa: str, monto: str) -> tuple[str, dict]:
+def menu_infraccion(placa: str, tipo_infraccion: str, monto: str) -> tuple[str, dict]:
     texto = (
-        f"⚠️ *Multa registrada — {placa}*\n\n"
-        f"📋 {tipo_multa}\n"
-        f"💰 Monto: Bs {monto}\n\n"
+        f"⚠️ *Infracción registrada — {placa}*\n\n"
+        f"📋 {tipo_infraccion}\n"
+        f"💰 Sanción: Bs {monto}\n\n"
         f"¿Qué deseas hacer?\n"
-        f"*1* — 💳 Ver mis multas en el sistema\n"
+        f"*1* — 💳 Ver mis infracciones en el sistema\n"
         f"*2* — ℹ Más información\n"
         f"*3* — ✅ Entendido\n\n"
         f"_Responde con el número de la opción._"
     )
     sesion = {
-        "estado": "menu_multa",
+        "estado": "menu_infraccion",
         "placa":  placa,
         "monto":  monto,
     }
@@ -84,7 +84,7 @@ def menu_principal() -> str:
         f"¿En qué puedo ayudarte?\n\n"
         f"*1* — 🅿 Guía de parqueo\n"
         f"*2* — 📊 Disponibilidad de parqueo\n"
-        f"*3* — ⚠ Ver mis multas\n"
+        f"*3* — ⚠ Ver mis infracciones\n"
         f"*4* — 🌐 Abrir el sistema\n"
         f"*5* — 📋 Mis últimos accesos\n"
         f"*0* — ❌ Cancelar\n\n"
@@ -148,7 +148,7 @@ def procesar_respuesta(telefono: str, texto_usuario: str) -> str | None:
             return (
                 f"🌐 *Sistema Control Vehicular UAGRM*\n\n"
                 f"{FRONTEND_URL}/login\n\n"
-                f"Inicia sesión para ver tus accesos, multas y vehículos."
+                f"Inicia sesión para ver tus accesos, infracciones y vehículos."
             )
 
         # Respuesta no reconocida en contexto de entrada
@@ -160,28 +160,28 @@ def procesar_respuesta(telefono: str, texto_usuario: str) -> str | None:
             f"*4* — 🌐 App del sistema"
         )
 
-    # ── Menú de multa ─────────────────────────────────────────────────────────
-    if estado == "menu_multa":
+    # ── Menú de infracción ────────────────────────────────────────────────────
+    if estado == "menu_infraccion":
         limpiar_sesion(telefono)
 
-        if texto in ("1", "ver", "multas"):
+        if texto in ("1", "ver", "infracciones"):
             return (
-                f"💳 *Gestiona tu multa en el sistema:*\n\n"
-                f"{FRONTEND_URL}/multas\n\n"
-                f"_Inicia sesión para ver el detalle y pagar._"
+                f"💳 *Gestiona tu infracción en el sistema:*\n\n"
+                f"{FRONTEND_URL}/infracciones\n\n"
+                f"_Inicia sesión para ver el detalle y regularizar tu sanción._"
             )
 
         if texto in ("2", "info", "información"):
             return (
-                f"ℹ *Proceso de pago de multas:*\n\n"
-                f"1. Ingresa al sistema: {FRONTEND_URL}/multas\n"
-                f"2. Sube tu comprobante de pago\n"
+                f"ℹ *Proceso de regularización de sanciones:*\n\n"
+                f"1. Ingresa al sistema: {FRONTEND_URL}/infracciones\n"
+                f"2. Si es una multa económica, sube tu comprobante de pago\n"
                 f"3. El admin confirma y tu vehículo queda activo\n\n"
                 f"Plazo: regulariza antes de tu próximo ingreso al campus."
             )
 
         if texto in ("3", "ok", "entendido"):
-            return "✅ Recibido. Recuerda regularizar tu multa para mantener el acceso."
+            return "✅ Recibido. Recuerda regularizar tu sanción para mantener el acceso."
 
         return f"Responde *1*, *2* o *3* para ver las opciones."
 
@@ -202,10 +202,10 @@ def procesar_respuesta(telefono: str, texto_usuario: str) -> str | None:
                 f"{FRONTEND_URL}/disponibilidad"
             )
 
-        if texto in ("3", "multas"):
+        if texto in ("3", "infracciones"):
             return (
-                f"⚠ *Ver mis multas:*\n\n"
-                f"{FRONTEND_URL}/multas\n\n"
+                f"⚠ *Ver mis infracciones:*\n\n"
+                f"{FRONTEND_URL}/infracciones\n\n"
                 f"_Inicia sesión con tu cuenta del sistema._"
             )
 

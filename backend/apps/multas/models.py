@@ -2,56 +2,102 @@ from django.db import models
 from django.conf import settings
 
 
-class TipoMulta(models.Model):
+class TipoInfraccion(models.Model):
+    GRAVEDADES = [
+        ("leve", "Leve"),
+        ("moderada", "Moderada"),
+        ("grave", "Grave"),
+    ]
+    TIPOS_SANCION = [
+        ("amonestacion", "Amonestación"),
+        ("multa_economica", "Multa económica"),
+        ("suspension_acceso", "Suspensión de acceso"),
+        ("reporte_bienestar", "Reporte a Bienestar Estudiantil"),
+    ]
+
     nombre = models.CharField(max_length=100, unique=True)
     descripcion = models.TextField(blank=True)
-    monto_base = models.DecimalField(max_digits=8, decimal_places=2)
+    gravedad = models.CharField(max_length=10, choices=GRAVEDADES, default="moderada")
+    tipo_sancion_sugerido = models.CharField(
+        max_length=20, choices=TIPOS_SANCION, default="multa_economica",
+        help_text="Sanción que se genera por defecto al registrar una infracción de este tipo",
+    )
+    monto_base = models.DecimalField(
+        max_digits=8, decimal_places=2, null=True, blank=True,
+        help_text="Monto sugerido cuando la sanción asociada es una multa económica",
+    )
 
     class Meta:
-        db_table = "tipos_multa"
-        verbose_name = "Tipo de multa"
-        verbose_name_plural = "Tipos de multa"
+        db_table = "tipos_infraccion"
+        verbose_name = "Tipo de infracción"
+        verbose_name_plural = "Tipos de infracción"
 
     def __str__(self):
-        return f"{self.nombre} (Bs {self.monto_base})"
+        return f"{self.nombre} [{self.get_gravedad_display()}]"
 
 
-class Multa(models.Model):
+class Infraccion(models.Model):
     ESTADOS = [
-        ("pendiente",    "Pendiente"),
-        ("en_revision",  "Comprobante en revisión"),   # pago digital enviado, esperando confirmación admin
-        ("pagada",       "Pagada"),
-        ("apelada",      "En apelación"),
-        ("cancelada",    "Cancelada"),
+        ("registrada", "Registrada"),
+        ("apelada", "En apelación"),
+        ("confirmada", "Confirmada"),
+        ("anulada", "Anulada"),
     ]
 
     vehiculo = models.ForeignKey(
-        "vehiculos.Vehiculo", on_delete=models.PROTECT, related_name="multas"
+        "vehiculos.Vehiculo", on_delete=models.PROTECT, related_name="infracciones"
     )
-    tipo = models.ForeignKey(TipoMulta, on_delete=models.PROTECT, related_name="multas")
-    monto = models.DecimalField(max_digits=8, decimal_places=2)
+    tipo = models.ForeignKey(TipoInfraccion, on_delete=models.PROTECT, related_name="infracciones")
     descripcion = models.TextField()
     fecha = models.DateTimeField(auto_now_add=True)
-    estado = models.CharField(max_length=12, choices=ESTADOS, default="pendiente")
+    estado = models.CharField(max_length=12, choices=ESTADOS, default="registrada")
     registrado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
-        related_name="multas_registradas",
+        related_name="infracciones_registradas",
     )
-    evidencia = models.ImageField(upload_to="multas/evidencias/", blank=True, null=True)
+    evidencia = models.ImageField(upload_to="infracciones/evidencias/", blank=True, null=True)
 
     class Meta:
-        db_table = "multas"
-        verbose_name = "Multa"
-        verbose_name_plural = "Multas"
+        db_table = "infracciones"
+        verbose_name = "Infracción"
+        verbose_name_plural = "Infracciones"
         ordering = ["-fecha"]
 
     def __str__(self):
-        return f"Multa #{self.pk} - {self.vehiculo.placa} [{self.get_estado_display()}]"
+        return f"Infracción #{self.pk} - {self.vehiculo.placa} [{self.get_estado_display()}]"
 
 
-class PagoMulta(models.Model):
+class Sancion(models.Model):
+    ESTADOS = [
+        ("pendiente", "Pendiente"),
+        ("en_revision", "Comprobante en revisión"),  # pago digital enviado, esperando confirmación admin
+        ("cumplida", "Cumplida"),
+        ("cancelada", "Cancelada"),
+    ]
+    TIPOS = TipoInfraccion.TIPOS_SANCION
+
+    infraccion = models.OneToOneField(Infraccion, on_delete=models.CASCADE, related_name="sancion")
+    tipo_sancion = models.CharField(max_length=20, choices=TIPOS)
+    monto = models.DecimalField(
+        max_digits=8, decimal_places=2, null=True, blank=True,
+        help_text="Solo aplica cuando tipo_sancion es 'multa_economica'",
+    )
+    estado = models.CharField(max_length=12, choices=ESTADOS, default="pendiente")
+    fecha = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "sanciones"
+        verbose_name = "Sanción"
+        verbose_name_plural = "Sanciones"
+        ordering = ["-fecha"]
+
+    def __str__(self):
+        return f"Sanción #{self.pk} ({self.get_tipo_sancion_display()}) - {self.get_estado_display()}"
+
+
+class PagoSancion(models.Model):
     METODOS = [
         ("efectivo",      "Efectivo (ventanilla)"),
         ("transferencia", "Transferencia bancaria"),
@@ -59,7 +105,7 @@ class PagoMulta(models.Model):
         ("banca_movil",   "Banca Móvil / Tigo Money"),
     ]
 
-    multa = models.OneToOneField(Multa, on_delete=models.CASCADE, related_name="pago")
+    sancion = models.OneToOneField(Sancion, on_delete=models.CASCADE, related_name="pago")
     fecha_pago = models.DateTimeField(auto_now_add=True)
     monto_pagado = models.DecimalField(max_digits=8, decimal_places=2)
     metodo_pago = models.CharField(max_length=15, choices=METODOS)
@@ -75,27 +121,27 @@ class PagoMulta(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
-        related_name="pagos_multa_registrados",
+        related_name="pagos_sancion_registrados",
     )
 
     class Meta:
-        db_table = "pagos_multa"
-        verbose_name = "Pago de multa"
-        verbose_name_plural = "Pagos de multa"
+        db_table = "pagos_sancion"
+        verbose_name = "Pago de sanción"
+        verbose_name_plural = "Pagos de sanción"
 
     def __str__(self):
-        return f"Pago multa #{self.multa_id} - Bs {self.monto_pagado}"
+        return f"Pago sanción #{self.sancion_id} - Bs {self.monto_pagado}"
 
 
-class ApelacionMulta(models.Model):
+class ApelacionInfraccion(models.Model):
     ESTADOS = [
         ("pendiente", "Pendiente"),
         ("aprobada", "Aprobada"),
         ("rechazada", "Rechazada"),
     ]
 
-    multa = models.OneToOneField(
-        Multa, on_delete=models.CASCADE, related_name="apelacion"
+    infraccion = models.OneToOneField(
+        Infraccion, on_delete=models.CASCADE, related_name="apelacion"
     )
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -116,10 +162,10 @@ class ApelacionMulta(models.Model):
     )
 
     class Meta:
-        db_table = "apelaciones_multa"
-        verbose_name = "Apelación de multa"
-        verbose_name_plural = "Apelaciones de multa"
+        db_table = "apelaciones_infraccion"
+        verbose_name = "Apelación de infracción"
+        verbose_name_plural = "Apelaciones de infracción"
         ordering = ["-fecha"]
 
     def __str__(self):
-        return f"Apelación multa #{self.multa_id} [{self.get_estado_display()}]"
+        return f"Apelación infracción #{self.infraccion_id} [{self.get_estado_display()}]"

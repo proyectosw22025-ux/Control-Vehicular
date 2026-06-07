@@ -20,12 +20,12 @@ const ACCION_BADGE: Record<string, string> = {
   // Acceso vehicular
   registrar_acceso:      'bg-green-100 text-green-700',
   acceso_manual:         'bg-teal-100 text-teal-700',
-  // Multas
-  registrar_multa:       'bg-red-100 text-red-700',
-  multa_registrada:      'bg-red-100 text-red-700',
-  pagar_multa:           'bg-emerald-100 text-emerald-700',
-  multa_pagada:          'bg-emerald-100 text-emerald-700',
-  multa_apelada:         'bg-blue-100 text-blue-700',
+  // Infracciones y sanciones
+  infraccion_registrada: 'bg-red-100 text-red-700',
+  sancion_cumplida:      'bg-emerald-100 text-emerald-700',
+  pago_en_revision:      'bg-amber-100 text-amber-700',
+  pago_rechazado:        'bg-orange-100 text-orange-700',
+  infraccion_apelada:    'bg-blue-100 text-blue-700',
   apelacion_resuelta:    'bg-blue-100 text-blue-700',
   // Vehículos
   aprobar_vehiculo:      'bg-blue-100 text-blue-700',
@@ -67,7 +67,7 @@ const CATEGORIAS_FILTRO = [
   { label: 'Todo', prefijos: [] },
   { label: 'Visitantes', prefijos: ['visita', 'visitante'] },
   { label: 'Acceso',     prefijos: ['registrar_acceso', 'acceso_manual'] },
-  { label: 'Multas',     prefijos: ['multa', 'apelacion'] },
+  { label: 'Infracciones', prefijos: ['infraccion', 'sancion', 'pago', 'apelacion'] },
   { label: 'Vehículos',  prefijos: ['vehiculo', 'sesion'] },
   { label: 'Usuarios',   prefijos: ['login', 'usuario', 'rol'] },
 ]

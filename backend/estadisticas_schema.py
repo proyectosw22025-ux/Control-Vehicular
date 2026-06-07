@@ -4,7 +4,7 @@ Estadísticas y reportes — Schema GraphQL
 Optimizaciones N+1 aplicadas:
   - reporte_accesos: 1 query con TruncDate+annotate en vez de 2N queries (antes: 60 para 30 días)
   - accesos_ultima_semana: 1 query en vez de 14
-  - reporte_multas_por_tipo: 1 query con Count(filter=Q()) en vez de 5×N queries
+  - reporte_infracciones_por_tipo: 1 query con Count(filter=Q()) en vez de 5×N queries
   - reporte_ocupacion_zonas: 1 query con annotate en vez de 5×zonas queries
   - dashboard_stats: aggregate combinado para reducir queries a BD
 """
@@ -25,8 +25,8 @@ class DashboardStatsType:
     vehiculos_activos_hoy: int
     espacios_disponibles: int
     total_espacios: int
-    multas_pendientes: int
-    monto_multas_pendientes: float
+    sanciones_pendientes: int
+    monto_sanciones_pendientes: float
     visitantes_activos: int
     accesos_hoy: int
     total_usuarios: int
@@ -52,12 +52,12 @@ class ReporteAccesosDiaType:
 
 
 @strawberry.type
-class ReporteMultaTipoType:
+class ReporteInfraccionTipoType:
     tipo_nombre: str
     cantidad: int
     monto_total: float
-    pagadas: int
-    pendientes: int
+    confirmadas: int
+    registradas: int
     apeladas: int
 
 
@@ -80,13 +80,13 @@ class ReporteVehiculoGrupoType:
 
 
 @strawberry.type
-class ReporteResumenMultasType:
-    total_multas: int
+class ReporteResumenSancionesType:
+    total_sanciones: int
     monto_total_recaudado: float
     monto_total_pendiente: float
-    pagadas: int
+    cumplidas: int
     pendientes: int
-    apeladas: int
+    en_revision: int
     canceladas: int
 
 
@@ -131,7 +131,7 @@ class EstadisticasQuery:
     def dashboard_stats(self, info: Info) -> DashboardStatsType:
         from apps.vehiculos.models import Vehiculo
         from apps.parqueos.models import EspacioParqueo
-        from apps.multas.models import Multa, ApelacionMulta
+        from apps.multas.models import Sancion, ApelacionInfraccion
         from apps.visitantes.models import Visita
         from apps.acceso.models import RegistroAcceso
         from apps.usuarios.models import Usuario
@@ -152,8 +152,8 @@ class EstadisticasQuery:
             disponibles=Count("id", filter=Q(estado="disponible")),
         )
 
-        # Multas: 1 aggregate para count + sum
-        multas_stats = Multa.objects.filter(estado="pendiente").aggregate(
+        # Sanciones: 1 aggregate para count + sum
+        sanciones_stats = Sancion.objects.filter(estado="pendiente").aggregate(
             count=Count("id"),
             monto=Sum("monto"),
         )
@@ -163,12 +163,12 @@ class EstadisticasQuery:
             vehiculos_activos_hoy=accesos_stats["vehiculos_distintos"] or 0,
             espacios_disponibles=espacios_stats["disponibles"] or 0,
             total_espacios=espacios_stats["total"] or 0,
-            multas_pendientes=multas_stats["count"] or 0,
-            monto_multas_pendientes=float(multas_stats["monto"] or 0),
+            sanciones_pendientes=sanciones_stats["count"] or 0,
+            monto_sanciones_pendientes=float(sanciones_stats["monto"] or 0),
             visitantes_activos=Visita.objects.filter(estado="activa").count(),
             accesos_hoy=accesos_stats["total"] or 0,
             total_usuarios=Usuario.objects.filter(is_active=True).count(),
-            apelaciones_pendientes=ApelacionMulta.objects.filter(estado="pendiente").count(),
+            apelaciones_pendientes=ApelacionInfraccion.objects.filter(estado="pendiente").count(),
         )
 
     @strawberry.field
@@ -218,53 +218,53 @@ class EstadisticasQuery:
         return resultado
 
     @strawberry.field
-    def reporte_multas_por_tipo(self, info: Info) -> List[ReporteMultaTipoType]:
+    def reporte_infracciones_por_tipo(self, info: Info) -> List[ReporteInfraccionTipoType]:
         """
         1 query con Count(filter=Q(...)) (antes: 5 queries × N tipos — 35 para 7 tipos).
         """
-        from apps.multas.models import TipoMulta
+        from apps.multas.models import TipoInfraccion
 
-        tipos = TipoMulta.objects.annotate(
-            cantidad   = Count("multas"),
-            monto_total= Sum("multas__monto"),
-            pagadas    = Count("multas", filter=Q(multas__estado="pagada")),
-            pendientes = Count("multas", filter=Q(multas__estado="pendiente")),
-            apeladas   = Count("multas", filter=Q(multas__estado="apelada")),
+        tipos = TipoInfraccion.objects.annotate(
+            cantidad    = Count("infracciones"),
+            monto_total = Sum("infracciones__sancion__monto"),
+            confirmadas = Count("infracciones", filter=Q(infracciones__estado="confirmada")),
+            registradas = Count("infracciones", filter=Q(infracciones__estado="registrada")),
+            apeladas    = Count("infracciones", filter=Q(infracciones__estado="apelada")),
         ).filter(cantidad__gt=0).order_by("nombre")
 
         return [
-            ReporteMultaTipoType(
+            ReporteInfraccionTipoType(
                 tipo_nombre = t.nombre,
                 cantidad    = t.cantidad,
                 monto_total = float(t.monto_total or 0),
-                pagadas     = t.pagadas,
-                pendientes  = t.pendientes,
+                confirmadas = t.confirmadas,
+                registradas = t.registradas,
                 apeladas    = t.apeladas,
             )
             for t in tipos
         ]
 
     @strawberry.field
-    def reporte_resumen_multas(self, info: Info) -> ReporteResumenMultasType:
-        from apps.multas.models import Multa, PagoMulta
+    def reporte_resumen_sanciones(self, info: Info) -> ReporteResumenSancionesType:
+        from apps.multas.models import Sancion, PagoSancion
 
-        total_recaudado = PagoMulta.objects.aggregate(total=Sum("monto_pagado"))["total"] or 0
-        stats = Multa.objects.aggregate(
+        total_recaudado = PagoSancion.objects.aggregate(total=Sum("monto_pagado"))["total"] or 0
+        stats = Sancion.objects.aggregate(
             total=Count("id"),
             pendientes=Count("id", filter=Q(estado="pendiente")),
-            pagadas=Count("id", filter=Q(estado="pagada")),
-            apeladas=Count("id", filter=Q(estado="apelada")),
+            en_revision=Count("id", filter=Q(estado="en_revision")),
+            cumplidas=Count("id", filter=Q(estado="cumplida")),
             canceladas=Count("id", filter=Q(estado="cancelada")),
             monto_pendiente=Sum("monto", filter=Q(estado="pendiente")),
         )
 
-        return ReporteResumenMultasType(
-            total_multas          = stats["total"] or 0,
+        return ReporteResumenSancionesType(
+            total_sanciones       = stats["total"] or 0,
             monto_total_recaudado = float(total_recaudado),
             monto_total_pendiente = float(stats["monto_pendiente"] or 0),
-            pagadas               = stats["pagadas"] or 0,
+            cumplidas             = stats["cumplidas"] or 0,
             pendientes            = stats["pendientes"] or 0,
-            apeladas              = stats["apeladas"] or 0,
+            en_revision           = stats["en_revision"] or 0,
             canceladas            = stats["canceladas"] or 0,
         )
 

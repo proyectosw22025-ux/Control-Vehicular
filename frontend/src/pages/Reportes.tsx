@@ -3,7 +3,7 @@
  * Diseño inspirado en paneles de analytics modernos:
  *   - KPI cards con sparklines en tiempo real
  *   - Area chart con gradiente animado (tendencia de accesos)
- *   - Donut + Gauge para multas
+ *   - Donut + Gauge para infracciones
  *   - Stacked area para parqueo por zona
  *   - Filtros de período interactivos
  */
@@ -53,10 +53,10 @@ const GRADIENT_SALIDAS  = 'urlGradSalidas'
 
 // ── Queries ────────────────────────────────────────────────
 const ACCESOS_Q = gql`query RA($dias:Int!){ reporteAccesos(dias:$dias){ fecha fechaIso entradas salidas total } }`
-const MULTAS_Q  = gql`query RM{ reporteMultasPorTipo{ tipoNombre cantidad montoTotal pagadas pendientes apeladas } reporteResumenMultas{ totalMultas montoTotalRecaudado montoTotalPendiente pagadas pendientes apeladas canceladas } }`
+const INFRACCIONES_Q = gql`query RI{ reporteInfraccionesPorTipo{ tipoNombre cantidad montoTotal confirmadas registradas apeladas } reporteResumenSanciones{ totalSanciones montoTotalRecaudado montoTotalPendiente cumplidas pendientes enRevision canceladas } }`
 const PARQUEO_Q = gql`query RP{ reporteOcupacionZonas{ zonaNombre totalEspacios disponibles ocupados reservados porcentajeOcupacion } }`
 const VEHICULOS_Q = gql`query RV{ reporteVehiculosPorEstado{ nombre cantidad } reporteVehiculosPorTipo{ nombre cantidad } }`
-const STATS_Q   = gql`query RS{ dashboardStats{ accesosHoy espaciosDisponibles totalEspacios multasPendientes montoMultasPendientes totalVehiculos visitantesActivos } }`
+const STATS_Q   = gql`query RS{ dashboardStats{ accesosHoy espaciosDisponibles totalEspacios sancionesPendientes montoSancionesPendientes totalVehiculos visitantesActivos } }`
 
 // ── Tooltip personalizado ──────────────────────────────────
 function TooltipCustom({ active, payload, label }: any) {
@@ -146,18 +146,18 @@ function GaugeOcupacion({ pct, label }: { pct: number; label: string }) {
 // ── Componente principal ───────────────────────────────────
 export default function Reportes() {
   const [dias, setDias]     = useState(30)
-  const [seccion, setSeccion] = useState<'accesos' | 'multas' | 'parqueo' | 'vehiculos'>('accesos')
+  const [seccion, setSeccion] = useState<'accesos' | 'infracciones' | 'parqueo' | 'vehiculos'>('accesos')
 
   const { data: statsData } = useQuery(STATS_Q, { pollInterval: 60_000, fetchPolicy: 'cache-and-network' })
   const { data: accData, loading: accLoad, refetch: refetchAcc } = useQuery(ACCESOS_Q, { variables: { dias }, fetchPolicy: 'cache-and-network' })
-  const { data: multData, loading: multLoad } = useQuery(MULTAS_Q, { fetchPolicy: 'cache-and-network' })
+  const { data: infData, loading: infLoad } = useQuery(INFRACCIONES_Q, { fetchPolicy: 'cache-and-network' })
   const { data: pqData,   loading: pqLoad   } = useQuery(PARQUEO_Q, { fetchPolicy: 'cache-and-network' })
   const { data: vehData,  loading: vehLoad  } = useQuery(VEHICULOS_Q, { fetchPolicy: 'cache-and-network' })
 
   const stats  = statsData?.dashboardStats
   const accesos = accData?.reporteAccesos ?? []
-  const resumen = multData?.reporteResumenMultas
-  const multasTipo = multData?.reporteMultasPorTipo ?? []
+  const resumen = infData?.reporteResumenSanciones
+  const infraccionesTipo = infData?.reporteInfraccionesPorTipo ?? []
   const zonas  = pqData?.reporteOcupacionZonas ?? []
   const porEstado = vehData?.reporteVehiculosPorEstado ?? []
   const porTipo   = vehData?.reporteVehiculosPorTipo ?? []
@@ -173,7 +173,7 @@ export default function Reportes() {
 
   const SECCIONES = [
     { id: 'accesos',  icon: DoorOpen,      label: 'Accesos' },
-    { id: 'multas',   icon: AlertTriangle,  label: 'Multas' },
+    { id: 'infracciones', icon: AlertTriangle, label: 'Infracciones' },
     { id: 'parqueo',  icon: ParkingSquare,  label: 'Parqueos' },
     { id: 'vehiculos',icon: Car,            label: 'Vehículos' },
   ] as const
@@ -242,13 +242,13 @@ export default function Reportes() {
           sparkKey="v"
         />
         <KpiCard
-          label="Multas pendientes"
+          label="Sanciones pendientes"
           value={bs(resumen?.montoTotalPendiente ?? 0)}
-          sub={`${resumen?.pendientes ?? 0} multas sin pagar`}
-          trend={`${resumen?.pagadas ?? 0} pagadas | ${resumen?.apeladas ?? 0} apeladas`}
+          sub={`${resumen?.pendientes ?? 0} sanciones sin pagar`}
+          trend={`${resumen?.cumplidas ?? 0} cumplidas | ${resumen?.enRevision ?? 0} en revisión`}
           trendUp={false}
           color={C.gold}
-          sparkData={multasTipo.map((m: any) => ({ v: m.pendientes }))}
+          sparkData={infraccionesTipo.map((m: any) => ({ v: m.registradas }))}
           sparkKey="v"
         />
         <KpiCard
@@ -341,8 +341,8 @@ export default function Reportes() {
         </div>
       )}
 
-      {/* ══ SECCIÓN: MULTAS ══ */}
-      {seccion === 'multas' && (
+      {/* ══ SECCIÓN: INFRACCIONES ══ */}
+      {seccion === 'infracciones' && (
         <div className="space-y-5 animate-fade-slide-up">
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
 
@@ -350,27 +350,27 @@ export default function Reportes() {
             <div className="lg:col-span-3 bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
               <div className="flex items-center justify-between mb-5">
                 <div>
-                  <h2 className="font-bold text-slate-800">Multas por tipo de infracción</h2>
+                  <h2 className="font-bold text-slate-800">Infracciones por tipo</h2>
                   <p className="text-xs text-slate-400 mt-0.5">Cantidad y monto recaudado por categoría</p>
                 </div>
                 <button onClick={() => exportarExcel(
-                  multasTipo.map((m: any) => ({ Tipo: m.tipoNombre, Total: m.cantidad, Monto: m.montoTotal, Pagadas: m.pagadas, Pendientes: m.pendientes })),
-                  'multas_tipo'
+                  infraccionesTipo.map((m: any) => ({ Tipo: m.tipoNombre, Total: m.cantidad, Monto: m.montoTotal, Confirmadas: m.confirmadas, Registradas: m.registradas, Apeladas: m.apeladas })),
+                  'infracciones_tipo'
                 )} className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg border border-slate-200 hover:border-slate-300 transition-colors">
                   <Download size={12} /> Excel
                 </button>
               </div>
-              {multLoad ? <div className="h-64 bg-slate-50 rounded-xl animate-pulse" /> : (
+              {infLoad ? <div className="h-64 bg-slate-50 rounded-xl animate-pulse" /> : (
                 <ResponsiveContainer width="100%" height={260}>
-                  <BarChart data={multasTipo} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
+                  <BarChart data={infraccionesTipo} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                     <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} axisLine={false} />
                     <YAxis type="category" dataKey="tipoNombre" width={140}
                       tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} />
                     <Tooltip content={<TooltipCustom />} />
                     <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-                    <Bar dataKey="pagadas" name="Pagadas" fill={C.emerald} radius={[0, 4, 4, 0]} stackId="a" isAnimationActive />
-                    <Bar dataKey="pendientes" name="Pendientes" fill={C.amber} radius={[0, 0, 0, 0]} stackId="a" isAnimationActive />
+                    <Bar dataKey="confirmadas" name="Confirmadas" fill={C.emerald} radius={[0, 4, 4, 0]} stackId="a" isAnimationActive />
+                    <Bar dataKey="registradas" name="Registradas" fill={C.amber} radius={[0, 0, 0, 0]} stackId="a" isAnimationActive />
                     <Bar dataKey="apeladas" name="Apeladas" fill={C.blue} radius={[0, 4, 4, 0]} stackId="a" isAnimationActive />
                   </BarChart>
                 </ResponsiveContainer>
@@ -379,17 +379,17 @@ export default function Reportes() {
 
             {/* Donut + resumen */}
             <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-              <h2 className="font-bold text-slate-800 mb-1">Estado global</h2>
-              <p className="text-xs text-slate-400 mb-4">Distribución de {resumen?.totalMultas ?? 0} multas</p>
-              {multLoad ? <div className="h-48 bg-slate-50 rounded-xl animate-pulse" /> : (
+              <h2 className="font-bold text-slate-800 mb-1">Estado de sanciones</h2>
+              <p className="text-xs text-slate-400 mb-4">Distribución de {resumen?.totalSanciones ?? 0} sanciones</p>
+              {infLoad ? <div className="h-48 bg-slate-50 rounded-xl animate-pulse" /> : (
                 <>
                   <ResponsiveContainer width="100%" height={160}>
                     <PieChart>
                       <Pie
                         data={[
-                          { name: 'Pagadas',   value: resumen?.pagadas    ?? 0, fill: C.emerald },
+                          { name: 'Cumplidas', value: resumen?.cumplidas  ?? 0, fill: C.emerald },
                           { name: 'Pendientes',value: resumen?.pendientes ?? 0, fill: C.amber },
-                          { name: 'Apeladas',  value: resumen?.apeladas   ?? 0, fill: C.blue },
+                          { name: 'En revisión', value: resumen?.enRevision ?? 0, fill: C.blue },
                           { name: 'Canceladas',value: resumen?.canceladas ?? 0, fill: C.slate },
                         ]}
                         cx="50%" cy="50%"
@@ -608,7 +608,7 @@ export default function Reportes() {
         <div className="flex gap-2">
           {[
             { l: 'PDF Accesos',    fn: () => descargarPDF('/api/pdf/sesiones/') },
-            { l: 'PDF Multas',     fn: () => descargarPDF('/api/pdf/multas/') },
+            { l: 'PDF Infracciones', fn: () => descargarPDF('/api/pdf/infracciones/') },
             { l: 'PDF Visitantes', fn: () => descargarPDF('/api/pdf/visitas/') },
             { l: 'PDF Vehículos',  fn: () => descargarPDF('/api/pdf/vehiculos/') },
           ].map(({ l, fn }) => (

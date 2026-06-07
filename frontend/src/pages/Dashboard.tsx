@@ -35,8 +35,8 @@ const DASHBOARD_QUERY = gql`
       vehiculosActivosHoy
       espaciosDisponibles
       totalEspacios
-      multasPendientes
-      montoMultasPendientes
+      sancionesPendientes
+      montoSancionesPendientes
       visitantesActivos
       accesosHoy
       totalUsuarios
@@ -120,13 +120,13 @@ const MODULOS_ADMIN = [
   { label: 'Parqueos',      icon: ParkingSquare, color: 'bg-violet-500',  href: '/parqueos' },
   { label: 'Acceso',        icon: DoorOpen,      color: 'bg-orange-500',  href: '/acceso' },
   { label: 'Visitantes',    icon: UserCheck,     color: 'bg-cyan-500',    href: '/visitantes' },
-  { label: 'Multas',        icon: AlertTriangle, color: 'bg-red-500',     href: '/multas' },
+  { label: 'Infracciones',  icon: AlertTriangle, color: 'bg-red-500',     href: '/infracciones' },
   { label: 'Notificaciones',icon: Bell,          color: 'bg-slate-500',   href: '/notificaciones' },
 ]
 const MODULOS_GUARDIA = [
   { label: 'Acceso',        icon: DoorOpen,      color: 'bg-orange-500',  href: '/acceso' },
   { label: 'Visitantes',    icon: UserCheck,     color: 'bg-cyan-500',    href: '/visitantes' },
-  { label: 'Multas',        icon: AlertTriangle, color: 'bg-red-500',     href: '/multas' },
+  { label: 'Infracciones',  icon: AlertTriangle, color: 'bg-red-500',     href: '/infracciones' },
   { label: 'Parqueos',      icon: ParkingSquare, color: 'bg-violet-500',  href: '/parqueos' },
 ]
 const MODULOS_RESIDENTE = [
@@ -275,7 +275,7 @@ export default function Dashboard() {
                 <StatCard idx={0} label="Vehículos registrados" value={stats.totalVehiculos} sub="con estado activo" icon={Car} accent="border-emerald-400" />
                 <StatCard idx={1} label="Accesos hoy" value={stats.accesosHoy} sub={`${stats.vehiculosActivosHoy} vehículos distintos`} icon={DoorOpen} accent="border-orange-400" />
                 <StatCard idx={2} label="Espacios disponibles" value={`${stats.espaciosDisponibles} / ${stats.totalEspacios}`} sub="en todas las zonas" icon={ParkingSquare} accent="border-violet-400" />
-                <StatCard idx={3} label="Multas pendientes" value={stats.multasPendientes} sub={`Bs ${stats.montoMultasPendientes.toFixed(2)} total`} icon={AlertTriangle} accent="border-red-400" />
+                <StatCard idx={3} label="Sanciones pendientes" value={stats.sancionesPendientes} sub={`Bs ${stats.montoSancionesPendientes.toFixed(2)} total`} icon={AlertTriangle} accent="border-red-400" />
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <StatCard
@@ -326,10 +326,10 @@ export default function Dashboard() {
                         : 'Sin apelaciones pendientes'}
                     />
                     <AlertRow
-                      ok={stats.multasPendientes < 5}
-                      texto={stats.multasPendientes > 0
-                        ? `${stats.multasPendientes} multa(s) pendientes de pago`
-                        : 'Sin multas pendientes'}
+                      ok={stats.sancionesPendientes < 5}
+                      texto={stats.sancionesPendientes > 0
+                        ? `${stats.sancionesPendientes} sanción(es) pendiente(s)`
+                        : 'Sin sanciones pendientes'}
                     />
                     <AlertRow
                       ok={stats.espaciosDisponibles > 0}
@@ -362,7 +362,7 @@ export default function Dashboard() {
             <div className="grid grid-cols-2 gap-4">
               <StatCard label="Accesos hoy" value={stats.accesosHoy} sub="registros totales" icon={DoorOpen} accent="border-orange-400" />
               <StatCard label="Visitantes activos" value={stats.visitantesActivos} sub="en el campus ahora" icon={UserCheck} accent="border-cyan-400" />
-              <StatCard label="Multas pendientes" value={stats.multasPendientes} sub="sin pagar" icon={AlertTriangle} accent="border-red-400" />
+              <StatCard label="Sanciones pendientes" value={stats.sancionesPendientes} sub="sin pagar" icon={AlertTriangle} accent="border-red-400" />
               <StatCard label="Espacios libres" value={`${stats.espaciosDisponibles}/${stats.totalEspacios}`} sub="en el parqueo" icon={ParkingSquare} accent="border-violet-400" />
             </div>
           ) : null}

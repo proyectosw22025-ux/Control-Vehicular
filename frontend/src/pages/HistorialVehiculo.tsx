@@ -8,10 +8,10 @@ import {
 } from 'lucide-react'
 import { VEHICULO_QUERY, HISTORIAL_ESTADOS_QUERY } from '../graphql/queries/vehiculos'
 import { REGISTROS_ACCESO_QUERY } from '../graphql/queries/acceso'
-import { MULTAS_VEHICULO_QUERY } from '../graphql/queries/multas'
+import { INFRACCIONES_VEHICULO_QUERY } from '../graphql/queries/infracciones'
 import { HISTORIAL_SESIONES_QUERY } from '../graphql/queries/parqueos'
 
-type Tab = 'accesos' | 'multas' | 'sesiones' | 'documentos' | 'timeline'
+type Tab = 'accesos' | 'infracciones' | 'sesiones' | 'documentos' | 'timeline'
 
 const ESTADO_BADGE: Record<string, string> = {
   pendiente:  'bg-amber-100 text-amber-700',
@@ -33,11 +33,17 @@ const DOC_NOMBRES: Record<string, string> = {
   otro:        'Otro',
 }
 
-const MULTA_BADGE: Record<string, string> = {
-  pendiente: 'bg-amber-100 text-amber-700',
-  pagada:    'bg-green-100 text-green-700',
-  apelada:   'bg-blue-100 text-blue-700',
-  cancelada: 'bg-slate-100 text-slate-500',
+const ESTADO_INFRACCION_BADGE: Record<string, string> = {
+  registrada: 'bg-amber-100 text-amber-700',
+  confirmada: 'bg-green-100 text-green-700',
+  apelada:    'bg-blue-100 text-blue-700',
+  anulada:    'bg-slate-100 text-slate-500',
+}
+const TIPO_SANCION_LABELS: Record<string, string> = {
+  amonestacion:      'Amonestación',
+  multa_economica:   'Multa económica',
+  suspension_acceso: 'Suspensión de acceso',
+  reporte_bienestar: 'Reporte a Bienestar',
 }
 const METODO_LABEL: Record<string, string> = {
   qr_dinamico:   'QR Dinámico',
@@ -94,7 +100,7 @@ export default function HistorialVehiculo() {
     skip: !id,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: muData, loading: muLoad, refetch: refetchMu } = useQuery(MULTAS_VEHICULO_QUERY, {
+  const { data: muData, loading: muLoad, refetch: refetchMu } = useQuery(INFRACCIONES_VEHICULO_QUERY, {
     variables: { vehiculoId: id },
     skip: !id,
     fetchPolicy: 'cache-and-network',
@@ -112,19 +118,19 @@ export default function HistorialVehiculo() {
 
   const vehiculo         = vData?.vehiculo
   const accesos          = acData?.registrosAcceso ?? []
-  const multas           = muData?.multasVehiculo ?? []
+  const infracciones     = muData?.infraccionesVehiculo ?? []
   const sesiones         = seData?.historialSesiones ?? []
   const historialEstados = tlData?.historialEstadosVehiculo ?? []
 
   // Resumen estadístico — disponible en cuanto lleguen los datos
-  const multasPendientesTotal = multas
-    .filter((m: any) => m.estado === 'pendiente')
-    .reduce((s: number, m: any) => s + Number(m.monto), 0)
+  const sancionesPendientesTotal = infracciones
+    .filter((i: any) => i.sancion?.tipoSancion === 'multa_economica' && i.sancion?.estado === 'pendiente')
+    .reduce((s: number, i: any) => s + Number(i.sancion.monto), 0)
   const minutosParqueo = sesiones
     .filter((s: any) => s.duracionMinutos != null)
     .reduce((s: number, se: any) => s + se.duracionMinutos, 0)
 
-  const tabLoad = tab === 'accesos' ? acLoad : tab === 'multas' ? muLoad : seLoad
+  const tabLoad = tab === 'accesos' ? acLoad : tab === 'infracciones' ? muLoad : seLoad
   function refetchTab() { refetchAc(); refetchMu(); refetchSe() }
 
   if (vLoad) {
@@ -190,18 +196,18 @@ export default function HistorialVehiculo() {
       </div>
 
       {/* Resumen estadístico — se muestra cuando al menos uno de los datos llegó */}
-      {(accesos.length > 0 || multas.length > 0 || sesiones.length > 0) && (
+      {(accesos.length > 0 || infracciones.length > 0 || sesiones.length > 0) && (
         <div className="grid grid-cols-3 gap-3 mb-4">
           <div className="bg-white rounded-xl p-3 text-center border border-slate-100 shadow-sm">
             <p className="text-lg font-bold text-slate-800">{accesos.length}</p>
             <p className="text-[11px] text-slate-400 mt-0.5">Accesos registrados</p>
           </div>
-          <div className={`bg-white rounded-xl p-3 text-center border shadow-sm ${multasPendientesTotal > 0 ? 'border-red-200' : 'border-slate-100'}`}>
-            <p className={`text-lg font-bold ${multasPendientesTotal > 0 ? 'text-red-600' : 'text-slate-800'}`}>
-              {multasPendientesTotal > 0 ? `Bs ${multasPendientesTotal.toFixed(0)}` : multas.length}
+          <div className={`bg-white rounded-xl p-3 text-center border shadow-sm ${sancionesPendientesTotal > 0 ? 'border-red-200' : 'border-slate-100'}`}>
+            <p className={`text-lg font-bold ${sancionesPendientesTotal > 0 ? 'text-red-600' : 'text-slate-800'}`}>
+              {sancionesPendientesTotal > 0 ? `Bs ${sancionesPendientesTotal.toFixed(0)}` : infracciones.length}
             </p>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              {multasPendientesTotal > 0 ? 'Multas pendientes' : 'Sin multas pendientes'}
+              {sancionesPendientesTotal > 0 ? 'Sanciones pendientes' : 'Sin sanciones pendientes'}
             </p>
           </div>
           <div className="bg-white rounded-xl p-3 text-center border border-slate-100 shadow-sm">
@@ -218,12 +224,12 @@ export default function HistorialVehiculo() {
         <TabBtn active={tab === 'accesos'} onClick={() => setTab('accesos')}>
           <DoorOpen size={14} /> Accesos ({acLoad ? '…' : accesos.length})
         </TabBtn>
-        <TabBtn active={tab === 'multas'} onClick={() => setTab('multas')}>
+        <TabBtn active={tab === 'infracciones'} onClick={() => setTab('infracciones')}>
           <AlertTriangle size={14} />
-          Multas ({muLoad ? '…' : multas.length})
-          {multas.filter((m: any) => m.estado === 'pendiente').length > 0 && (
+          Infracciones ({muLoad ? '…' : infracciones.length})
+          {infracciones.filter((i: any) => i.sancion?.estado === 'pendiente').length > 0 && (
             <span className="ml-1 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
-              {multas.filter((m: any) => m.estado === 'pendiente').length}
+              {infracciones.filter((i: any) => i.sancion?.estado === 'pendiente').length}
             </span>
           )}
         </TabBtn>
@@ -278,11 +284,11 @@ export default function HistorialVehiculo() {
         )
       )}
 
-      {/* ── Multas ── */}
-      {tab === 'multas' && (
+      {/* ── Infracciones ── */}
+      {tab === 'infracciones' && (
         muLoad ? <SkeletonRows /> :
-        multas.length === 0 ? (
-          <EmptyState icon={AlertTriangle} text="Sin multas registradas" />
+        infracciones.length === 0 ? (
+          <EmptyState icon={AlertTriangle} text="Sin infracciones registradas" />
         ) : (
           <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
             <table className="w-full text-sm">
@@ -291,24 +297,33 @@ export default function HistorialVehiculo() {
                   <th className="px-4 py-3 text-left">Fecha</th>
                   <th className="px-4 py-3 text-left">Tipo</th>
                   <th className="px-4 py-3 text-left">Descripción</th>
-                  <th className="px-4 py-3 text-right">Monto</th>
+                  <th className="px-4 py-3 text-left">Sanción</th>
                   <th className="px-4 py-3 text-left">Estado</th>
                   <th className="px-4 py-3 text-left">Registrado por</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {multas.map((m: any) => (
-                  <tr key={m.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-3 text-slate-500 text-xs">{fmt(m.fecha)}</td>
-                    <td className="px-4 py-3 text-slate-700 text-xs">{m.tipo?.nombre}</td>
-                    <td className="px-4 py-3 text-slate-600 text-xs max-w-xs truncate">{m.descripcion}</td>
-                    <td className="px-4 py-3 text-right font-semibold text-slate-800">Bs {Number(m.monto).toFixed(2)}</td>
+                {infracciones.map((i: any) => (
+                  <tr key={i.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-4 py-3 text-slate-500 text-xs">{fmt(i.fecha)}</td>
+                    <td className="px-4 py-3 text-slate-700 text-xs">{i.tipo?.nombre}</td>
+                    <td className="px-4 py-3 text-slate-600 text-xs max-w-xs truncate">{i.descripcion}</td>
+                    <td className="px-4 py-3 text-slate-700 text-xs">
+                      {i.sancion ? (
+                        <>
+                          {TIPO_SANCION_LABELS[i.sancion.tipoSancion] ?? i.sancion.tipoSancion}
+                          {i.sancion.tipoSancion === 'multa_economica' && i.sancion.monto != null && (
+                            <span className="font-semibold text-slate-800"> · Bs {Number(i.sancion.monto).toFixed(2)}</span>
+                          )}
+                        </>
+                      ) : '—'}
+                    </td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${MULTA_BADGE[m.estado] ?? 'bg-slate-100 text-slate-500'}`}>
-                        {m.estado}
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${ESTADO_INFRACCION_BADGE[i.estado] ?? 'bg-slate-100 text-slate-500'}`}>
+                        {i.estado}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-slate-400 text-xs">{m.registradoPorNombre ?? '—'}</td>
+                    <td className="px-4 py-3 text-slate-400 text-xs">{i.registradoPorNombre ?? '—'}</td>
                   </tr>
                 ))}
               </tbody>

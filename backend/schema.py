@@ -4,7 +4,7 @@ from apps.vehiculos.schema import VehiculosQuery, VehiculosMutation
 from apps.parqueos.schema import ParqueosQuery, ParqueosMutation
 from apps.acceso.schema import AccesoQuery, AccesoMutation
 from apps.visitantes.schema import VisitantesQuery, VisitantesMutation
-from apps.multas.schema import MultasQuery, MultasMutation
+from apps.multas.schema import InfraccionesQuery, InfraccionesMutation
 from apps.notificaciones.schema import NotificacionesQuery, NotificacionesMutation
 from estadisticas_schema import EstadisticasQuery
 from busqueda_schema import BusquedaQuery
@@ -17,7 +17,7 @@ class Query(
     ParqueosQuery,
     AccesoQuery,
     VisitantesQuery,
-    MultasQuery,
+    InfraccionesQuery,
     NotificacionesQuery,
     EstadisticasQuery,
     BusquedaQuery,
@@ -32,7 +32,7 @@ class Mutation(
     ParqueosMutation,
     AccesoMutation,
     VisitantesMutation,
-    MultasMutation,
+    InfraccionesMutation,
     NotificacionesMutation,
 ):
     pass

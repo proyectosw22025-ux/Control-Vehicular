@@ -233,7 +233,7 @@ export default function GuardiaDashboard() {
   }
   const TIPO_LABEL: Record<string, string> = {
     frecuencia_excesiva: 'Frecuencia excesiva',
-    vehiculo_sancionado: 'Multas pendientes',
+    vehiculo_sancionado: 'Sanciones pendientes',
     horario_inusual:     'Horario inusual',
     punto_inusual:       'Punto inusual',
     placas_similares:    'Placas similares',
@@ -574,7 +574,7 @@ export default function GuardiaDashboard() {
             </div>
           )}
 
-          {/* Vehículo sin registro → opción de multa */}
+          {/* Vehículo sin registro → opción de infracción */}
           {vehiculoNoEncontrado && (
             <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 space-y-2">
               <p className="text-sm font-semibold text-amber-800">
@@ -582,7 +582,7 @@ export default function GuardiaDashboard() {
               </p>
               <p className="text-xs text-amber-700">¿Deseas registrar una infracción?</p>
               <div className="flex gap-2">
-                <a href={`/multas?placa=${vehiculoNoEncontrado}`}
+                <a href={`/infracciones?placa=${vehiculoNoEncontrado}`}
                   className="flex-1 text-center text-xs bg-amber-500 hover:bg-amber-600 text-white py-2 rounded-lg font-medium transition-colors">
                   Registrar infracción
                 </a>

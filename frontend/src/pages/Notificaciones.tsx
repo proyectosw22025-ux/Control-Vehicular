@@ -27,7 +27,7 @@ function buildWsUrl(): string {
 function tipoIcon(codigo?: string | null) {
   if (!codigo) return <Bell size={16} className="text-slate-400" />
   const c = codigo.toLowerCase()
-  if (c.includes('multa'))    return <AlertCircle size={16} className="text-red-500" />
+  if (c.includes('infraccion') || c.includes('sancion') || c.includes('pago')) return <AlertCircle size={16} className="text-red-500" />
   if (c.includes('acceso'))   return <Shield size={16} className="text-orange-500" />
   if (c.includes('vehiculo')) return <Car size={16} className="text-emerald-500" />
   if (c.includes('visita'))   return <Bell size={16} className="text-cyan-500" />
@@ -185,7 +185,7 @@ export default function Notificaciones() {
           <EmptyState
             tipo="notificaciones"
             titulo={soloNoLeidas ? 'Todo al día' : 'Sin notificaciones aún'}
-            sub={soloNoLeidas ? 'No tienes mensajes sin leer — ¡bien hecho!' : 'Aquí aparecerán alertas de multas, accesos y visitas'}
+            sub={soloNoLeidas ? 'No tienes mensajes sin leer — ¡bien hecho!' : 'Aquí aparecerán alertas de infracciones, accesos y visitas'}
           />
         ) : (
           <div className="space-y-2">

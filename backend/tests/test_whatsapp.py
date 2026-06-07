@@ -16,7 +16,7 @@ from apps.notificaciones.whatsapp import (
     _normalizar_telefono_bolivia,
     enviar_whatsapp,
     msg_entrada_campus,
-    msg_multa_registrada,
+    msg_infraccion_registrada,
 )
 
 
@@ -93,8 +93,8 @@ class TestMensajesPredefinidos:
         assert "09:32" in msg
         assert "UAGRM" in msg
 
-    def test_mensaje_multa_contiene_monto(self):
-        msg = msg_multa_registrada("ABC-123", "Estacionamiento indebido", "50")
+    def test_mensaje_infraccion_contiene_monto(self):
+        msg = msg_infraccion_registrada("ABC-123", "Estacionamiento indebido", "50")
         assert "ABC-123" in msg
         assert "Bs 50" in msg
         assert "Estacionamiento indebido" in msg
