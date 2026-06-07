@@ -1,6 +1,7 @@
 """Tests de control de acceso: estados de vehículo, QR, manual y audit log."""
 import pytest
 from apps.acceso.models import RegistroAcceso, AuditLog
+from apps.vehiculos.models import Vehiculo
 from conftest import graphql
 
 REGISTRAR_ACCESO = """
@@ -126,6 +127,31 @@ def test_acceso_manual_placa_inexistente(gql_guardia, punto_acceso):
     })
     assert "errors" in r
     assert "no registrado" in r["errors"][0]["message"]
+
+
+@pytest.mark.django_db
+def test_acceso_manual_tolera_guion_distinto_al_registrado(gql_guardia, usuario_normal, tipo_vehiculo, punto_acceso):
+    """El OCR siempre normaliza la placa leída al formato canónico boliviano con
+    guion (p.ej. 'ZYX-123'), pero el vehículo pudo registrarse sin guion (p.ej.
+    'ZYX123', como ocurre con datos ya existentes en la BD). El lookup debe
+    encontrar el vehículo igual, comparando solo letras y números."""
+    Vehiculo.objects.create(
+        placa="ZYX123",
+        tipo=tipo_vehiculo,
+        propietario=usuario_normal,
+        marca="Toyota",
+        modelo="Corolla",
+        anio=2021,
+        color="blanco",
+        estado="activo",
+    )
+    r = graphql(gql_guardia, REGISTRAR_MANUAL, {
+        "puntoId": punto_acceso.id,
+        "placa": "ZYX-123",
+        "tipo": "entrada",
+    })
+    assert "errors" not in r
+    assert r["data"]["registrarAccesoManual"]["placaVehiculo"] == "ZYX123"
 
 
 @pytest.mark.django_db

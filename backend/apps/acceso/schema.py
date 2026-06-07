@@ -1114,13 +1114,27 @@ class AccesoMutation:
 
     @strawberry.mutation
     def registrar_acceso_manual(self, info: Info, input: AccesoManualInput) -> RegistroAccesoType:
+        import re
+        from django.db.models import Value
+        from django.db.models.functions import Replace
         from apps.vehiculos.models import Vehiculo
         if input.tipo not in ["entrada", "salida"]:
             raise Exception("Tipo inválido. Opciones: entrada, salida")
         punto = PuntoAcceso.objects.filter(pk=input.punto_acceso_id, activo=True).first()
         if not punto:
             raise Exception("Punto de acceso no encontrado o inactivo")
-        vehiculo = Vehiculo.objects.filter(placa=input.placa.upper()).first()
+
+        # La placa registrada (tecleada por el dueño al dar de alta el vehículo) y la
+        # placa detectada (siempre normalizada por el OCR al formato canónico boliviano
+        # "ABC-1234") pueden diferir solo en guiones/espacios — p.ej. "ZYX123" vs "ZYX-123".
+        # Comparamos ambas sin separadores para que el lookup no falle por ese desfase.
+        placa_sin_separadores = re.sub(r"[^A-Z0-9]", "", input.placa.upper())
+        vehiculo = (
+            Vehiculo.objects
+            .annotate(_placa_comparable=Replace(Replace("placa", Value("-"), Value("")), Value(" "), Value("")))
+            .filter(_placa_comparable=placa_sin_separadores)
+            .first()
+        )
         if not vehiculo:
             raise Exception(f"Vehículo con placa {input.placa.upper()} no registrado en el sistema")
         if vehiculo.estado == "pendiente":
