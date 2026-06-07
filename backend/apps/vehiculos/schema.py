@@ -131,12 +131,13 @@ class VehiculoType:
 
     @strawberry.field
     def propietario_roles(self) -> List[str]:
-        """Roles del propietario para validación de categoría de espacio."""
-        from apps.usuarios.models import UsuarioRol
-        return list(
-            UsuarioRol.objects.filter(usuario_id=self.propietario_id)
-            .values_list("rol__nombre", flat=True)
-        )
+        """Roles del propietario para validación de categoría de espacio.
+
+        Usa la relación prefetcheada (`propietario__usuario_roles__rol`) en
+        lugar de una consulta nueva por vehículo — evita N+1 cuando un mismo
+        propietario tiene varios vehículos en la misma página de resultados.
+        """
+        return [ur.rol.nombre for ur in self.propietario.usuario_roles.all()]
 
     @strawberry.field
     def documentos(self) -> List[DocumentoVehiculoType]:
@@ -393,7 +394,9 @@ class VehiculosQuery:
         from django.db.models import Q, Exists, OuterRef
         from datetime import date as dt_date
 
-        qs = Vehiculo.objects.select_related("tipo", "propietario")
+        qs = Vehiculo.objects.select_related("tipo", "propietario").prefetch_related(
+            "documentos", "propietario__usuario_roles__rol"
+        )
 
         # ── Filtros base ──────────────────────────────────────────────────
         if propietario_id:

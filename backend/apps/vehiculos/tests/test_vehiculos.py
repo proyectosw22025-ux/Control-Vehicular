@@ -201,3 +201,69 @@ def test_estado_documentacion_vehiculo_critico(db, gql_admin, vehiculo_activo):
     items = r["data"]["vehiculos"]["items"]
     v = next(i for i in items if i["id"] == vehiculo_activo.id)
     assert v["estadoDocumentacion"] == "critico"
+
+
+# ── Rendimiento: el listado no debe degradar con N+1 ─────────────────────────
+
+VEHICULOS_LISTADO_COMPLETO = """
+query VehiculosListado($propietarioId: Int) {
+  vehiculos(propietarioId: $propietarioId, porPagina: 20) {
+    items {
+      id placa estado estadoDocumentacion propietarioNombre propietarioRoles
+      tipo { nombre }
+      documentos { id tipoDoc numero fechaVencimiento estado }
+    }
+  }
+}
+"""
+
+
+@pytest.mark.django_db
+def test_listado_vehiculos_no_escala_con_n_mas_1(django_assert_max_num_queries, gql_admin, usuario_normal, tipo_vehiculo):
+    """
+    El listado de vehículos resuelve `documentos`, `estadoDocumentacion` y
+    `propietarioRoles` para cada item — campos que antes disparaban consultas
+    nuevas por vehículo (N+1: una para `documentos`, otra duplicada para
+    `estadoDocumentacion`, y otra para `propietarioRoles`).
+
+    Con `prefetch_related("documentos", "propietario__usuario_roles__rol")`
+    el número total de consultas debe permanecer acotado sin importar cuántos
+    vehículos tenga el propietario — NO debe crecer linealmente con N.
+    """
+    import datetime as dt
+
+    def crear_vehiculos(cantidad, prefijo):
+        for i in range(cantidad):
+            v = Vehiculo.objects.create(
+                placa=f"{prefijo}-{i:03d}", tipo=tipo_vehiculo, propietario=usuario_normal,
+                marca="Toyota", modelo="Corolla", anio=2020, color="blanco", estado="activo",
+            )
+            DocumentoVehiculo.objects.create(
+                vehiculo=v, tipo_doc="soat", numero=f"SOAT-{prefijo}-{i}",
+                fecha_vencimiento=dt.date.today() + dt.timedelta(days=200),
+            )
+
+    # Caso A: 1 vehículo — mide el costo "base" del listado
+    crear_vehiculos(1, "UNO")
+    with django_assert_max_num_queries(15) as base:
+        r1 = graphql(gql_admin, VEHICULOS_LISTADO_COMPLETO, {"propietarioId": usuario_normal.id})
+    assert "errors" not in r1
+    assert len(r1["data"]["vehiculos"]["items"]) == 1
+    consultas_un_vehiculo = len(base.captured_queries)
+
+    # Caso B: 4 vehículos más (5 en total) del MISMO propietario — si hubiera
+    # N+1, esto dispararía ~3 consultas adicionales POR vehículo nuevo.
+    crear_vehiculos(4, "CIN")
+    with django_assert_max_num_queries(15) as cinco:
+        r2 = graphql(gql_admin, VEHICULOS_LISTADO_COMPLETO, {"propietarioId": usuario_normal.id})
+    assert "errors" not in r2
+    assert len(r2["data"]["vehiculos"]["items"]) == 5
+    consultas_cinco_vehiculos = len(cinco.captured_queries)
+
+    # El número de consultas no debe crecer con la cantidad de vehículos
+    # (a lo sumo una pequeña variación constante, nunca proporcional a N).
+    assert consultas_cinco_vehiculos <= consultas_un_vehiculo + 2, (
+        f"El listado parece tener un problema N+1: {consultas_un_vehiculo} consultas "
+        f"con 1 vehículo vs {consultas_cinco_vehiculos} con 5 — debería mantenerse "
+        f"prácticamente constante gracias a prefetch_related."
+    )

@@ -27,10 +27,15 @@ export function QrDinamico({ vehiculoId, placa }: Props) {
     if (!codigo) return
     setGenerando(true)
     try {
+      // 280px (≈1.27× el tamaño mostrado de 220px) basta para nitidez en
+      // pantallas retina sin pagar el costo de rasterizar 480px. Nivel de
+      // corrección 'M' (en vez de 'H') mantiene la matriz QR en su versión
+      // más compacta para un código TOTP corto — menos módulos, generación
+      // más rápida — y sigue siendo perfectamente escaneable en portería.
       const url = await QRCode.toDataURL(codigo, {
-        width: 480,
+        width: 280,
         margin: 2,
-        errorCorrectionLevel: 'H',
+        errorCorrectionLevel: 'M',
         color: { dark: '#0f172a', light: '#ffffff' },
       })
       setSrc(url)

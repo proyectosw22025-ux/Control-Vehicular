@@ -195,6 +195,7 @@ export default function Dashboard() {
     fetchPolicy: 'cache-and-network',
   })
   const misVehiculos: any[] = misVehiculosData?.vehiculos?.items ?? []
+  const misVehiculosActivos = misVehiculos.filter(v => v.estado === 'activo')
 
   const stats = data?.dashboardStats
   const semana: DiaStat[] = data?.accesosUltimaSemana ?? []
@@ -233,27 +234,31 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── Atajo: Mi código QR — un toque desde el aterrizaje post-login ── */}
-      {esResidente && misVehiculos.some(v => v.estado === 'activo') && (() => {
-        const vehActivo = misVehiculos.find(v => v.estado === 'activo')!
-        return (
-          <button
-            onClick={() => setQrVehiculo({ id: vehActivo.id, placa: vehActivo.placa })}
-            className="w-full flex items-center justify-between bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white rounded-2xl p-4 shadow-md transition-colors group animate-fade-bottom"
-          >
-            <div className="flex items-center gap-3">
-              <div className="bg-white/20 p-2.5 rounded-xl">
-                <QrCode size={22} />
-              </div>
-              <div className="text-left">
-                <p className="font-bold text-sm">Mostrar mi código QR</p>
-                <p className="text-xs opacity-90">Listo para portería en un toque · {vehActivo.placa}</p>
-              </div>
+      {/* ── Atajo: Mi código QR — un toque desde el aterrizaje post-login ──
+          Si hay un solo vehículo activo abre directo su QR (un toque real).
+          Si hay varios, abre el del primero pero el modal incluye un selector
+          para que quede claro a cuál corresponde y se pueda cambiar. ── */}
+      {esResidente && misVehiculosActivos.length > 0 && (
+        <button
+          onClick={() => setQrVehiculo({ id: misVehiculosActivos[0].id, placa: misVehiculosActivos[0].placa })}
+          className="w-full flex items-center justify-between bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white rounded-2xl p-4 shadow-md transition-colors group animate-fade-bottom"
+        >
+          <div className="flex items-center gap-3">
+            <div className="bg-white/20 p-2.5 rounded-xl">
+              <QrCode size={22} />
             </div>
-            <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
-          </button>
-        )
-      })()}
+            <div className="text-left">
+              <p className="font-bold text-sm">Mostrar mi código QR</p>
+              <p className="text-xs opacity-90">
+                {misVehiculosActivos.length > 1
+                  ? `Listo para portería en un toque · ${misVehiculosActivos.length} vehículos activos`
+                  : `Listo para portería en un toque · ${misVehiculosActivos[0].placa}`}
+              </p>
+            </div>
+          </div>
+          <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
+        </button>
+      )}
 
       {/* ── Stats Admin ── */}
       {esAdmin && (
@@ -485,6 +490,26 @@ export default function Dashboard() {
                 <X size={18} />
               </button>
             </div>
+            {/* Selector de vehículo: solo aparece si el residente tiene más de
+                un vehículo activo, para que quede claro a cuál corresponde el
+                QR mostrado y se pueda cambiar sin cerrar el modal. */}
+            {misVehiculosActivos.length > 1 && (
+              <div className="flex flex-wrap gap-2 px-6 pt-4">
+                {misVehiculosActivos.map(v => (
+                  <button
+                    key={v.id}
+                    onClick={() => setQrVehiculo({ id: v.id, placa: v.placa })}
+                    className={`text-xs font-mono font-bold px-3 py-1.5 rounded-full border transition-colors ${
+                      v.id === qrVehiculo.id
+                        ? 'bg-emerald-500 text-white border-emerald-500'
+                        : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
+                    }`}
+                  >
+                    {v.placa}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="px-6 py-4">
               <QrDinamico vehiculoId={qrVehiculo.id} placa={qrVehiculo.placa} />
             </div>
