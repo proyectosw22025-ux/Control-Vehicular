@@ -30,6 +30,7 @@ import io
 import json
 import logging
 import re
+import statistics
 import time
 
 from django.http import JsonResponse
@@ -86,19 +87,35 @@ def _reconocer_fast_alpr(img_bytes: bytes) -> dict | None:
     if alpr is None:
         return None
     try:
+        import cv2
+        import numpy as np
+
         t0 = time.time()
-        # FastALPR acepta bytes directamente
-        resultados = alpr.run(img_bytes)
+        # FastALPR espera un frame BGR (estilo OpenCV) o una ruta de archivo,
+        # no bytes crudos — decodificamos el JPEG/PNG recibido a un ndarray.
+        frame = cv2.imdecode(np.frombuffer(img_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+        if frame is None:
+            logger.error("[OCR FastALPR] No se pudo decodificar la imagen recibida")
+            return None
+        resultados = alpr.predict(frame)
         ms = round((time.time() - t0) * 1000)
+
+        # Descartar detecciones sin lectura OCR
+        resultados = [r for r in resultados if r.ocr is not None and r.ocr.text]
 
         if not resultados:
             logger.debug("[OCR FastALPR] Sin detección de placa")
             return {"placa": None, "confianza": 0.0, "metodo": "fast-alpr", "ms": ms}
 
+        def _confianza_ocr(r):
+            # El modelo OCR devuelve confianza por carácter (lista) o un único valor
+            c = r.ocr.confidence
+            return statistics.mean(c) if isinstance(c, list) else float(c)
+
         # Elegir la detección con mayor confianza
-        mejor = max(resultados, key=lambda r: r.ocr.confidence)
+        mejor = max(resultados, key=_confianza_ocr)
         placa_raw  = (mejor.ocr.text or "").strip().upper()
-        confianza  = round(float(mejor.ocr.confidence), 3)
+        confianza  = round(_confianza_ocr(mejor), 3)
         placa_norm = _normalizar_placa(placa_raw)
 
         logger.info("[OCR FastALPR] Detectado: %s → %s (conf: %s, %sms)",
@@ -401,19 +418,37 @@ class OcrDiagnosticoView(View):
 
 
 def _generar_imagen_prueba(texto: str) -> bytes:
-    """Imagen sintética de placa boliviana para pruebas."""
+    """
+    Imagen sintética de placa boliviana para la autoprueba de diagnóstico.
+
+    El detector YOLO está entrenado con fotos reales de vehículos, así que un
+    simple rectángulo de color con texto no lo activa (no detecta nada). Para
+    que la autoprueba sea representativa, se simula una placa real:
+    fondo blanco + texto/borde negro, proporción ~4.7:1, incrustada dentro de
+    una escena neutra (como si fuera un recorte del paragolpes del vehículo).
+    """
     from PIL import Image, ImageDraw, ImageFont
-    W, H = 400, 100
-    img  = Image.new("RGB", (W, H), color=(15, 30, 100))
-    draw = ImageDraw.Draw(img)
-    draw.rectangle([4, 4, W - 5, H - 5], outline=(220, 220, 220), width=4)
-    try:
-        font = ImageFont.truetype(
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 60
-        )
-    except OSError:
+    PW, PH = 520, 110
+    placa = Image.new("RGB", (PW, PH), color=(255, 255, 255))
+    draw  = ImageDraw.Draw(placa)
+    draw.rectangle([6, 6, PW - 7, PH - 7], outline=(0, 0, 0), width=6)
+    font = None
+    for ruta in (
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",  # Linux/Railway
+        "C:/Windows/Fonts/arialbd.ttf",                           # Windows
+    ):
+        try:
+            font = ImageFont.truetype(ruta, 64)
+            break
+        except OSError:
+            continue
+    if font is None:
         font = ImageFont.load_default()
-    draw.text((W // 2, H // 2), texto, fill=(240, 240, 240), font=font, anchor="mm")
+    draw.text((PW // 2, PH // 2), texto, fill=(10, 10, 10), font=font, anchor="mm")
+
+    W, H = 900, 600
+    escena = Image.new("RGB", (W, H), color=(90, 90, 95))
+    escena.paste(placa, ((W - PW) // 2, (H - PH) // 2))
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=90)
+    escena.save(buf, format="JPEG", quality=92)
     return buf.getvalue()

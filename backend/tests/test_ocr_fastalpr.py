@@ -97,7 +97,7 @@ class TestEndpointOcrPlaca:
 
         with patch("apps.vehiculos.ocr_view._get_fast_alpr") as mock_alpr_fn:
             mock_alpr = MagicMock()
-            mock_alpr.run.return_value = [mock_result]
+            mock_alpr.predict.return_value = [mock_result]
             mock_alpr_fn.return_value = mock_alpr
 
             resp = gql_admin.post(
@@ -138,7 +138,7 @@ class TestEndpointOcrPlaca:
         """Sin placa detectada, retorna placa=null sin romper."""
         with patch("apps.vehiculos.ocr_view._get_fast_alpr") as mock_fn:
             mock_alpr = MagicMock()
-            mock_alpr.run.return_value = []  # sin detecciones
+            mock_alpr.predict.return_value = []  # sin detecciones
             mock_fn.return_value = mock_alpr
 
             resp = gql_admin.post(
@@ -178,7 +178,7 @@ class TestModoMultiframe:
         """Con 3 frames, vota la placa que más veces aparece."""
         call_count = [0]
 
-        def mock_fastalpr_run(img_bytes):
+        def mock_fastalpr_predict(frame):
             call_count[0] += 1
             # Frames 1 y 3 → SCZ-3456, Frame 2 → LPZ-9999
             m = MagicMock()
@@ -193,7 +193,7 @@ class TestModoMultiframe:
 
         with patch("apps.vehiculos.ocr_view._get_fast_alpr") as mock_fn:
             mock_alpr = MagicMock()
-            mock_alpr.run.side_effect = mock_fastalpr_run
+            mock_alpr.predict.side_effect = mock_fastalpr_predict
             mock_fn.return_value = mock_alpr
 
             b64 = base64.b64encode(_generar_imagen_prueba("SCZ-3456")).decode()
