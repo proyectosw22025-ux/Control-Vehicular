@@ -3,7 +3,7 @@ import { useQuery, useLazyQuery, useMutation } from '@apollo/client'
 import {
   QrCode, Shield, Clock, Trash2, Plus, ChevronDown,
   Car, CheckCircle, XCircle, RefreshCw, Share2,
-  LogIn, LogOut, ArrowLeftRight, Link, User, Users, Search,
+  LogIn, LogOut, ArrowLeftRight, Link, User, Users, Search, Eye, X,
 } from 'lucide-react'
 import { QrImage } from '../components/QrImage'
 import { useAuth } from '../hooks/useAuth'
@@ -519,9 +519,17 @@ export default function MiPaseQR() {
               </div>
             )}
 
-            {/* QR recién generado */}
+            {/* QR seleccionado / recién generado — se puede volver a abrir desde la lista con "Ver QR" */}
             {delegacionGenerada && (
-              <div className="bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-4 text-center">
+              <div className="bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-4 text-center relative">
+                <button
+                  onClick={() => setDelegacionGenerada(null)}
+                  className="absolute top-3 right-3 text-emerald-500 hover:text-emerald-700 transition-colors"
+                  title="Ocultar QR"
+                  aria-label="Ocultar QR"
+                >
+                  <X size={16} />
+                </button>
                 <div className="flex items-center gap-2 mb-1 justify-center">
                   <CheckCircle size={16} className="text-emerald-600" />
                   <p className="font-bold text-emerald-800 text-sm">QR de delegación listo</p>
@@ -601,7 +609,7 @@ export default function MiPaseQR() {
                 </p>
               </div>
               <div className="space-y-2">
-                {delegaciones.map(d => (
+                {delegaciones.filter(d => d.id !== delegacionGenerada?.id).map(d => (
                   <div key={d.id} className="flex items-center gap-3 bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
                     <div className="shrink-0">
                       <QrImage value={d.codigoHash} size={52} />
@@ -647,6 +655,13 @@ export default function MiPaseQR() {
                       <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">
                         VIGENTE
                       </span>
+                      <button
+                        onClick={() => setDelegacionGenerada(d)}
+                        className="flex items-center gap-1 text-[10px] font-semibold text-blue-600 hover:text-blue-800 transition-colors px-2 py-1 rounded-lg hover:bg-blue-50"
+                        title="Ver y compartir este QR"
+                      >
+                        <Eye size={12} /> Ver QR
+                      </button>
                       <button
                         onClick={() => revocarQR({ variables: { qrId: d.id } })}
                         disabled={lRevocar}

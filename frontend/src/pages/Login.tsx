@@ -1,11 +1,91 @@
-import { useState, FormEvent, useRef, useEffect } from 'react'
+import { useState, FormEvent, useRef, useEffect, memo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useMutation } from '@apollo/client'
 import { Eye, EyeOff, Loader2, ShieldCheck, ArrowLeft } from 'lucide-react'
 import { LOGIN_MUTATION } from '../graphql/mutations/auth'
 import { UagrmLogo } from '../components/UagrmLogo'
 
-export default function Login() {
+// URL del campus UAGRM — f_auto detecta el formato (jpg/png/webp) automáticamente
+// sin importar la extensión con la que fue subida a Cloudinary.
+// Vive fuera del componente para no recrearse (ni disparar comparaciones de
+// estilo) en cada render mientras el usuario escribe sus credenciales.
+const CAMPUS_BG = 'https://res.cloudinary.com/dhrd5ee5c/image/upload/q_auto,f_auto,c_fill,w_1920/uagrm-campus'
+
+const inputBase = 'w-full border border-slate-200 rounded-xl px-4 py-3 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-transparent transition-all placeholder:text-slate-300'
+
+// ── Decorado estático (fondo, marca institucional, líneas doradas) ──
+// Memoizado para que NO se vuelva a renderizar en cada tecla que el usuario
+// pulsa en el formulario — antes, al vivir todo en un único componente, cada
+// cambio de estado (ci, password, error...) re-renderizaba también el fondo
+// animado de Ken Burns y el bloque de marca, generando un parpadeo perceptible.
+const LoginDecor = memo(function LoginDecor() {
+  return (
+    <>
+      {/* Fondo animado con kenburns-top — div separado para que el zoom no afecte el contenido */}
+      <div className="absolute inset-0 animate-kenburns"
+        style={{
+          backgroundImage: `
+            linear-gradient(160deg, rgba(6,24,64,0.83) 0%, rgba(10,42,110,0.78) 50%, rgba(15,30,74,0.86) 100%),
+            url('${CAMPUS_BG}')
+          `,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center 30%',
+          backgroundRepeat: 'no-repeat',
+        }}
+      />
+
+      {/* Línea dorada decorativa superior */}
+      <div className="fixed top-0 left-0 right-0 h-1"
+        style={{ background: 'linear-gradient(90deg, #e8951a, #f5b81c, #e8951a)' }} />
+
+      {/* Línea dorada decorativa inferior */}
+      <div className="fixed bottom-0 left-0 right-0 h-1"
+        style={{ background: 'linear-gradient(90deg, #e8951a, #f5b81c, #e8951a)' }} />
+    </>
+  )
+})
+
+const LoginBranding = memo(function LoginBranding() {
+  return (
+    <div className="text-center mb-8 animate-fade-slide-up">
+
+      {/* Escudo más grande con glow dorado */}
+      <div className="inline-flex items-center justify-center mb-5 relative">
+        <div className="absolute rounded-full blur-2xl opacity-30"
+          style={{ background: '#e8951a', width: 140, height: 140 }} />
+        <UagrmLogo size={115} variant="escudo" className="relative z-10" />
+      </div>
+
+      {/* Nombre completo — text-pop-up-top de animista */}
+      <h1 className="text-white font-black text-lg tracking-wide leading-tight animate-text-pop-up"
+        style={{ fontFamily: 'Georgia, serif', animationDelay: '0.2s' }}>
+        Universidad Autónoma
+      </h1>
+      <h2 className="font-black text-lg leading-tight animate-text-pop-up"
+        style={{ color: '#f5b81c', fontFamily: 'Georgia, serif', animationDelay: '0.35s' }}>
+        "Gabriel René Moreno"
+      </h2>
+
+      {/* Divider dorado */}
+      <div className="flex items-center gap-3 my-3 px-4">
+        <div className="flex-1 h-px" style={{ background: 'linear-gradient(90deg, transparent, #e8951a)' }} />
+        <span className="text-[10px] font-bold tracking-[0.3em] text-white/50">SANTA CRUZ · BOLIVIA</span>
+        <div className="flex-1 h-px" style={{ background: 'linear-gradient(90deg, #e8951a, transparent)' }} />
+      </div>
+
+      <p className="text-white/50 text-xs tracking-widest uppercase font-medium">
+        Sistema de Control Vehicular
+      </p>
+    </div>
+  )
+})
+
+// ── Formulario de inicio de sesión ──────────────────────────
+// Concentra TODO el estado (ci, password, error, 2FA...). Al vivir en su
+// propio componente, escribir en los campos solo re-renderiza esta tarjeta
+// — el fondo animado y la marca institucional (LoginDecor/LoginBranding)
+// permanecen intactos gracias a memo().
+function LoginFormCard() {
   const navigate = useNavigate()
 
   // ── Paso 1: CI + contraseña ───────────────────────────────
@@ -62,196 +142,143 @@ export default function Login() {
     login({ variables: { ci: ci.trim(), password, codigoTotp: codigo } })
   }
 
-  const inputBase = 'w-full border border-slate-200 rounded-xl px-4 py-3 text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-transparent transition-all placeholder:text-slate-300'
+  return (
+    <div className="rounded-2xl shadow-2xl p-8 animate-scale-in"
+      style={{
+        background: 'white',
+        border: '1px solid rgba(232, 149, 26, 0.3)',
+        boxShadow: '0 25px 50px rgba(6, 24, 64, 0.6), 0 0 0 1px rgba(232,149,26,0.2)',
+        animationDelay: '0.15s',
+      }}>
 
-  // URL del campus UAGRM — f_auto detecta el formato (jpg/png/webp) automáticamente
-  // sin importar la extensión con la que fue subida a Cloudinary
-  const CAMPUS_BG = 'https://res.cloudinary.com/dhrd5ee5c/image/upload/q_auto,f_auto,c_fill,w_1920/uagrm-campus'
+      {/* ── Paso 1: CI + Contraseña ── */}
+      {!requiere2FA && (
+        <>
+          <h2 className="text-slate-800 font-semibold text-base mb-6">Inicia sesión</h2>
+          <form onSubmit={handleSubmitPaso1} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">
+                Cédula de identidad
+              </label>
+              <input type="text" value={ci} onChange={e => setCi(e.target.value)}
+                placeholder="Ej: 12345678" autoFocus autoComplete="username"
+                className={inputBase} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">
+                Contraseña
+              </label>
+              <div className="relative">
+                <input type={verPass ? 'text' : 'password'} value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="••••••••" autoComplete="current-password"
+                  className={`${inputBase} pr-11`} />
+                <button type="button" onClick={() => setVerPass(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors p-1"
+                  aria-label={verPass ? 'Ocultar contraseña' : 'Ver contraseña'}>
+                  {verPass ? <EyeOff size={17} /> : <Eye size={17} />}
+                </button>
+              </div>
+            </div>
 
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
+                {error}
+              </div>
+            )}
+
+            <button type="submit" disabled={loading}
+              className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-white font-semibold py-3 rounded-xl text-sm transition-colors disabled:opacity-60 mt-2">
+              {loading ? <><Loader2 size={16} className="animate-spin" /> Verificando...</> : 'Ingresar'}
+            </button>
+          </form>
+        </>
+      )}
+
+      {/* ── Paso 2: Código TOTP ── */}
+      {requiere2FA && (
+        <>
+          <div className="flex items-center gap-3 mb-6">
+            <div className="bg-blue-100 p-2.5 rounded-xl">
+              <ShieldCheck size={22} className="text-blue-600" />
+            </div>
+            <div>
+              <h2 className="text-slate-800 font-semibold text-sm">Verificación de doble factor</h2>
+              <p className="text-slate-400 text-xs mt-0.5">Tu cuenta está protegida con 2FA</p>
+            </div>
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-5 text-xs text-blue-700 space-y-1">
+            <p className="font-semibold">Abre tu app de autenticación</p>
+            <p>Busca <strong>UAGRM Control Vehicular</strong> y escribe el código de 6 dígitos.</p>
+            <p className="text-blue-500">El código cambia cada 30 segundos.</p>
+          </div>
+
+          <form onSubmit={handleSubmitPaso2} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">
+                Código de 6 dígitos
+              </label>
+              <input
+                ref={codigoRef}
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9 ]*"
+                maxLength={7}
+                value={codigoTotp}
+                onChange={e => setCodigoTotp(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+                placeholder="000000"
+                autoComplete="one-time-code"
+                className="w-full border border-slate-200 rounded-xl px-4 py-4 text-center text-3xl font-mono tracking-[0.5em] bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
+              />
+            </div>
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
+                {error}
+              </div>
+            )}
+
+            <button type="submit" disabled={loading || codigoTotp.length < 6}
+              className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl text-sm transition-colors disabled:opacity-50">
+              {loading ? <><Loader2 size={16} className="animate-spin" /> Verificando...</> : 'Verificar código'}
+            </button>
+
+            <button type="button" onClick={() => { setRequiere2FA(false); setCodigoTotp(''); setError('') }}
+              className="w-full flex items-center justify-center gap-2 text-slate-400 hover:text-slate-600 text-sm transition-colors">
+              <ArrowLeft size={14} /> Volver a iniciar sesión
+            </button>
+          </form>
+        </>
+      )}
+
+      {!requiere2FA && (
+        <div className="text-center pt-5 border-t border-slate-100 mt-5">
+          <span className="text-sm text-slate-500">¿No tienes cuenta? </span>
+          <Link to="/register" className="text-sm font-semibold text-slate-800 hover:underline">
+            Regístrate aquí
+          </Link>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function Login() {
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden"
       style={{ backgroundColor: '#0a2a6e' }}>
 
-      {/* Fondo animado con kenburns-top — div separado para que el zoom no afecte el contenido */}
-      <div className="absolute inset-0 animate-kenburns"
-        style={{
-          backgroundImage: `
-            linear-gradient(160deg, rgba(6,24,64,0.83) 0%, rgba(10,42,110,0.78) 50%, rgba(15,30,74,0.86) 100%),
-            url('${CAMPUS_BG}')
-          `,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center 30%',
-          backgroundRepeat: 'no-repeat',
-        }}
-      />
-
-      {/* Línea dorada decorativa superior */}
-      <div className="fixed top-0 left-0 right-0 h-1"
-        style={{ background: 'linear-gradient(90deg, #e8951a, #f5b81c, #e8951a)' }} />
+      <LoginDecor />
 
       <div className="w-full max-w-sm relative z-10">
-
-        {/* Marca institucional UAGRM con animación de entrada */}
-        <div className="text-center mb-8 animate-fade-slide-up">
-
-          {/* Escudo más grande con glow dorado */}
-          <div className="inline-flex items-center justify-center mb-5 relative">
-            <div className="absolute rounded-full blur-2xl opacity-30"
-              style={{ background: '#e8951a', width: 140, height: 140 }} />
-            <UagrmLogo size={115} variant="escudo" className="relative z-10" />
-          </div>
-
-          {/* Nombre completo — text-pop-up-top de animista */}
-          <h1 className="text-white font-black text-lg tracking-wide leading-tight animate-text-pop-up"
-            style={{ fontFamily: 'Georgia, serif', animationDelay: '0.2s' }}>
-            Universidad Autónoma
-          </h1>
-          <h2 className="font-black text-lg leading-tight animate-text-pop-up"
-            style={{ color: '#f5b81c', fontFamily: 'Georgia, serif', animationDelay: '0.35s' }}>
-            "Gabriel René Moreno"
-          </h2>
-
-          {/* Divider dorado */}
-          <div className="flex items-center gap-3 my-3 px-4">
-            <div className="flex-1 h-px" style={{ background: 'linear-gradient(90deg, transparent, #e8951a)' }} />
-            <span className="text-[10px] font-bold tracking-[0.3em] text-white/50">SANTA CRUZ · BOLIVIA</span>
-            <div className="flex-1 h-px" style={{ background: 'linear-gradient(90deg, #e8951a, transparent)' }} />
-          </div>
-
-          <p className="text-white/50 text-xs tracking-widest uppercase font-medium">
-            Sistema de Control Vehicular
-          </p>
-        </div>
-
-        {/* Card con borde dorado sutil */}
-        <div className="rounded-2xl shadow-2xl p-8 animate-scale-in"
-          style={{
-            background: 'white',
-            border: '1px solid rgba(232, 149, 26, 0.3)',
-            boxShadow: '0 25px 50px rgba(6, 24, 64, 0.6), 0 0 0 1px rgba(232,149,26,0.2)',
-            animationDelay: '0.15s',
-          }}>
-
-          {/* ── Paso 1: CI + Contraseña ── */}
-          {!requiere2FA && (
-            <>
-              <h2 className="text-slate-800 font-semibold text-base mb-6">Inicia sesión</h2>
-              <form onSubmit={handleSubmitPaso1} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">
-                    Cédula de identidad
-                  </label>
-                  <input type="text" value={ci} onChange={e => setCi(e.target.value)}
-                    placeholder="Ej: 12345678" autoFocus autoComplete="username"
-                    className={inputBase} />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">
-                    Contraseña
-                  </label>
-                  <div className="relative">
-                    <input type={verPass ? 'text' : 'password'} value={password}
-                      onChange={e => setPassword(e.target.value)}
-                      placeholder="••••••••" autoComplete="current-password"
-                      className={`${inputBase} pr-11`} />
-                    <button type="button" onClick={() => setVerPass(v => !v)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors p-1"
-                      aria-label={verPass ? 'Ocultar contraseña' : 'Ver contraseña'}>
-                      {verPass ? <EyeOff size={17} /> : <Eye size={17} />}
-                    </button>
-                  </div>
-                </div>
-
-                {error && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
-                    {error}
-                  </div>
-                )}
-
-                <button type="submit" disabled={loading}
-                  className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-white font-semibold py-3 rounded-xl text-sm transition-colors disabled:opacity-60 mt-2">
-                  {loading ? <><Loader2 size={16} className="animate-spin" /> Verificando...</> : 'Ingresar'}
-                </button>
-              </form>
-            </>
-          )}
-
-          {/* ── Paso 2: Código TOTP ── */}
-          {requiere2FA && (
-            <>
-              <div className="flex items-center gap-3 mb-6">
-                <div className="bg-blue-100 p-2.5 rounded-xl">
-                  <ShieldCheck size={22} className="text-blue-600" />
-                </div>
-                <div>
-                  <h2 className="text-slate-800 font-semibold text-sm">Verificación de doble factor</h2>
-                  <p className="text-slate-400 text-xs mt-0.5">Tu cuenta está protegida con 2FA</p>
-                </div>
-              </div>
-
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-5 text-xs text-blue-700 space-y-1">
-                <p className="font-semibold">Abre tu app de autenticación</p>
-                <p>Busca <strong>UAGRM Control Vehicular</strong> y escribe el código de 6 dígitos.</p>
-                <p className="text-blue-500">El código cambia cada 30 segundos.</p>
-              </div>
-
-              <form onSubmit={handleSubmitPaso2} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">
-                    Código de 6 dígitos
-                  </label>
-                  <input
-                    ref={codigoRef}
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9 ]*"
-                    maxLength={7}
-                    value={codigoTotp}
-                    onChange={e => setCodigoTotp(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
-                    placeholder="000000"
-                    autoComplete="one-time-code"
-                    className="w-full border border-slate-200 rounded-xl px-4 py-4 text-center text-3xl font-mono tracking-[0.5em] bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
-                  />
-                </div>
-
-                {error && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
-                    {error}
-                  </div>
-                )}
-
-                <button type="submit" disabled={loading || codigoTotp.length < 6}
-                  className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl text-sm transition-colors disabled:opacity-50">
-                  {loading ? <><Loader2 size={16} className="animate-spin" /> Verificando...</> : 'Verificar código'}
-                </button>
-
-                <button type="button" onClick={() => { setRequiere2FA(false); setCodigoTotp(''); setError('') }}
-                  className="w-full flex items-center justify-center gap-2 text-slate-400 hover:text-slate-600 text-sm transition-colors">
-                  <ArrowLeft size={14} /> Volver a iniciar sesión
-                </button>
-              </form>
-            </>
-          )}
-
-          {!requiere2FA && (
-            <div className="text-center pt-5 border-t border-slate-100 mt-5">
-              <span className="text-sm text-slate-500">¿No tienes cuenta? </span>
-              <Link to="/register" className="text-sm font-semibold text-slate-800 hover:underline">
-                Regístrate aquí
-              </Link>
-            </div>
-          )}
-        </div>
+        <LoginBranding />
+        <LoginFormCard />
 
         <p className="text-center text-white/30 text-xs mt-6">
           © 2026 · Universidad Autónoma "Gabriel René Moreno" · Santa Cruz, Bolivia
         </p>
-
       </div>
-
-      {/* Línea dorada decorativa inferior */}
-      <div className="fixed bottom-0 left-0 right-0 h-1"
-        style={{ background: 'linear-gradient(90deg, #e8951a, #f5b81c, #e8951a)' }} />
     </div>
   )
 }

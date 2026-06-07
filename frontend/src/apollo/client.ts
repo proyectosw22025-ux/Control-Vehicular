@@ -5,6 +5,29 @@ import { Observable } from '@apollo/client/utilities'
 
 const GRAPHQL_URI = import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/'
 
+// ── Lectura del campo "exp" de un JWT (sin verificar firma) ─
+// Exportadas para poder probar la lógica de refresco proactivo sin
+// necesidad de levantar un cliente Apollo completo.
+export function decodeJwtExp(token: string): number | null {
+  try {
+    const payload = token.split('.')[1]
+    const json = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')))
+    return typeof json.exp === 'number' ? json.exp : null
+  } catch {
+    return null
+  }
+}
+
+// El access token vence en pocos segundos (o ya venció): hay que refrescarlo
+// ANTES de usarlo. El backend (JWTAuthMiddleware) ignora tokens inválidos en
+// silencio y trata la petición como anónima sin lanzar error de autenticación
+// — por eso no basta con reaccionar a errores, hay que anticiparse al vencimiento.
+export function tokenPorVencer(token: string, bufferSegundos = 20): boolean {
+  const exp = decodeJwtExp(token)
+  if (exp === null) return false
+  return exp * 1000 - Date.now() < bufferSegundos * 1000
+}
+
 // ── Refresco de token ──────────────────────────────────────
 // Usa fetch nativo para evitar dependencia circular con el client de Apollo.
 async function getNewAccessToken(): Promise<string | null> {
@@ -37,6 +60,9 @@ function logout() {
 }
 
 // ── Guarda de refresco para evitar múltiples llamadas simultáneas ──
+// Tanto el refresco proactivo (authLink) como el reactivo (errorLink) pasan
+// por aquí: si ya hay un refresco en curso, todos esperan ese mismo resultado
+// en vez de disparar peticiones de refresh en paralelo.
 let refreshing = false
 let queue: Array<(token: string | null) => void> = []
 
@@ -45,9 +71,26 @@ function drainQueue(token: string | null) {
   queue = []
 }
 
+function ensureFreshToken(): Promise<string | null> {
+  if (refreshing) {
+    return new Promise(resolve => queue.push(resolve))
+  }
+  refreshing = true
+  return getNewAccessToken()
+    .then(token => { refreshing = false; drainQueue(token); return token })
+    .catch(() => { refreshing = false; drainQueue(null); return null })
+}
+
 // ── Link: inyectar Bearer token en cada request ────────────
-const authLink = setContext((_, { headers }) => {
-  const token = localStorage.getItem('access_token')
+// Si el token está por vencer, se refresca ANTES de enviar la petición
+// (refresco proactivo) — así el backend nunca lo recibe expirado.
+const authLink = setContext(async (_, { headers }) => {
+  let token = localStorage.getItem('access_token')
+  if (token && tokenPorVencer(token)) {
+    const fresco = await ensureFreshToken()
+    if (!fresco) { logout(); return { headers } }
+    token = fresco
+  }
   return {
     headers: {
       ...headers,
@@ -57,6 +100,8 @@ const authLink = setContext((_, { headers }) => {
 })
 
 // ── Link: capturar errores de autenticación y refrescar ────
+// Red de seguridad para casos que el refresco proactivo no cubra
+// (desfase de reloj, token revocado en el servidor, etc.)
 const errorLink = onError(({ graphQLErrors, operation, forward }) => {
   const isAuthError = graphQLErrors?.some(
     e =>
@@ -67,45 +112,18 @@ const errorLink = onError(({ graphQLErrors, operation, forward }) => {
 
   if (!isAuthError) return
 
-  // Si ya hay un refresco en curso, encolar esta operación
-  if (refreshing) {
-    return new Observable(observer => {
-      queue.push((token: string | null) => {
-        if (!token) { observer.complete(); return }
-        operation.setContext(({ headers = {} }: { headers: Record<string, string> }) => ({
-          headers: { ...headers, authorization: `Bearer ${token}` },
-        }))
-        forward(operation).subscribe({
-          next:     observer.next.bind(observer),
-          error:    observer.error.bind(observer),
-          complete: observer.complete.bind(observer),
-        })
+  return new Observable(observer => {
+    ensureFreshToken().then(token => {
+      if (!token) { logout(); observer.complete(); return }
+      operation.setContext(({ headers = {} }: { headers: Record<string, string> }) => ({
+        headers: { ...headers, authorization: `Bearer ${token}` },
+      }))
+      forward(operation).subscribe({
+        next:     observer.next.bind(observer),
+        error:    observer.error.bind(observer),
+        complete: observer.complete.bind(observer),
       })
     })
-  }
-
-  refreshing = true
-  return new Observable(observer => {
-    getNewAccessToken()
-      .then(token => {
-        refreshing = false
-        drainQueue(token)
-        if (!token) { logout(); observer.complete(); return }
-        operation.setContext(({ headers = {} }: { headers: Record<string, string> }) => ({
-          headers: { ...headers, authorization: `Bearer ${token}` },
-        }))
-        forward(operation).subscribe({
-          next:     observer.next.bind(observer),
-          error:    observer.error.bind(observer),
-          complete: observer.complete.bind(observer),
-        })
-      })
-      .catch(() => {
-        refreshing = false
-        drainQueue(null)
-        logout()
-        observer.complete()
-      })
   })
 })
 

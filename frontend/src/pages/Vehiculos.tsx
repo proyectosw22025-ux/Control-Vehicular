@@ -1225,7 +1225,7 @@ function tipoIcon(nombre: string): string {
   return '🚗'
 }
 
-interface WizardProps {
+export interface WizardProps {
   tipos: any[]; usuarios: any[]; esAdmin: boolean; usuario: any
   onClose: () => void
   onFotoFile: (f: File | null) => void
@@ -1233,7 +1233,7 @@ interface WizardProps {
   loadingRegistrar: boolean
 }
 
-function WizardRegistrarVehiculo({ tipos, usuarios, esAdmin, usuario, onClose, onFotoFile, registrarVehiculo, loadingRegistrar }: WizardProps) {
+export function WizardRegistrarVehiculo({ tipos, usuarios, esAdmin, usuario, onClose, onFotoFile, registrarVehiculo, loadingRegistrar }: WizardProps) {
   const [paso, setPaso] = useState(1)
 
   // Paso 1
@@ -1255,13 +1255,19 @@ function WizardRegistrarVehiculo({ tipos, usuarios, esAdmin, usuario, onClose, o
   const [numPuertas, setNumPuertas] = useState<number | null>(null)
   const [capacidadCarga, setCapCarga] = useState('')
 
-  // Paso 3
+  // Paso 2 — documentación (agrupada con datos técnicos en un acordeón opcional)
   const [numeroSoat, setNumeroSoat]   = useState('')
   const [soatFecha, setSoatFecha]     = useState('')
   const [numeroMotor, setNumMotor]    = useState('')
   const [numeroChasis, setNumChasis]  = useState('')
   const [tooltipMotor, setTooltipMotor] = useState(false)
   const [tooltipChasis, setTooltipChasis] = useState(false)
+
+  // Acordeones del paso 2 — colapsados por defecto para que registrar
+  // un vehículo tome solo 2 pantallas en vez de 3 (feedback de predefensa:
+  // "son muchos pasos"). Quien quiera detallar marca/SOAT/etc. los expande.
+  const [verDatosVeh, setVerDatosVeh] = useState(false)
+  const [verDocs, setVerDocs]         = useState(false)
 
   const [errWizard, setErrWizard]   = useState('')
 
@@ -1311,9 +1317,7 @@ function WizardRegistrarVehiculo({ tipos, usuarios, esAdmin, usuario, onClose, o
     registrarVehiculo({ variables: { input: buildInput() } })
   }
 
-  const completitud = paso >= 3 ? 100 : paso === 2 ? 66 : 33
-
-  const PASOS = ['Identificación', 'Datos técnicos', 'Documentación']
+  const PASOS = ['Identificación', 'Detalles (opcional)']
 
   return (
     <ModalWrapper titulo="Registrar Vehículo" onClose={onClose} ancho="max-w-lg">
@@ -1463,166 +1467,182 @@ function WizardRegistrarVehiculo({ tipos, usuarios, esAdmin, usuario, onClose, o
         </div>
       )}
 
-      {/* ── PASO 2: Datos técnicos (opcional) ── */}
+      {/* ── PASO 2: Detalles opcionales — agrupados en acordeones colapsados ──
+           Antes eran 2 pasos separados (Datos técnicos / Documentación) con
+           ~10 campos visibles de entrada. Ahora es un único paso opcional:
+           el registro puede terminar aquí mismo, y quien quiera detallar
+           marca/SOAT/etc. expande solo la sección que le interesa. */}
       {paso === 2 && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
-            Estos datos son <strong>opcionales</strong> pero mejoran la identificación del vehículo.
+            Todo lo de aquí es <strong>opcional</strong> — puedes registrar el vehículo ya mismo
+            y completar estos datos después desde "Mis Vehículos". Ayudan a identificar tu
+            vehículo y a crear automáticamente el documento del SOAT.
           </p>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Marca</label>
-              <input type="text" list="marcas-lista" value={marca} onChange={e => setMarca(e.target.value)}
-                placeholder="Toyota" className={inputCls} />
-              <datalist id="marcas-lista">
-                {MARCAS_COMUNES.map(m => <option key={m} value={m} />)}
-              </datalist>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Modelo</label>
-              <input type="text" value={modelo} onChange={e => setModelo(e.target.value)}
-                placeholder="Corolla" className={inputCls} />
-            </div>
-          </div>
+          {/* Acordeón: Datos del vehículo */}
+          <div className="border border-slate-200 rounded-xl overflow-hidden">
+            <button type="button" onClick={() => setVerDatosVeh(p => !p)}
+              className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50 transition-colors">
+              <span className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                <Car size={15} className="text-slate-400" />
+                Datos del vehículo
+                <span className="text-xs font-normal text-slate-400">marca, color, cilindrada...</span>
+              </span>
+              {verDatosVeh ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+            </button>
+            {verDatosVeh && (
+              <div className="px-4 pb-4 pt-1 space-y-4 border-t border-slate-100">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Marca</label>
+                    <input type="text" list="marcas-lista" value={marca} onChange={e => setMarca(e.target.value)}
+                      placeholder="Toyota" className={inputCls} />
+                    <datalist id="marcas-lista">
+                      {MARCAS_COMUNES.map(m => <option key={m} value={m} />)}
+                    </datalist>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Modelo</label>
+                    <input type="text" value={modelo} onChange={e => setModelo(e.target.value)}
+                      placeholder="Corolla" className={inputCls} />
+                  </div>
+                </div>
 
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Año</label>
-            <input type="number" value={anio} min={1900} max={2027}
-              onChange={e => setAnio(parseInt(e.target.value))}
-              className={`${inputCls} ${anio < 1900 || anio > 2027 ? 'border-red-400' : ''}`} />
-            {(anio < 1900 || anio > 2027) && <p className="text-xs text-red-600 mt-1">Año entre 1900 y 2027</p>}
-          </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Año</label>
+                  <input type="number" value={anio} min={1900} max={2027}
+                    onChange={e => setAnio(parseInt(e.target.value))}
+                    className={`${inputCls} ${anio < 1900 || anio > 2027 ? 'border-red-400' : ''}`} />
+                  {(anio < 1900 || anio > 2027) && <p className="text-xs text-red-600 mt-1">Año entre 1900 y 2027</p>}
+                </div>
 
-          {/* Selector de color visual */}
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-2">Color</label>
-            <div className="grid grid-cols-8 gap-1.5 mb-2">
-              {COLORES_PRESET.map(c => (
-                <button key={c.nombre} type="button" title={c.nombre}
-                  onClick={() => selColor(c.nombre, c.hex)}
-                  style={{ backgroundColor: c.hex }}
-                  className={`w-7 h-7 rounded-full border transition-all
-                    ${colorHex === c.hex
-                      ? 'ring-2 ring-offset-1 ring-emerald-500 scale-125 border-emerald-400'
-                      : 'border-slate-300 hover:scale-110'}`}
-                />
-              ))}
-            </div>
-            {colorNombre && (
-              <div className="flex items-center gap-2 text-xs text-slate-600">
-                <span className="w-4 h-4 rounded-full border border-slate-300 shrink-0" style={{ backgroundColor: colorHex }} />
-                {colorNombre} seleccionado
+                {/* Selector de color visual */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-2">Color</label>
+                  <div className="grid grid-cols-8 gap-1.5 mb-2">
+                    {COLORES_PRESET.map(c => (
+                      <button key={c.nombre} type="button" title={c.nombre}
+                        onClick={() => selColor(c.nombre, c.hex)}
+                        style={{ backgroundColor: c.hex }}
+                        className={`w-7 h-7 rounded-full border transition-all
+                          ${colorHex === c.hex
+                            ? 'ring-2 ring-offset-1 ring-emerald-500 scale-125 border-emerald-400'
+                            : 'border-slate-300 hover:scale-110'}`}
+                      />
+                    ))}
+                  </div>
+                  {colorNombre && (
+                    <div className="flex items-center gap-2 text-xs text-slate-600">
+                      <span className="w-4 h-4 rounded-full border border-slate-300 shrink-0" style={{ backgroundColor: colorHex }} />
+                      {colorNombre} seleccionado
+                    </div>
+                  )}
+                </div>
+
+                {/* Cilindrada y puertas (condicional) */}
+                {!esMotoCiclo && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Cilindrada</label>
+                      <input type="text" value={cilindrada} onChange={e => setCilindrada(e.target.value)}
+                        placeholder="1.6L" className={inputCls} />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Puertas</label>
+                      <div className="flex gap-1.5">
+                        {[2, 3, 4, 5].map(n => (
+                          <button key={n} type="button"
+                            onClick={() => setNumPuertas(numPuertas === n ? null : n)}
+                            className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-all
+                              ${numPuertas === n ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-300 text-slate-600 hover:border-emerald-300'}`}>
+                            {n}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {esCarga && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Capacidad de carga</label>
+                    <input type="text" value={capacidadCarga} onChange={e => setCapCarga(e.target.value)}
+                      placeholder="1000 kg" className={inputCls} />
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          {/* Cilindrada y puertas (condicional) */}
-          {!esMotoCiclo && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Cilindrada</label>
-                <input type="text" value={cilindrada} onChange={e => setCilindrada(e.target.value)}
-                  placeholder="1.6L" className={inputCls} />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Puertas</label>
-                <div className="flex gap-1.5">
-                  {[2, 3, 4, 5].map(n => (
-                    <button key={n} type="button"
-                      onClick={() => setNumPuertas(numPuertas === n ? null : n)}
-                      className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-all
-                        ${numPuertas === n ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-300 text-slate-600 hover:border-emerald-300'}`}>
-                      {n}
-                    </button>
-                  ))}
+          {/* Acordeón: Documentación */}
+          <div className="border border-slate-200 rounded-xl overflow-hidden">
+            <button type="button" onClick={() => setVerDocs(p => !p)}
+              className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50 transition-colors">
+              <span className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                <FileText size={15} className="text-slate-400" />
+                Documentación
+                <span className="text-xs font-normal text-slate-400">SOAT, motor, chasis</span>
+              </span>
+              {verDocs ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+            </button>
+            {verDocs && (
+              <div className="px-4 pb-4 pt-1 space-y-3 border-t border-slate-100">
+                <p className="text-xs text-slate-500">Ingresa el SOAT para crear el documento automáticamente.</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Número SOAT</label>
+                    <input type="text" value={numeroSoat} onChange={e => setNumeroSoat(e.target.value)}
+                      placeholder="SOA-123456" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Vencimiento SOAT{numeroSoat ? ' *' : ''}
+                    </label>
+                    <input type="date" value={soatFecha} onChange={e => setSoatFecha(e.target.value)}
+                      className={`${inputCls} ${numeroSoat && !soatFecha ? 'border-red-400' : ''}`} />
+                  </div>
+                </div>
+                {numeroSoat && !soatFecha && (
+                  <p className="text-xs text-red-600 -mt-1">La fecha de vencimiento del SOAT es requerida</p>
+                )}
+
+                <div className="border-t border-slate-100 pt-3 space-y-3">
+                  <div className="relative">
+                    <label className="block text-xs font-medium text-slate-600 mb-1 flex items-center gap-1">
+                      Número de motor
+                      <button type="button" onMouseEnter={() => setTooltipMotor(true)} onMouseLeave={() => setTooltipMotor(false)}
+                        className="text-slate-400 hover:text-slate-600">
+                        <span className="text-xs border border-slate-300 rounded-full w-4 h-4 inline-flex items-center justify-center">?</span>
+                      </button>
+                    </label>
+                    {tooltipMotor && (
+                      <div className="absolute bottom-full left-0 mb-1 z-10 bg-slate-800 text-white text-xs px-3 py-2 rounded-lg max-w-xs shadow-lg">
+                        Encuéntralo en la tarjeta de propiedad del vehículo o en el motor físicamente.
+                      </div>
+                    )}
+                    <input type="text" value={numeroMotor} onChange={e => setNumMotor(e.target.value)}
+                      placeholder="MTR-XYZ789" className={inputCls} />
+                  </div>
+
+                  <div className="relative">
+                    <label className="block text-xs font-medium text-slate-600 mb-1 flex items-center gap-1">
+                      Número de chasis (VIN)
+                      <button type="button" onMouseEnter={() => setTooltipChasis(true)} onMouseLeave={() => setTooltipChasis(false)}
+                        className="text-slate-400 hover:text-slate-600">
+                        <span className="text-xs border border-slate-300 rounded-full w-4 h-4 inline-flex items-center justify-center">?</span>
+                      </button>
+                    </label>
+                    {tooltipChasis && (
+                      <div className="absolute bottom-full left-0 mb-1 z-10 bg-slate-800 text-white text-xs px-3 py-2 rounded-lg max-w-xs shadow-lg">
+                        17 caracteres alfanuméricos. Está en el parabrisas (esquina inferior izquierda) o en la tarjeta de propiedad.
+                      </div>
+                    )}
+                    <input type="text" value={numeroChasis} onChange={e => setNumChasis(e.target.value.toUpperCase())}
+                      placeholder="1HGCM82633A123456" className={`${inputCls} font-mono`} maxLength={17} />
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-          {esCarga && (
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Capacidad de carga</label>
-              <input type="text" value={capacidadCarga} onChange={e => setCapCarga(e.target.value)}
-                placeholder="1000 kg" className={inputCls} />
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── PASO 3: Documentación (opcional) ── */}
-      {paso === 3 && (
-        <div className="space-y-4">
-          <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
-            Ingresa el SOAT para crear el documento automáticamente.
-          </p>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Número SOAT</label>
-              <input type="text" value={numeroSoat} onChange={e => setNumeroSoat(e.target.value)}
-                placeholder="SOA-123456" className={inputCls} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">
-                Vencimiento SOAT{numeroSoat ? ' *' : ''}
-              </label>
-              <input type="date" value={soatFecha} onChange={e => setSoatFecha(e.target.value)}
-                className={`${inputCls} ${numeroSoat && !soatFecha ? 'border-red-400' : ''}`} />
-            </div>
-          </div>
-          {numeroSoat && !soatFecha && (
-            <p className="text-xs text-red-600 -mt-2">La fecha de vencimiento del SOAT es requerida</p>
-          )}
-
-          <div className="border-t border-slate-100 pt-3 space-y-3">
-            <div className="relative">
-              <label className="block text-xs font-medium text-slate-600 mb-1 flex items-center gap-1">
-                Número de motor
-                <button type="button" onMouseEnter={() => setTooltipMotor(true)} onMouseLeave={() => setTooltipMotor(false)}
-                  className="text-slate-400 hover:text-slate-600">
-                  <span className="text-xs border border-slate-300 rounded-full w-4 h-4 inline-flex items-center justify-center">?</span>
-                </button>
-              </label>
-              {tooltipMotor && (
-                <div className="absolute bottom-full left-0 mb-1 z-10 bg-slate-800 text-white text-xs px-3 py-2 rounded-lg max-w-xs shadow-lg">
-                  Encuéntralo en la tarjeta de propiedad del vehículo o en el motor físicamente.
-                </div>
-              )}
-              <input type="text" value={numeroMotor} onChange={e => setNumMotor(e.target.value)}
-                placeholder="MTR-XYZ789" className={inputCls} />
-            </div>
-
-            <div className="relative">
-              <label className="block text-xs font-medium text-slate-600 mb-1 flex items-center gap-1">
-                Número de chasis (VIN)
-                <button type="button" onMouseEnter={() => setTooltipChasis(true)} onMouseLeave={() => setTooltipChasis(false)}
-                  className="text-slate-400 hover:text-slate-600">
-                  <span className="text-xs border border-slate-300 rounded-full w-4 h-4 inline-flex items-center justify-center">?</span>
-                </button>
-              </label>
-              {tooltipChasis && (
-                <div className="absolute bottom-full left-0 mb-1 z-10 bg-slate-800 text-white text-xs px-3 py-2 rounded-lg max-w-xs shadow-lg">
-                  17 caracteres alfanuméricos. Está en el parabrisas (esquina inferior izquierda) o en la tarjeta de propiedad.
-                </div>
-              )}
-              <input type="text" value={numeroChasis} onChange={e => setNumChasis(e.target.value.toUpperCase())}
-                placeholder="1HGCM82633A123456" className={`${inputCls} font-mono`} maxLength={17} />
-            </div>
-          </div>
-
-          {/* Indicador de completitud */}
-          <div className={`rounded-xl px-4 py-3 text-sm font-medium flex items-center gap-2
-            ${completitud === 100 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-            : completitud >= 66   ? 'bg-blue-50 text-blue-700 border border-blue-200'
-            : 'bg-slate-50 text-slate-600 border border-slate-200'}`}>
-            <span>{completitud === 100 ? '🏅' : completitud >= 66 ? '📋' : '📄'}</span>
-            <span>
-              {completitud === 100 ? 'Perfil completo · 100%' : completitud >= 66 ? 'Perfil parcial · 66%' : 'Perfil básico · 33%'}
-            </span>
-            <div className="ml-auto flex-1 max-w-[80px] bg-white/60 rounded-full h-1.5">
-              <div className="h-1.5 rounded-full bg-current transition-all" style={{ width: `${completitud}%` }} />
-            </div>
+            )}
           </div>
         </div>
       )}
@@ -1638,15 +1658,9 @@ function WizardRegistrarVehiculo({ tipos, usuarios, esAdmin, usuario, onClose, o
           </button>
         )}
         <div className="flex-1" />
-        {paso < 3 && paso > 1 && (
-          <button type="button" onClick={handleRegistrar} disabled={loadingRegistrar}
-            className="text-sm text-slate-500 hover:text-slate-700 px-3 py-2 underline transition-colors">
-            Omitir y terminar
-          </button>
-        )}
-        {paso < 3 ? (
+        {paso === 1 ? (
           <button type="button" onClick={avanzar}
-            disabled={paso === 1 && !paso1OK}
+            disabled={!paso1OK}
             className="flex items-center gap-1 px-4 py-2 text-sm bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors disabled:opacity-40">
             Siguiente <ChevronRight size={14} />
           </button>

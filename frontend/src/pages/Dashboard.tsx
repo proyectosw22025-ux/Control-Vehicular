@@ -1,13 +1,15 @@
+import { useState } from 'react'
 import { useQuery, useMutation, gql } from '@apollo/client'
 import { Link } from 'react-router-dom'
 import {
   Car, ParkingSquare, AlertTriangle, UserCheck,
   Users, DoorOpen, Bell, TrendingUp, ShieldAlert,
   LayoutDashboard, Clock, ShieldCheck, ArrowRight,
-  CheckCircle2, XCircle, AlertCircle, QrCode, Navigation,
+  CheckCircle2, XCircle, AlertCircle, QrCode, Navigation, X,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import Onboarding from '../components/Onboarding'
+import { QrDinamico } from '../components/QrDinamico'
 import { VEHICULOS_QUERY } from '../graphql/queries/vehiculos'
 import { SESION_ACTIVA_VEHICULO_QUERY } from '../graphql/queries/parqueos'
 
@@ -166,6 +168,10 @@ function VehiculoCard({ v }: { v: any }) {
 export default function Dashboard() {
   const { usuario, esAdmin, esGuardia, tieneRol } = useAuth()
 
+  // Atajo: mostrar el QR del vehículo sin pasar por el módulo de Vehículos
+  // (la pre-defensa señaló que llegar al QR tomaba demasiados pasos)
+  const [qrVehiculo, setQrVehiculo] = useState<{ id: number; placa: string } | null>(null)
+
   const mostrarStats = esAdmin || esGuardia
   const { data, loading } = useQuery(DASHBOARD_QUERY, { skip: !mostrarStats })
 
@@ -226,6 +232,28 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* ── Atajo: Mi código QR — un toque desde el aterrizaje post-login ── */}
+      {esResidente && misVehiculos.some(v => v.estado === 'activo') && (() => {
+        const vehActivo = misVehiculos.find(v => v.estado === 'activo')!
+        return (
+          <button
+            onClick={() => setQrVehiculo({ id: vehActivo.id, placa: vehActivo.placa })}
+            className="w-full flex items-center justify-between bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white rounded-2xl p-4 shadow-md transition-colors group animate-fade-bottom"
+          >
+            <div className="flex items-center gap-3">
+              <div className="bg-white/20 p-2.5 rounded-xl">
+                <QrCode size={22} />
+              </div>
+              <div className="text-left">
+                <p className="font-bold text-sm">Mostrar mi código QR</p>
+                <p className="text-xs opacity-90">Listo para portería en un toque · {vehActivo.placa}</p>
+              </div>
+            </div>
+            <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
+          </button>
+        )
+      })()}
 
       {/* ── Stats Admin ── */}
       {esAdmin && (
@@ -440,6 +468,29 @@ export default function Dashboard() {
           ))}
         </div>
       </div>
+
+      {/* ── Modal: Mi código QR (atajo desde el Dashboard) ── */}
+      {qrVehiculo && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={() => setQrVehiculo(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto animate-flip-modal"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <h2 className="font-semibold text-slate-800">Código QR — {qrVehiculo.placa}</h2>
+              <button onClick={() => setQrVehiculo(null)} className="text-slate-400 hover:text-slate-600 hover:rotate-90 transition-transform duration-200">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="px-6 py-4">
+              <QrDinamico vehiculoId={qrVehiculo.id} placa={qrVehiculo.placa} />
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )
