@@ -28,10 +28,20 @@ class PuntoAcceso(models.Model):
 
 class QrSesion(models.Model):
     """
-    QR de delegación: el dueño autoriza a otra persona a ingresar su vehículo
-    por un período limitado. El acceso diario normal usa el codigo_qr permanente
-    del modelo Vehiculo — este registro es solo para casos de delegación temporal.
+    QR de delegación: el dueño autoriza a otra persona a usar su vehículo
+    en el campus por un período limitado.
+
+    tipo_delegacion controla qué tipo de acceso permite:
+      "entrada" → solo para ingresar (papá trae el auto)
+      "salida"  → solo para sacar  (esposa se lleva el auto)
+      "ambos"   → ida y vuelta (usos_max=2: un uso para entrada + uno para salida)
     """
+    TIPOS_DELEGACION = [
+        ("entrada", "Solo entrada"),
+        ("salida",  "Solo salida"),
+        ("ambos",   "Entrada y salida"),
+    ]
+
     vehiculo = models.ForeignKey(
         "vehiculos.Vehiculo", on_delete=models.CASCADE, related_name="qr_delegaciones"
     )
@@ -40,9 +50,38 @@ class QrSesion(models.Model):
         max_length=150, blank=True,
         help_text="Razón de la delegación (préstamo a familiar, autorización especial, etc.)",
     )
+    tipo_delegacion = models.CharField(
+        max_length=8, choices=TIPOS_DELEGACION, default="ambos",
+        help_text="Tipo de acceso que habilita este QR.",
+    )
+    usos_max = models.PositiveSmallIntegerField(
+        default=1,
+        help_text="Usos totales permitidos: 1 para entrada/salida, 2 para ambos.",
+    )
+    usos_actual = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Número de veces que este QR ya fue utilizado.",
+    )
+    # ── Destinatario: quién puede usar este QR ──────────────────────────────
+    TIPO_DESTINATARIO = [
+        ("externo",    "Persona externa"),
+        ("registrado", "Miembro UAGRM"),
+    ]
+    tipo_destinatario = models.CharField(
+        max_length=12, choices=TIPO_DESTINATARIO, default="externo",
+        help_text="Si es miembro UAGRM o persona externa (familiar, etc.)",
+    )
+    destinatario_nombre = models.CharField(
+        max_length=150, blank=True,
+        help_text="Nombre completo de quien puede usar este QR.",
+    )
+    destinatario_ci = models.CharField(
+        max_length=20, blank=True,
+        help_text="CI/carnet del destinatario para verificación en portería.",
+    )
+    # ────────────────────────────────────────────────────────────────────────
     fecha_generacion = models.DateTimeField(auto_now_add=True)
     fecha_expiracion = models.DateTimeField()
-    usado = models.BooleanField(default=False)
     generado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -58,11 +97,45 @@ class QrSesion(models.Model):
         indexes = [models.Index(fields=["codigo_hash"])]
 
     def __str__(self):
-        return f"QR delegación {self.vehiculo.placa} - exp: {self.fecha_expiracion}"
+        return (
+            f"QR delegación {self.vehiculo.placa} "
+            f"({self.get_tipo_delegacion_display()}) "
+            f"— {self.usos_actual}/{self.usos_max} usos"
+        )
 
     @property
     def vigente(self):
-        return not self.usado and self.fecha_expiracion > timezone.now()
+        return self.usos_actual < self.usos_max and self.fecha_expiracion > timezone.now()
+
+    @property
+    def usado(self):
+        """Compatibilidad: True cuando todos los usos fueron consumidos."""
+        return self.usos_actual >= self.usos_max
+
+    @property
+    def usos_restantes(self) -> int:
+        return max(0, self.usos_max - self.usos_actual)
+
+    @property
+    def url_qr(self) -> str:
+        """URL pública de la imagen QR PNG para compartir por WhatsApp."""
+        from django.conf import settings
+        backend = getattr(
+            settings, "BACKEND_URL",
+            "https://control-vehicular-production.up.railway.app",
+        )
+        return f"{backend}/api/qr/{self.codigo_hash}.png"
+
+    @property
+    def destinatario_display(self) -> str:
+        """Texto legible para el guardia: 'Carlos Pérez · CI: 7654321 [Externo]'"""
+        if not self.destinatario_nombre:
+            return "Sin destinatario especificado"
+        partes = [self.destinatario_nombre]
+        if self.destinatario_ci:
+            partes.append(f"CI: {self.destinatario_ci}")
+        tipo = "Miembro UAGRM" if self.tipo_destinatario == "registrado" else "Externo"
+        return " · ".join(partes) + f" [{tipo}]"
 
 
 class PaseTemporal(models.Model):

@@ -85,6 +85,17 @@ export const GENERAR_QR_DELEGACION_MUTATION = gql`
       fechaExpiracion
       usado
       vigente
+      tipoDelegacion
+      tipoDelegacionDisplay
+      usosMax
+      usosActual
+      usosRestantes
+      urlQr
+      placaVehiculo
+      tipoDestinatario
+      destinatarioNombre
+      destinatarioCi
+      destinatarioDisplay
     }
   }
 `

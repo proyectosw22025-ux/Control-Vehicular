@@ -34,14 +34,19 @@ def validar_estado_vehiculo(vehiculo) -> None:
         raise Exception(MENSAJES[vehiculo.estado])
 
 
-def resolver_codigo(codigo: str) -> ResultadoValidacion:
+def resolver_codigo(codigo: str, tipo_acceso: str = None) -> ResultadoValidacion:
     """
-    Resuelve un código escaneado en 3 niveles de prioridad.
+    Resuelve un código escaneado en 4 niveles de prioridad.
     Usa optimistic locking (UPDATE WHERE) para garantizar atomicidad
     sin bloqueos de base de datos — testeable y escalable.
+
+    tipo_acceso ("entrada"|"salida") se usa para validar que el QR de delegación
+    coincida con el tipo permitido ANTES de consumir el uso, evitando desperdiciar
+    usos en accesos del tipo incorrecto.
     """
     from apps.vehiculos.models import Vehiculo, validar_qr_dinamico
     from apps.acceso.models import QrSesion, PaseTemporal
+    from django.db.models import F
 
     codigo_limpio = codigo.strip()
 
@@ -70,22 +75,38 @@ def resolver_codigo(codigo: str) -> ResultadoValidacion:
             metodo_acceso="qr_permanente",
         )
 
-    # ── Nivel 3: QR de delegación (optimistic locking) ───────────────────
+    # ── Nivel 3: QR de delegación (optimistic locking con usos) ──────────
     qr = (
         QrSesion.objects
-        .filter(codigo_hash=codigo_limpio, usado=False)
+        .filter(codigo_hash=codigo_limpio)
+        .filter(usos_actual__lt=F("usos_max"))   # tiene usos disponibles
         .select_related("vehiculo")
         .first()
     )
     if qr:
         if qr.fecha_expiracion <= timezone.now():
             raise Exception("QR de delegación expirado.")
+
+        # Validar tipo ANTES de consumir el uso — no desperdiciar un uso
+        if tipo_acceso and qr.tipo_delegacion != "ambos" and qr.tipo_delegacion != tipo_acceso:
+            tipo_label = "entrada" if qr.tipo_delegacion == "entrada" else "salida"
+            raise Exception(
+                f"Este QR de delegación solo permite {tipo_label}. "
+                f"No puede usarse para registrar {tipo_acceso}."
+            )
+
         validar_estado_vehiculo(qr.vehiculo)
-        # UPDATE WHERE usado=False — si otro guardia lo usó en paralelo, actualizado=0
-        actualizado = QrSesion.objects.filter(pk=qr.pk, usado=False).update(usado=True)
+
+        # Optimistic locking: UPDATE WHERE usos_actual=X — si otro guardia
+        # lo usó en paralelo, actualizado=0 y el guardia reintenta.
+        usos_previos = qr.usos_actual
+        actualizado = QrSesion.objects.filter(
+            pk=qr.pk, usos_actual=usos_previos
+        ).update(usos_actual=usos_previos + 1)
         if actualizado == 0:
-            raise Exception("Este QR ya fue utilizado. Solicite un nuevo QR de delegación.")
-        qr.usado = True
+            raise Exception("Este QR fue utilizado al mismo tiempo por otro guardia. Reintente.")
+
+        qr.usos_actual = usos_previos + 1
         return ResultadoValidacion(
             vehiculo=qr.vehiculo,
             qr_delegacion=qr,

@@ -89,7 +89,17 @@ export const MIS_DELEGACIONES_QUERY = gql`
       fechaExpiracion
       usado
       vigente
+      tipoDelegacion
+      tipoDelegacionDisplay
+      usosMax
+      usosActual
+      usosRestantes
+      urlQr
       placaVehiculo
+      tipoDestinatario
+      destinatarioNombre
+      destinatarioCi
+      destinatarioDisplay
     }
   }
 `
@@ -104,7 +114,28 @@ export const QR_DELEGACIONES_QUERY = gql`
       fechaExpiracion
       usado
       vigente
+      tipoDelegacion
+      tipoDelegacionDisplay
+      usosMax
+      usosActual
+      usosRestantes
+      urlQr
       placaVehiculo
+      tipoDestinatario
+      destinatarioNombre
+      destinatarioCi
+      destinatarioDisplay
+    }
+  }
+`
+
+export const BUSCAR_DESTINATARIO_QUERY = gql`
+  query BuscarDestinatarioUagrm($query: String!) {
+    buscarDestinatarioUagrm(query: $query) {
+      id
+      ci
+      nombreCompleto
+      roles
     }
   }
 `

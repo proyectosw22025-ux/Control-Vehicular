@@ -10,8 +10,11 @@ class PuntoAccesoAdmin(admin.ModelAdmin):
 
 @admin.register(QrSesion)
 class QrDelegacionAdmin(admin.ModelAdmin):
-    list_display = ("vehiculo", "motivo", "fecha_generacion", "fecha_expiracion", "usado")
-    list_filter = ("usado",)
+    list_display = (
+        "vehiculo", "motivo", "tipo_delegacion", "destinatario_nombre",
+        "usos_actual", "usos_max", "fecha_generacion", "fecha_expiracion",
+    )
+    list_filter = ("tipo_delegacion", "tipo_destinatario")
 
 
 @admin.register(PaseTemporal)

@@ -69,13 +69,41 @@ class PuntoAccesoType:
 
 
 @strawberry.type
+class DestinatarioSuggestionType:
+    """Resultado de búsqueda para autocompletar el destinatario en delegaciones."""
+    id: int
+    ci: str
+    nombre_completo: str
+    roles: str  # "Docente", "Estudiante", "Administrador", etc.
+
+
+@strawberry.type
 class QrDelegacionType:
     id: int
     codigo_hash: str
     motivo: str
+    tipo_delegacion: str
+    usos_max: int
+    usos_actual: int
+    tipo_destinatario: str
+    destinatario_nombre: str
+    destinatario_ci: str
     fecha_generacion: datetime
     fecha_expiracion: datetime
-    usado: bool
+
+    @strawberry.field
+    def usado(self) -> bool:
+        """Compatibilidad: True cuando todos los usos fueron consumidos."""
+        return self.usos_actual >= self.usos_max
+
+    @strawberry.field
+    def usos_restantes(self) -> int:
+        return self.usos_restantes  # propiedad del modelo
+
+    @strawberry.field
+    def tipo_delegacion_display(self) -> str:
+        labels = {"entrada": "Solo entrada", "salida": "Solo salida", "ambos": "Entrada y salida"}
+        return labels.get(self.tipo_delegacion, self.tipo_delegacion)
 
     @strawberry.field
     def placa_vehiculo(self) -> str:
@@ -83,7 +111,15 @@ class QrDelegacionType:
 
     @strawberry.field
     def vigente(self) -> bool:
-        return not self.usado and self.fecha_expiracion > timezone.now()
+        return self.vigente  # propiedad del modelo
+
+    @strawberry.field
+    def url_qr(self) -> str:
+        return self.url_qr  # propiedad del modelo
+
+    @strawberry.field
+    def destinatario_display(self) -> str:
+        return self.destinatario_display  # propiedad del modelo
 
 
 @strawberry.type
@@ -143,6 +179,15 @@ class RegistroAccesoType:
         """Alertas activas detectadas para este vehículo en el momento del registro."""
         return getattr(self, "_alertas_detectadas", [])
 
+    @strawberry.field
+    def destinatario_delegacion(self) -> Optional[str]:
+        """
+        Para QR de delegación: muestra quién estaba autorizado a usar el pase.
+        Ej: 'Carlos Pérez · CI: 7654321 [Miembro UAGRM]'
+        El guardia usa este dato para verificar la identidad del conductor.
+        """
+        return getattr(self, "_destinatario_delegacion", None)
+
 
 @strawberry.type
 class AuditLogType:
@@ -169,6 +214,10 @@ class GenerarQrDelegacionInput:
     vehiculo_id: int
     motivo: str
     horas_validez: Optional[int] = 24
+    tipo_delegacion: Optional[str] = "ambos"      # "entrada" | "salida" | "ambos"
+    tipo_destinatario: Optional[str] = "externo"  # "externo" | "registrado"
+    destinatario_nombre: Optional[str] = ""
+    destinatario_ci: Optional[str] = ""
 
 
 @strawberry.input
@@ -545,8 +594,11 @@ class AccesoQuery:
         es_personal = tiene_rol(user, "Administrador") or tiene_rol(user, "Guardia")
         if not es_personal and vehiculo.propietario_id != user.pk:
             raise Exception("Solo puedes ver las delegaciones de tus propios vehículos")
+        from django.db.models import F
         return list(QrSesion.objects.filter(
-            vehiculo_id=vehiculo_id, usado=False, fecha_expiracion__gt=timezone.now()
+            vehiculo_id=vehiculo_id,
+            fecha_expiracion__gt=timezone.now(),
+            usos_actual__lt=F("usos_max"),
         ).select_related("vehiculo").order_by("-fecha_generacion"))
 
     @strawberry.field
@@ -558,16 +610,60 @@ class AccesoQuery:
         user = info.context.request.user
         if not user.is_authenticated:
             raise Exception("Autenticación requerida")
+        from django.db.models import F
         return list(
             QrSesion.objects
             .select_related("vehiculo")
             .filter(
                 vehiculo__propietario=user,
-                usado=False,
                 fecha_expiracion__gt=timezone.now(),
+                usos_actual__lt=F("usos_max"),
             )
             .order_by("-fecha_generacion")
         )
+
+    @strawberry.field
+    def buscar_destinatario_uagrm(self, info: Info, query: str) -> List[DestinatarioSuggestionType]:
+        """
+        Busca miembros UAGRM registrados por CI o nombre para autocompletar
+        el destinatario de una delegación. Devuelve máximo 6 resultados.
+        Requiere al menos 2 caracteres de búsqueda.
+        """
+        from apps.usuarios.models import Usuario
+        from django.db.models import Q
+
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+
+        q = query.strip()
+        if len(q) < 2:
+            return []
+
+        usuarios = (
+            Usuario.objects
+            .filter(
+                Q(ci__icontains=q)
+                | Q(nombre__icontains=q)
+                | Q(apellido__icontains=q),
+                is_active=True,
+            )
+            .prefetch_related("usuario_roles__rol")
+            .exclude(pk=user.pk)  # no se delega a sí mismo
+            [:6]
+        )
+
+        resultado = []
+        for u in usuarios:
+            roles_nombres = [ur.rol.nombre for ur in u.usuario_roles.all()]
+            roles_str = ", ".join(roles_nombres) if roles_nombres else "Sin rol"
+            resultado.append(DestinatarioSuggestionType(
+                id=u.pk,
+                ci=u.ci,
+                nombre_completo=f"{u.nombre} {u.apellido}",
+                roles=roles_str,
+            ))
+        return resultado
 
     @strawberry.field
     def registros_acceso(
@@ -765,19 +861,55 @@ class AccesoMutation:
         if not input.motivo.strip():
             raise Exception("El motivo de la delegación es obligatorio")
 
-        codigo_hash = hashlib.sha256(f"{vehiculo.placa}-{uuid.uuid4()}".encode()).hexdigest()
+        tipos_validos = {"entrada", "salida", "ambos"}
+        tipo_del = (input.tipo_delegacion or "ambos").lower()
+        if tipo_del not in tipos_validos:
+            raise Exception("tipo_delegacion debe ser 'entrada', 'salida' o 'ambos'")
+
+        # "ambos" permite 2 usos (uno para entrar, otro para salir)
+        usos_max = 2 if tipo_del == "ambos" else 1
         horas = max(1, min(input.horas_validez or 24, 168))
+
+        codigo_hash = hashlib.sha256(f"{vehiculo.placa}-{uuid.uuid4()}".encode()).hexdigest()
+
+        # Validar destinatario
+        tipo_dest = (input.tipo_destinatario or "externo").lower()
+        if tipo_dest not in ("externo", "registrado"):
+            raise Exception("tipo_destinatario debe ser 'externo' o 'registrado'")
+
+        dest_nombre = (input.destinatario_nombre or "").strip()
+        dest_ci     = (input.destinatario_ci or "").strip()
+
+        if tipo_dest == "registrado":
+            # Para miembro UAGRM: el CI es obligatorio y debe existir en el sistema
+            if not dest_ci:
+                raise Exception("Para un Miembro UAGRM debes ingresar su CI.")
+            from apps.usuarios.models import Usuario as _Usuario
+            dest_user = _Usuario.objects.filter(ci=dest_ci, is_active=True).first()
+            if not dest_user:
+                raise Exception(f"No se encontró ningún miembro activo con CI '{dest_ci}'.")
+            # Llenar nombre desde el perfil si no se proporcionó
+            if not dest_nombre:
+                dest_nombre = dest_user.nombre_completo
 
         qr = QrSesion.objects.create(
             vehiculo=vehiculo,
             codigo_hash=codigo_hash,
             motivo=input.motivo.strip(),
+            tipo_delegacion=tipo_del,
+            usos_max=usos_max,
+            usos_actual=0,
             fecha_expiracion=timezone.now() + timedelta(hours=horas),
             generado_por=user,
+            tipo_destinatario=tipo_dest,
+            destinatario_nombre=dest_nombre,
+            destinatario_ci=dest_ci,
         )
+        tipo_label = {"entrada": "solo entrada", "salida": "solo salida", "ambos": "entrada y salida"}
+        dest_log = f" → {dest_nombre}" if dest_nombre else ""
         log_audit(
             user, "qr_delegacion_generado",
-            f"QR temporal generado para {vehiculo.placa} — {horas}h — motivo: {input.motivo[:60]}",
+            f"QR temporal generado para {vehiculo.placa} — {tipo_label[tipo_del]} — {horas}h — {input.motivo[:60]}{dest_log}",
             request=info.context.request,
         )
         return qr
@@ -802,8 +934,8 @@ class AccesoMutation:
         if not es_personal and qr.vehiculo.propietario_id != user.pk:
             raise Exception("Solo puedes revocar delegaciones de tus propios vehículos")
 
-        if qr.usado:
-            raise Exception("Este QR ya fue utilizado y no puede revocarse")
+        if qr.usos_actual >= qr.usos_max:
+            raise Exception("Este QR ya fue completamente utilizado y no puede revocarse")
 
         # Forzar expiración inmediata — no eliminamos para mantener trazabilidad
         qr.fecha_expiracion = timezone.now() - timedelta(seconds=1)
@@ -832,7 +964,8 @@ class AccesoMutation:
             raise Exception("Punto de acceso no encontrado o inactivo")
 
         # Resolver código — maneja TOTP, delegación y pase temporal de forma atómica
-        resultado = resolver_codigo(input.codigo)
+        # tipo_acceso se pasa para validar tipo_delegacion antes de consumir el uso
+        resultado = resolver_codigo(input.codigo, tipo_acceso=input.tipo)
 
         # Validar transición de estado (entrada/salida) — máquina de estados completa
         if resultado.vehiculo:
@@ -857,6 +990,10 @@ class AccesoMutation:
             observacion=obs_extra,
             registrado_por=registrado_por,
         )
+
+        # Inyectar destinatario para que el guardia pueda verificar la identidad
+        if resultado.qr_delegacion and resultado.qr_delegacion.destinatario_nombre:
+            registro._destinatario_delegacion = resultado.qr_delegacion.destinatario_display
 
         placa_log = (
             resultado.vehiculo.placa if resultado.vehiculo
