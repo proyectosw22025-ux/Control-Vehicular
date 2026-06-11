@@ -16,6 +16,11 @@ from apps.parqueos.schema import _calcular_estado, _color_estado
 # ── Helper ────────────────────────────────────────────────────────────────────
 
 def gql_disponibilidad(client):
+    # El cache de 30s (LocMem) persiste entre tests del mismo proceso — sin esto,
+    # un test puede recibir la lista de zonas cacheada por el test anterior.
+    from django.core.cache import cache
+    from apps.parqueos.schema import CACHE_KEY_DISPONIBILIDAD
+    cache.delete(CACHE_KEY_DISPONIBILIDAD)
     resp = client.post(
         "/graphql/",
         data=json.dumps({"query": """

@@ -50,17 +50,6 @@ def notificar_infraccion(usuario_id: int, placa: str, monto: str):
     )
 
 
-@shared_task(name="notificaciones.notificar_reserva_proxima")
-def notificar_reserva_proxima(usuario_id: int, espacio: str, fecha: str):
-    _enviar_notificacion_ws(
-        usuario_id=usuario_id,
-        titulo="Reserva próxima a vencer",
-        mensaje=f"Su reserva en {espacio} vence a las {fecha}.",
-        tipo_codigo="reserva_proxima",
-        datos_extra={"espacio": espacio, "fecha": fecha},
-    )
-
-
 @shared_task(name="notificaciones.notificar_qr_generado")
 def notificar_qr_generado(usuario_id: int, placa: str, expiracion: str):
     _enviar_notificacion_ws(

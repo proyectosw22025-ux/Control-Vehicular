@@ -100,6 +100,7 @@ export const MAPA_PARQUEO_QUERY = gql`
         estado
         ubicacionReferencia
         placaVehiculoActivo
+        sesionActivaId
         categoria { id nombre color esDiscapacidad }
       }
     }

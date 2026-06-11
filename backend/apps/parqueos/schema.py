@@ -19,8 +19,63 @@ from django.utils import timezone
 
 from .models import (
     CategoriaEspacio, ZonaParqueo, EspacioParqueo,
-    SesionParqueo, Reserva,
+    SesionParqueo,
 )
+
+
+# ── Helpers de autorización ────────────────────────────────────────────────
+
+def _usuario_autenticado(info: Info):
+    """Retorna el usuario autenticado o lanza error. Para queries con datos sensibles."""
+    user = info.context.request.user
+    if not user.is_authenticated:
+        raise Exception("Autenticación requerida")
+    return user
+
+
+def _es_personal(user) -> bool:
+    """Guardia o Administrador — pueden ver datos de cualquier vehículo."""
+    from apps.usuarios.utils import tiene_rol
+    return tiene_rol(user, "Administrador") or tiene_rol(user, "Guardia")
+
+
+def _verificar_acceso_vehiculo(user, vehiculo_id: int):
+    """
+    El propietario solo puede consultar sus propios vehículos;
+    Guardia/Admin pueden consultar cualquiera. Protege placas, ubicación
+    física y patrones de movimiento de exposición a terceros.
+    """
+    if _es_personal(user):
+        return
+    from apps.vehiculos.models import Vehiculo
+    if not Vehiculo.objects.filter(pk=vehiculo_id, propietario_id=user.pk).exists():
+        raise Exception("Solo puedes consultar información de tus propios vehículos")
+
+
+# Categorías de espacio que exigen que el propietario tenga el rol homónimo.
+CATEGORIAS_CON_ROL = {"Docente", "Estudiante", "Personal Administrativo"}
+
+
+def _motivo_incompatibilidad_categoria(espacio, vehiculo) -> Optional[str]:
+    """
+    Valida la categoría del espacio contra el rol del propietario del vehículo.
+    Retorna el motivo del rechazo, o None si la asignación es compatible.
+    Espacios de discapacidad siempre requieren confirmación del guardia
+    (no existe registro de permiso de discapacidad en el sistema).
+    """
+    from apps.usuarios.utils import tiene_rol
+    categoria = espacio.categoria
+    if categoria.es_discapacidad:
+        return (
+            f"El espacio #{espacio.numero} está reservado para personas con "
+            "discapacidad y requiere verificación del permiso."
+        )
+    if categoria.nombre in CATEGORIAS_CON_ROL and not tiene_rol(vehiculo.propietario, categoria.nombre):
+        return (
+            f"El espacio #{espacio.numero} es de categoría '{categoria.nombre}' "
+            f"y el propietario de {vehiculo.placa} no tiene ese rol."
+        )
+    return None
 
 
 # ── Disponibilidad real — lógica de negocio ────────────────────────────────
@@ -53,18 +108,24 @@ def _color_estado(estado: str) -> str:
 
 
 def _disponibilidad_de_zona(zona) -> dict:
-    """Calcula disponibilidad real para una zona. Reutilizable desde signal y query."""
+    """
+    Calcula disponibilidad real para una zona. Reutilizable desde signal y query.
+    La capacidad se deriva de los espacios REALMENTE registrados (única fuente
+    de verdad) — `capacidad_total` declarada a mano queda solo como referencia
+    de planificación y nunca entra al cálculo.
+    """
     from django.db.models import Count, Q
     z = (
         ZonaParqueo.objects.filter(pk=zona.pk).annotate(
             _libres=Count("espacios", filter=Q(espacios__estado="disponible")),
             _mantenimiento=Count("espacios", filter=Q(espacios__estado="mantenimiento")),
             _reservados=Count("espacios", filter=Q(espacios__estado="reservado")),
+            _espacios_reales=Count("espacios"),
         ).first()
     )
     if not z:
         return {}
-    total_util = max(z.capacidad_total - z._mantenimiento - z._reservados, 0)
+    total_util = max(z._espacios_reales - z._mantenimiento - z._reservados, 0)
     libres = z._libres
     sesiones = SesionParqueo.objects.filter(espacio__zona=z, estado="activa").count()
     pct = round((libres / total_util * 100) if total_util > 0 else 0, 1)
@@ -73,7 +134,7 @@ def _disponibilidad_de_zona(zona) -> dict:
         "zona_id":        z.pk,
         "zona_nombre":    z.nombre,
         "libres":         libres,
-        "total":          z.capacidad_total,
+        "total":          z._espacios_reales,
         "sesiones_activas": sesiones,
         "en_mantenimiento": z._mantenimiento,
         "porcentaje_libre": pct,
@@ -216,19 +277,19 @@ class EspacioParqueoType:
         Placa del vehículo que ocupa este espacio ahora mismo.
         Si fue anotado por mapa_parqueo() usa el atributo transitorio _placa_activa.
         Si no (ej. llamado desde espacios_por_zona), hace una query directa.
+        hasattr (no `is not None`): un espacio libre anotado con None NO debe
+        disparar la query de fallback — eso reintroduce el N+1 silenciosamente.
         """
-        anotado = getattr(self, "_placa_activa", None)
-        if anotado is not None:
-            return anotado
+        if hasattr(self, "_placa_activa"):
+            return self._placa_activa
         sesion = SesionParqueo.objects.filter(espacio_id=self.pk, estado="activa").first()
         return sesion.vehiculo.placa if sesion else None
 
     @strawberry.field
     def sesion_activa_id(self) -> Optional[int]:
         """ID de la sesión activa para cerrarla desde el mapa o la vista de espacios."""
-        anotado = getattr(self, "_sesion_activa_id", None)
-        if anotado is not None:
-            return anotado
+        if hasattr(self, "_sesion_activa_id"):
+            return self._sesion_activa_id
         sesion = SesionParqueo.objects.filter(espacio_id=self.pk, estado="activa").first()
         return sesion.pk if sesion else None
 
@@ -254,23 +315,6 @@ class SesionParqueoType:
         return int((salida - self.hora_entrada).total_seconds() / 60)
 
 
-@strawberry.type
-class ReservaType:
-    id: int
-    fecha_inicio: datetime
-    fecha_fin: datetime
-    estado: str
-    created_at: datetime
-
-    @strawberry.field
-    def espacio(self) -> EspacioParqueoType:
-        return self.espacio
-
-    @strawberry.field
-    def placa_vehiculo(self) -> str:
-        return self.vehiculo.placa
-
-
 # ── Inputs ─────────────────────────────────────────────────────────────────
 
 @strawberry.input
@@ -293,14 +337,9 @@ class CrearEspacioInput:
 class IniciarSesionInput:
     espacio_id: int
     vehiculo_id: int
-
-
-@strawberry.input
-class CrearReservaInput:
-    espacio_id: int
-    vehiculo_id: int
-    fecha_inicio: str
-    fecha_fin: str
+    # Guardia/Admin pueden asignar un espacio cuya categoría no coincide con el
+    # rol del propietario, pero deben confirmarlo explícitamente (queda auditado).
+    permitir_categoria_incompatible: Optional[bool] = False
 
 
 # ── Queryset anotado — elimina N+1 ─────────────────────────────────────────
@@ -329,12 +368,14 @@ def _zonas_con_conteos(solo_activas: bool = True):
 class ParqueosQuery:
     @strawberry.field
     def zonas(self, info: Info, solo_activas: bool = True) -> List[ZonaParqueoType]:
+        _usuario_autenticado(info)
         return list(_zonas_con_conteos(solo_activas).order_by("nombre"))
 
     @strawberry.field
     def espacios_por_zona(
         self, info: Info, zona_id: int, estado: Optional[str] = None
     ) -> List[EspacioParqueoType]:
+        _usuario_autenticado(info)
         qs = EspacioParqueo.objects.filter(zona_id=zona_id).select_related("zona", "categoria")
         if estado:
             qs = qs.filter(estado=estado)
@@ -344,6 +385,7 @@ class ParqueosQuery:
     def espacios_disponibles(
         self, info: Info, zona_id: Optional[int] = None
     ) -> List[EspacioParqueoType]:
+        _usuario_autenticado(info)
         qs = EspacioParqueo.objects.filter(estado="disponible").select_related("zona", "categoria")
         if zona_id:
             qs = qs.filter(zona_id=zona_id)
@@ -353,6 +395,8 @@ class ParqueosQuery:
     def sesion_activa_vehiculo(
         self, info: Info, vehiculo_id: int
     ) -> Optional[SesionParqueoType]:
+        user = _usuario_autenticado(info)
+        _verificar_acceso_vehiculo(user, vehiculo_id)
         return (
             SesionParqueo.objects
             .filter(vehiculo_id=vehiculo_id, estado="activa")
@@ -364,6 +408,8 @@ class ParqueosQuery:
     def historial_sesiones(
         self, info: Info, vehiculo_id: int, limite: int = 20
     ) -> List[SesionParqueoType]:
+        user = _usuario_autenticado(info)
+        _verificar_acceso_vehiculo(user, vehiculo_id)
         return list(
             SesionParqueo.objects
             .filter(vehiculo_id=vehiculo_id)
@@ -372,16 +418,11 @@ class ParqueosQuery:
         )
 
     @strawberry.field
-    def reservas_vehiculo(self, info: Info, vehiculo_id: int) -> List[ReservaType]:
-        return list(
-            Reserva.objects
-            .filter(vehiculo_id=vehiculo_id)
-            .select_related("espacio__zona", "vehiculo")
-            .order_by("-created_at")
-        )
-
-    @strawberry.field
     def sesiones_activas(self, info: Info) -> List[SesionParqueoType]:
+        # Vista operativa global (todas las placas y ubicaciones) — solo personal.
+        user = _usuario_autenticado(info)
+        if not _es_personal(user):
+            raise Exception("Solo guardias y administradores pueden ver las sesiones activas")
         return list(
             SesionParqueo.objects
             .filter(estado="activa")
@@ -410,6 +451,7 @@ class ParqueosQuery:
             _libres=Count("espacios", filter=Q(espacios__estado="disponible")),
             _mantenimiento=Count("espacios", filter=Q(espacios__estado="mantenimiento")),
             _reservados=Count("espacios", filter=Q(espacios__estado="reservado")),
+            _espacios_reales=Count("espacios"),
         ).order_by("nombre")
 
         sesiones_por_zona: dict[int, int] = {}
@@ -423,7 +465,9 @@ class ParqueosQuery:
         ahora_iso = tz.now().isoformat()
         result = []
         for z in zonas:
-            total_util = max(z.capacidad_total - z._mantenimiento - z._reservados, 0)
+            # Capacidad = espacios realmente registrados, no el número declarado a
+            # mano en la zona. Evita porcentajes fantasma cuando difieren.
+            total_util = max(z._espacios_reales - z._mantenimiento - z._reservados, 0)
             libres     = z._libres
             sesiones   = sesiones_por_zona.get(z.pk, 0)
             pct        = round((libres / total_util * 100) if total_util > 0 else 0.0, 1)
@@ -433,7 +477,7 @@ class ParqueosQuery:
                 nombre               = z.nombre,
                 descripcion          = z.descripcion,
                 ubicacion            = z.ubicacion,
-                capacidad_total      = z.capacidad_total,
+                capacidad_total      = z._espacios_reales,
                 libres               = libres,
                 sesiones_activas     = sesiones,
                 en_mantenimiento     = z._mantenimiento,
@@ -448,6 +492,7 @@ class ParqueosQuery:
 
     @strawberry.field
     def categorias_espacio(self, info: Info) -> List[CategoriaEspacioType]:
+        _usuario_autenticado(info)
         return list(CategoriaEspacio.objects.all())
 
     @strawberry.field
@@ -459,12 +504,16 @@ class ParqueosQuery:
           Q3: placas de sesiones activas (dict espacio_id → placa)
         La placa se anota como atributo transitorio (_placa_activa) en cada espacio
         para que EspacioParqueoType.placa_vehiculo_activo() la devuelva sin queries extra.
+
+        Requiere autenticación: expone placas y ubicación física en tiempo real.
+        (La vista pública sin login es disponibilidad_zonas — solo agregados.)
         """
-        # Q3: una sola query para todas las placas activas
-        placas_activas: dict[int, str] = {
-            row["espacio_id"]: row["vehiculo__placa"]
+        _usuario_autenticado(info)
+        # Q3: una sola query para todas las sesiones activas (placa + id de sesión)
+        sesiones_activas: dict[int, tuple[int, str]] = {
+            row["espacio_id"]: (row["id"], row["vehiculo__placa"])
             for row in SesionParqueo.objects.filter(estado="activa")
-            .values("espacio_id", "vehiculo__placa")
+            .values("id", "espacio_id", "vehiculo__placa")
         }
 
         zonas = list(
@@ -473,10 +522,14 @@ class ParqueosQuery:
             .order_by("nombre")
         )
 
-        # Anotar cada espacio prefetcheado con su placa activa (O(1) lookup)
+        # Anotar cada espacio prefetcheado con su sesión activa (O(1) lookup).
+        # Se anota SIEMPRE (None para espacios libres) — los resolvers usan
+        # hasattr, así que ningún espacio dispara queries extra.
         for zona in zonas:
             for espacio in zona.espacios.all():
-                espacio._placa_activa = placas_activas.get(espacio.id)
+                sesion_id, placa = sesiones_activas.get(espacio.id, (None, None))
+                espacio._placa_activa = placa
+                espacio._sesion_activa_id = sesion_id
 
         return zonas
 
@@ -568,31 +621,62 @@ class ParqueosMutation:
         if vehiculo.estado in ESTADOS_BLOQUEADOS:
             raise Exception(ESTADOS_BLOQUEADOS[vehiculo.estado])
 
-        if SesionParqueo.objects.filter(vehiculo=vehiculo, estado="activa").exists():
-            raise Exception("El vehículo ya tiene una sesión de parqueo activa")
+        from django.db import IntegrityError
 
-        with transaction.atomic():
-            espacio = (
-                EspacioParqueo.objects
-                .select_for_update()
-                .select_related("zona")
-                .filter(pk=input.espacio_id)
-                .first()
-            )
-            if not espacio:
-                raise Exception("Espacio no encontrado")
-            if espacio.estado != "disponible":
-                raise Exception(
-                    f"El espacio #{espacio.numero} no está disponible (estado: {espacio.estado})"
+        try:
+            with transaction.atomic():
+                espacio = (
+                    EspacioParqueo.objects
+                    .select_for_update()
+                    .select_related("zona", "categoria")
+                    .filter(pk=input.espacio_id)
+                    .first()
                 )
-            sesion = SesionParqueo.objects.create(espacio=espacio, vehiculo=vehiculo)
-            espacio.estado = "ocupado"
-            espacio.save(update_fields=["estado"])
-            # log_audit dentro de la transacción — si falla hace rollback junto con la sesión
-            log_audit(
-                user, "sesion_parqueo_iniciada",
-                f"Sesión iniciada: {vehiculo.placa} en {espacio.zona.nombre}#{espacio.numero}",
-                request=info.context.request,
+                if not espacio:
+                    raise Exception("Espacio no encontrado")
+                if espacio.estado != "disponible":
+                    raise Exception(
+                        f"El espacio #{espacio.numero} no está disponible (estado: {espacio.estado})"
+                    )
+
+                # Check dentro de la transacción: dos requests simultáneos del mismo
+                # vehículo no pueden colarse entre la validación y el INSERT.
+                if SesionParqueo.objects.filter(vehiculo=vehiculo, estado="activa").exists():
+                    raise Exception("El vehículo ya tiene una sesión de parqueo activa")
+
+                # ── Regla de negocio: categoría del espacio vs rol del propietario ──
+                # Espacios Docente/Estudiante/Personal Administrativo exigen el rol
+                # correspondiente; espacios de discapacidad exigen siempre confirmación.
+                # Guardia/Admin pueden forzar la asignación con el flag explícito.
+                override_usado = False
+                incompatibilidad = _motivo_incompatibilidad_categoria(espacio, vehiculo)
+                if incompatibilidad:
+                    if es_personal and input.permitir_categoria_incompatible:
+                        override_usado = True
+                    else:
+                        raise Exception(
+                            f"{incompatibilidad} "
+                            "Un guardia o administrador puede autorizar la excepción."
+                        )
+
+                sesion = SesionParqueo.objects.create(espacio=espacio, vehiculo=vehiculo)
+                espacio.estado = "ocupado"
+                espacio.save(update_fields=["estado"])
+                # log_audit dentro de la transacción — si falla hace rollback junto con la sesión
+                detalle_override = (
+                    f" [categoría '{espacio.categoria.nombre}' autorizada como excepción]"
+                    if override_usado else ""
+                )
+                log_audit(
+                    user, "sesion_parqueo_iniciada",
+                    f"Sesión iniciada: {vehiculo.placa} en {espacio.zona.nombre}#{espacio.numero}"
+                    f"{detalle_override}",
+                    request=info.context.request,
+                )
+        except IntegrityError:
+            # Constraint único parcial de la BD — último escudo ante concurrencia.
+            raise Exception(
+                "El vehículo ya tiene una sesión activa o el espacio acaba de ser ocupado"
             )
         broadcast_disponibilidad(espacio.zona_id)
         return sesion
@@ -637,127 +721,3 @@ class ParqueosMutation:
         broadcast_disponibilidad(sesion.espacio.zona_id)
         return sesion
 
-    @strawberry.mutation
-    def crear_reserva(self, info: Info, input: CrearReservaInput) -> ReservaType:
-        """
-        Crea una reserva de espacio y lo marca como 'reservado' atómicamente.
-        Requiere autenticación — el propietario reserva para su propio vehículo,
-        el admin puede reservar para cualquiera.
-        """
-        from datetime import datetime as dt
-        from apps.vehiculos.models import Vehiculo
-        from apps.usuarios.utils import tiene_rol
-        from apps.acceso.utils import log_audit
-        user = info.context.request.user
-        if not user.is_authenticated:
-            raise Exception("Autenticación requerida")
-
-        vehiculo = Vehiculo.objects.filter(pk=input.vehiculo_id).first()
-        if not vehiculo:
-            raise Exception("Vehículo no encontrado")
-
-        # Propietario solo puede reservar para su propio vehículo
-        if not tiene_rol(user, "Administrador") and vehiculo.propietario_id != user.pk:
-            raise Exception("Solo puedes reservar espacios para tus propios vehículos")
-
-        from django.utils.timezone import make_aware, is_aware
-        tz = timezone.get_current_timezone()
-
-        def _parsear_fecha(valor: str):
-            parsed = dt.fromisoformat(valor)
-            # Si ya tiene tz info (viene de cliente con +00:00), usarla tal cual.
-            # Si es naive (sin tz), asumir zona horaria de Bolivia.
-            return parsed if is_aware(parsed) else make_aware(parsed, tz)
-
-        fecha_inicio = _parsear_fecha(input.fecha_inicio)
-        fecha_fin    = _parsear_fecha(input.fecha_fin)
-
-        if fecha_fin <= fecha_inicio:
-            raise Exception("La fecha de fin debe ser posterior a la de inicio")
-        if fecha_inicio <= timezone.now():
-            raise Exception("La fecha de inicio debe ser en el futuro")
-
-        with transaction.atomic():
-            espacio = (
-                EspacioParqueo.objects
-                .select_for_update()
-                .select_related("zona")
-                .filter(pk=input.espacio_id)
-                .first()
-            )
-            if not espacio:
-                raise Exception("Espacio no encontrado")
-            if espacio.estado != "disponible":
-                raise Exception(
-                    f"El espacio #{espacio.numero} no está disponible actualmente "
-                    f"(estado: {espacio.estado})"
-                )
-            # Verificar solapamiento de reservas existentes
-            if Reserva.objects.filter(
-                espacio=espacio,
-                estado__in=["pendiente", "confirmada"],
-                fecha_inicio__lt=fecha_fin,
-                fecha_fin__gt=fecha_inicio,
-            ).exists():
-                raise Exception("El espacio ya tiene una reserva en ese horario")
-
-            reserva = Reserva.objects.create(
-                espacio=espacio, vehiculo=vehiculo,
-                fecha_inicio=fecha_inicio, fecha_fin=fecha_fin,
-            )
-            espacio.estado = "reservado"
-            espacio.save(update_fields=["estado"])
-            log_audit(
-                user, "reserva_creada",
-                f"Reserva: {vehiculo.placa} en {espacio.zona.nombre}#{espacio.numero} "
-                f"de {fecha_inicio.strftime('%H:%M')} a {fecha_fin.strftime('%H:%M')}",
-                request=info.context.request,
-            )
-        return reserva
-
-    @strawberry.mutation
-    def cancelar_reserva(self, info: Info, reserva_id: int) -> ReservaType:
-        """
-        Cancela una reserva y libera el espacio.
-        Solo el propietario del vehículo o un administrador pueden cancelar.
-        """
-        from apps.usuarios.utils import tiene_rol
-        from apps.acceso.utils import log_audit
-        user = info.context.request.user
-        if not user.is_authenticated:
-            raise Exception("Autenticación requerida")
-
-        with transaction.atomic():
-            reserva = (
-                Reserva.objects
-                .select_for_update()
-                .select_related("espacio__zona", "vehiculo__propietario")
-                .filter(pk=reserva_id)
-                .first()
-            )
-            if not reserva:
-                raise Exception("Reserva no encontrada")
-
-            # Verificar propietario
-            if (not tiene_rol(user, "Administrador") and
-                    reserva.vehiculo.propietario_id != user.pk):
-                raise Exception("Solo puedes cancelar tus propias reservas")
-
-            if reserva.estado not in ["pendiente", "confirmada"]:
-                raise Exception("Solo se pueden cancelar reservas pendientes o confirmadas")
-
-            reserva.estado = "cancelada"
-            reserva.save(update_fields=["estado"])
-
-            # Liberar espacio si sigue reservado para esta reserva
-            if reserva.espacio.estado == "reservado":
-                reserva.espacio.estado = "disponible"
-                reserva.espacio.save(update_fields=["estado"])
-
-            log_audit(
-                user, "reserva_cancelada",
-                f"Reserva #{reserva.pk} cancelada: {reserva.vehiculo.placa} "
-                f"en {reserva.espacio.zona.nombre}#{reserva.espacio.numero}",
-                request=info.context.request,
-            )
-        return reserva

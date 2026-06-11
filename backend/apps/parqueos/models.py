@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from django.utils import timezone
 
 
 class CategoriaEspacio(models.Model):
@@ -72,7 +73,7 @@ class SesionParqueo(models.Model):
     vehiculo = models.ForeignKey(
         "vehiculos.Vehiculo", on_delete=models.PROTECT, related_name="sesiones_parqueo"
     )
-    hora_entrada = models.DateTimeField(auto_now_add=True)
+    hora_entrada = models.DateTimeField(default=timezone.now)
     hora_salida = models.DateTimeField(null=True, blank=True)
     estado = models.CharField(max_length=10, choices=ESTADOS, default="activa")
 
@@ -81,35 +82,22 @@ class SesionParqueo(models.Model):
         verbose_name = "Sesión de parqueo"
         verbose_name_plural = "Sesiones de parqueo"
         ordering = ["-hora_entrada"]
+        constraints = [
+            # Garantía a nivel de datos: aunque dos requests concurrentes pasen
+            # las validaciones del resolver, la BD impide duplicar sesión activa.
+            models.UniqueConstraint(
+                fields=["vehiculo"],
+                condition=models.Q(estado="activa"),
+                name="unica_sesion_activa_por_vehiculo",
+            ),
+            models.UniqueConstraint(
+                fields=["espacio"],
+                condition=models.Q(estado="activa"),
+                name="unica_sesion_activa_por_espacio",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.vehiculo} en {self.espacio} ({self.get_estado_display()})"
 
 
-class Reserva(models.Model):
-    ESTADOS = [
-        ("pendiente", "Pendiente"),
-        ("confirmada", "Confirmada"),
-        ("cancelada", "Cancelada"),
-        ("expirada", "Expirada"),
-    ]
-
-    espacio = models.ForeignKey(
-        EspacioParqueo, on_delete=models.PROTECT, related_name="reservas"
-    )
-    vehiculo = models.ForeignKey(
-        "vehiculos.Vehiculo", on_delete=models.PROTECT, related_name="reservas"
-    )
-    fecha_inicio = models.DateTimeField()
-    fecha_fin = models.DateTimeField()
-    estado = models.CharField(max_length=12, choices=ESTADOS, default="pendiente")
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table = "reservas"
-        verbose_name = "Reserva"
-        verbose_name_plural = "Reservas"
-        ordering = ["-created_at"]
-
-    def __str__(self):
-        return f"Reserva {self.vehiculo} - {self.espacio} [{self.get_estado_display()}]"

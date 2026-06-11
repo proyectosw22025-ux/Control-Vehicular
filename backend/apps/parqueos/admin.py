@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import CategoriaEspacio, ZonaParqueo, EspacioParqueo, SesionParqueo, Reserva
+from .models import CategoriaEspacio, ZonaParqueo, EspacioParqueo, SesionParqueo
 
 
 @admin.register(CategoriaEspacio)
@@ -22,10 +22,4 @@ class EspacioParqueoAdmin(admin.ModelAdmin):
 @admin.register(SesionParqueo)
 class SesionParqueoAdmin(admin.ModelAdmin):
     list_display = ("espacio", "vehiculo", "hora_entrada", "hora_salida", "estado")
-    list_filter = ("estado",)
-
-
-@admin.register(Reserva)
-class ReservaAdmin(admin.ModelAdmin):
-    list_display = ("espacio", "vehiculo", "fecha_inicio", "fecha_fin", "estado")
     list_filter = ("estado",)

@@ -280,8 +280,6 @@ class Command(BaseCommand):
              "Vehículo aprobado",               "Tu vehículo {placa} fue aprobado y puede ingresar al campus."),
             ("vehiculo_rechazado", "Vehículo rechazado",       "Tu solicitud de registro fue rechazada",
              "Vehículo rechazado",              "Tu vehículo {placa} no fue aprobado. Contacta administración."),
-            ("reserva_proxima",    "Reserva próxima a vencer", "Tu reserva de espacio de parqueo está por vencer",
-             "Reserva por vencer",              "Tu reserva en {espacio} vence a las {fecha}."),
         ]
         for codigo, nombre, descripcion, tpl_titulo, tpl_cuerpo in tipos:
             _, created = TipoNotificacion.objects.get_or_create(

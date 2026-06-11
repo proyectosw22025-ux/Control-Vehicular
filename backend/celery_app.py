@@ -19,14 +19,9 @@ app.conf.beat_schedule = {
         "task": "acceso.limpiar_pases_expirados",
         "schedule": 3600.0,
     },
-    # Cada hora — expirar reservas de parqueo no usadas
-    "expirar-reservas-cada-hora": {
-        "task": "acceso.expirar_reservas",
-        "schedule": 3600.0,
-    },
     # Cada 4 horas — alertar sesiones de parqueo anormalmente largas
     "alertar-sesiones-largas": {
-        "task": "acceso.alertar_sesiones_largas",
+        "task": "parqueos.alertar_sesiones_largas",
         "schedule": 14400.0,
     },
     # Diariamente a las 7:00 AM — alertas de SOAT, técnica y circulación próximos a vencer

@@ -18,10 +18,10 @@ import {
 import { useAuth } from '../hooks/useAuth'
 
 const ESTADO_COLOR: Record<string, string> = {
-  disponible:          'bg-green-100 text-green-700 border-green-200',
-  ocupado:             'bg-red-100 text-red-700 border-red-200',
-  reservado:           'bg-blue-100 text-blue-700 border-blue-200',
-  'fuera de servicio': 'bg-slate-100 text-slate-500 border-slate-200',
+  disponible:    'bg-green-100 text-green-700 border-green-200',
+  ocupado:       'bg-red-100 text-red-700 border-red-200',
+  reservado:     'bg-blue-100 text-blue-700 border-blue-200',
+  mantenimiento: 'bg-slate-100 text-slate-500 border-slate-200',
 }
 
 // Categorías que requieren rol específico
@@ -34,7 +34,10 @@ const CATEGORIA_ROL: Record<string, string[]> = {
   'Visitante':              [],  // todos
 }
 
-function compatibilidadCategoria(categoriaNombre: string, roles: string[]): 'ok' | 'warn' | 'error' {
+function compatibilidadCategoria(categoriaNombre: string, roles: string[], esDiscapacidad?: boolean): 'ok' | 'warn' {
+  // Espacios de discapacidad siempre piden confirmación del guardia:
+  // el sistema no registra permisos de discapacidad, la verificación es presencial.
+  if (esDiscapacidad) return 'warn'
   const requeridos = CATEGORIA_ROL[categoriaNombre]
   if (requeridos === undefined || requeridos.length === 0) return 'ok'
   if (roles.some(r => requeridos.includes(r))) return 'ok'
@@ -125,7 +128,14 @@ export default function Parqueos() {
     const espacioId  = espacioSel?.id   ?? parseInt(f.get('espacioId') as string)
     const vehiculoId = vehiculoSel?.id  ?? parseInt(f.get('vehiculoId') as string)
     if (!espacioId || !vehiculoId) { setError('Selecciona un espacio y un vehículo'); return }
-    iniciarSesion({ variables: { input: { espacioId, vehiculoId } } })
+    // Si el guardia confirma a pesar de la advertencia de categoría, se envía el
+    // override explícito — el backend lo registra en el log de auditoría.
+    const espacio  = espacioSel ?? espacios.find((esp: any) => esp.id === espacioId)
+    const vehiculo = vehiculoSel ?? vehiculos.find((v: any) => v.id === vehiculoId)
+    const incompatible = espacio?.categoria
+      ? compatibilidadCategoria(espacio.categoria.nombre, vehiculo?.propietarioRoles ?? [], espacio.categoria.esDiscapacidad) === 'warn'
+      : false
+    iniciarSesion({ variables: { input: { espacioId, vehiculoId, permitirCategoriaIncompatible: incompatible } } })
   }
 
   function handleCrearZona(e: FormEvent<HTMLFormElement>) {
@@ -156,7 +166,7 @@ export default function Parqueos() {
 
   // Compatibilidad de categoría
   const compCat = vehiculoSel && espacioSel?.categoria
-    ? compatibilidadCategoria(espacioSel.categoria.nombre, vehiculoSel.propietarioRoles ?? [])
+    ? compatibilidadCategoria(espacioSel.categoria.nombre, vehiculoSel.propietarioRoles ?? [], espacioSel.categoria.esDiscapacidad)
     : 'ok'
 
   // Hora actual formateada
@@ -531,7 +541,7 @@ export default function Parqueos() {
                       <p className="text-xs font-medium">
                         {compCat === 'ok'
                           ? `El rol del propietario es compatible con el espacio "${espacioSel.categoria.nombre}"`
-                          : `Este espacio es categoría "${espacioSel.categoria.nombre}". Verifica que el propietario tiene permiso para usarlo.`}
+                          : `Este espacio es categoría "${espacioSel.categoria.nombre}". Verifica el permiso del propietario — al confirmar, la excepción queda registrada en auditoría.`}
                       </p>
                     </div>
                   )}
@@ -649,7 +659,7 @@ function MapaParqueoLive({ zonas, esPersonal, onCerrarSesion }: { zonas: any[]; 
               <div className="grid gap-1.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(56px, 1fr))' }}>
                 {esps.map((esp: any) => (
                   <EspacioBtn key={esp.id} esp={esp} esPersonal={esPersonal}
-                    onCerrar={() => onCerrarSesion(esp.sesionActivaId ?? esp.id)} />
+                    onCerrar={() => { if (esp.sesionActivaId) onCerrarSesion(esp.sesionActivaId) }} />
                 ))}
               </div>
             )}

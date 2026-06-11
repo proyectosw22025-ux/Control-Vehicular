@@ -1030,6 +1030,9 @@ class AccesoMutation:
                     f"Sesión de {resultado.vehiculo.placa} cerrada automáticamente al registrar salida QR",
                     request=info.context.request,
                 )
+                # Invalidar cache del semáforo y avisar por WS — igual que el cierre manual
+                from apps.parqueos.schema import broadcast_disponibilidad
+                broadcast_disponibilidad(sesion_activa.espacio.zona_id)
 
         if propietario:
             from apps.notificaciones.utils import enviar_notificacion
@@ -1173,6 +1176,9 @@ class AccesoMutation:
                 sesion.save(update_fields=["hora_salida", "estado"])
                 sesion.espacio.estado = "disponible"
                 sesion.espacio.save(update_fields=["estado"])
+                # Invalidar cache del semáforo y avisar por WS — igual que el cierre manual
+                from apps.parqueos.schema import broadcast_disponibilidad
+                broadcast_disponibilidad(sesion.espacio.zona_id)
 
         # Detección de anomalías (manual — misma lógica que acceso QR)
         alertas_detectadas: list = []
