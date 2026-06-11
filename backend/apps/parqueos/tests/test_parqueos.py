@@ -21,15 +21,15 @@ mutation CerrarSesion($sesionId: Int!) {
 
 
 @pytest.mark.django_db
-def test_iniciar_sesion_exitosa(gql_admin, vehiculo_activo, espacio_disponible):
+def test_iniciar_sesion_exitosa(gql_admin, vehiculo_en_campus, espacio_disponible):
     r = graphql(gql_admin, INICIAR, {
         "espacioId": espacio_disponible.id,
-        "vehiculoId": vehiculo_activo.id,
+        "vehiculoId": vehiculo_en_campus.id,
     })
     assert "errors" not in r
     data = r["data"]["iniciarSesionParqueo"]
     assert data["estado"] == "activa"
-    assert data["placaVehiculo"] == vehiculo_activo.placa
+    assert data["placaVehiculo"] == vehiculo_en_campus.placa
 
     # El espacio debe quedar ocupado
     espacio_disponible.refresh_from_db()
@@ -37,10 +37,10 @@ def test_iniciar_sesion_exitosa(gql_admin, vehiculo_activo, espacio_disponible):
 
 
 @pytest.mark.django_db
-def test_no_iniciar_sesion_en_espacio_ocupado(gql_admin, vehiculo_activo, espacio_ocupado):
+def test_no_iniciar_sesion_en_espacio_ocupado(gql_admin, vehiculo_en_campus, espacio_ocupado):
     r = graphql(gql_admin, INICIAR, {
         "espacioId": espacio_ocupado.id,
-        "vehiculoId": vehiculo_activo.id,
+        "vehiculoId": vehiculo_en_campus.id,
     })
     assert "errors" in r
     assert "no está disponible" in r["errors"][0]["message"]
@@ -48,23 +48,23 @@ def test_no_iniciar_sesion_en_espacio_ocupado(gql_admin, vehiculo_activo, espaci
 
 @pytest.mark.django_db
 def test_vehiculo_no_puede_tener_dos_sesiones_activas(
-    db, gql_admin, vehiculo_activo, zona, categoria_espacio
+    db, gql_admin, vehiculo_en_campus, zona, categoria_espacio
 ):
     e1 = EspacioParqueo.objects.create(zona=zona, categoria=categoria_espacio, numero="B01", estado="disponible")
     e2 = EspacioParqueo.objects.create(zona=zona, categoria=categoria_espacio, numero="B02", estado="disponible")
 
-    graphql(gql_admin, INICIAR, {"espacioId": e1.id, "vehiculoId": vehiculo_activo.id})
-    r = graphql(gql_admin, INICIAR, {"espacioId": e2.id, "vehiculoId": vehiculo_activo.id})
+    graphql(gql_admin, INICIAR, {"espacioId": e1.id, "vehiculoId": vehiculo_en_campus.id})
+    r = graphql(gql_admin, INICIAR, {"espacioId": e2.id, "vehiculoId": vehiculo_en_campus.id})
 
     assert "errors" in r
     assert "sesión de parqueo activa" in r["errors"][0]["message"]
 
 
 @pytest.mark.django_db
-def test_cerrar_sesion_libera_espacio(gql_admin, vehiculo_activo, espacio_disponible):
+def test_cerrar_sesion_libera_espacio(gql_admin, vehiculo_en_campus, espacio_disponible):
     r_iniciar = graphql(gql_admin, INICIAR, {
         "espacioId": espacio_disponible.id,
-        "vehiculoId": vehiculo_activo.id,
+        "vehiculoId": vehiculo_en_campus.id,
     })
     sesion_id = r_iniciar["data"]["iniciarSesionParqueo"]["id"]
 
@@ -86,7 +86,42 @@ def test_cerrar_sesion_inexistente(gql_admin):
 
 
 @pytest.mark.django_db
-def test_espacio_inexistente_lanza_error(gql_admin, vehiculo_activo):
-    r = graphql(gql_admin, INICIAR, {"espacioId": 9999, "vehiculoId": vehiculo_activo.id})
+def test_espacio_inexistente_lanza_error(gql_admin, vehiculo_en_campus):
+    r = graphql(gql_admin, INICIAR, {"espacioId": 9999, "vehiculoId": vehiculo_en_campus.id})
     assert "errors" in r
     assert "no encontrado" in r["errors"][0]["message"]
+
+
+# ── Coherencia acceso ↔ parqueo ───────────────────────────────────────────────
+
+@pytest.mark.django_db
+def test_no_estacionar_vehiculo_que_nunca_ingreso_al_campus(gql_admin, vehiculo_activo, espacio_disponible):
+    """Un vehículo sin ningún registro de entrada no puede ocupar un espacio."""
+    r = graphql(gql_admin, INICIAR, {
+        "espacioId": espacio_disponible.id,
+        "vehiculoId": vehiculo_activo.id,
+    })
+    assert "errors" in r
+    assert "no registra ingreso" in r["errors"][0]["message"]
+
+
+@pytest.mark.django_db
+def test_no_estacionar_vehiculo_que_ya_salio_del_campus(gql_admin, vehiculo_en_campus, punto_acceso, espacio_disponible):
+    """Si el último acceso del vehículo es una SALIDA, ya no está dentro — no puede estacionar."""
+    from datetime import timedelta
+    from django.utils import timezone
+    from apps.acceso.models import RegistroAcceso
+    salida = RegistroAcceso.objects.create(
+        punto_acceso=punto_acceso, vehiculo=vehiculo_en_campus,
+        tipo="salida", metodo_acceso="manual",
+    )
+    # auto_now_add puede empatar con la entrada del fixture — forzar posterioridad
+    RegistroAcceso.objects.filter(pk=salida.pk).update(
+        timestamp=timezone.now() + timedelta(seconds=5)
+    )
+    r = graphql(gql_admin, INICIAR, {
+        "espacioId": espacio_disponible.id,
+        "vehiculoId": vehiculo_en_campus.id,
+    })
+    assert "errors" in r
+    assert "no registra ingreso" in r["errors"][0]["message"]

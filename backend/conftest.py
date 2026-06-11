@@ -124,6 +124,18 @@ def punto_acceso(db):
     return PuntoAcceso.objects.create(nombre="Entrada Principal", tipo="ambos", ubicacion="Portón norte")
 
 
+@pytest.fixture
+def vehiculo_en_campus(vehiculo_activo, punto_acceso):
+    """Vehículo activo que YA ingresó al campus (último acceso = entrada).
+    Requerido para iniciar sesiones de parqueo — regla de coherencia acceso↔parqueo."""
+    from apps.acceso.models import RegistroAcceso
+    RegistroAcceso.objects.create(
+        punto_acceso=punto_acceso, vehiculo=vehiculo_activo,
+        tipo="entrada", metodo_acceso="manual",
+    )
+    return vehiculo_activo
+
+
 # ── Parqueos ─────────────────────────────────────────────────────────────────
 
 @pytest.fixture

@@ -19,7 +19,9 @@ import {
 import { useAuth } from '../hooks/useAuth'
 import { ZONAS_QUERY, ESPACIOS_POR_ZONA_QUERY } from '../graphql/queries/parqueos'
 import { VEHICULOS_QUERY } from '../graphql/queries/vehiculos'
+import { PUNTOS_ACCESO_QUERY } from '../graphql/queries/acceso'
 import { INICIAR_SESION_MUTATION } from '../graphql/mutations/parqueos'
+import { REGISTRAR_ACCESO_MANUAL_MUTATION } from '../graphql/mutations/acceso'
 import { useDisponibilidadZonas, type AlertaSaturacion } from '../hooks/useDisponibilidadZonas'
 
 // ── Coordenadas exactas verificadas en campo ──────────────────────────────
@@ -549,6 +551,12 @@ export default function ParqueoDemo() {
     onError(e) { setMsg(`❌ ${e.message}`) },
   })
 
+  // El backend exige que el vehículo esté DENTRO del campus para estacionar
+  // (coherencia acceso↔parqueo). La simulación cruza una portería real, así que
+  // registramos esa entrada de verdad — el demo ejercita el flujo completo.
+  const { data: puntosData } = useQuery(PUNTOS_ACCESO_QUERY)
+  const [registrarEntrada] = useMutation(REGISTRAR_ACCESO_MANUAL_MUTATION)
+
   const vehiculos  = vehData?.vehiculos?.items ?? []
   const vehSel     = vehiculos.find((v:any) => v.id===vehiculoSelId)
 
@@ -634,8 +642,26 @@ export default function ParqueoDemo() {
     setTipoV(v?.tipo?.nombre ?? 'Automóvil')
   }
 
-  function confirmar() {
+  async function confirmar() {
     if (!vehiculoSelId || !primerEsp) { setMsg('Selecciona tu vehículo'); return }
+    // Paso 1: registrar la entrada al campus por la portería simulada.
+    // Si el vehículo ya estaba dentro ("ya está dentro"), continuamos normal.
+    const punto = puntosData?.puntosAcceso?.find((p: any) => p.activo) ?? puntosData?.puntosAcceso?.[0]
+    if (punto && vehSel?.placa) {
+      try {
+        await registrarEntrada({ variables: { input: {
+          puntoAccesoId: parseInt(punto.id),
+          placa: vehSel.placa,
+          tipo: 'entrada',
+          observacion: 'Entrada registrada desde la guía de parqueo (demo)',
+        } } })
+      } catch (e: any) {
+        if (!/ya está dentro/i.test(e?.message ?? '')) {
+          setMsg(`❌ ${e.message}`); return
+        }
+      }
+    }
+    // Paso 2: iniciar la sesión de parqueo (ahora el vehículo sí está dentro)
     iniciarSesion({ variables: { input: { espacioId: primerEsp.id, vehiculoId: vehiculoSelId } } })
   }
   function simularSalida() {

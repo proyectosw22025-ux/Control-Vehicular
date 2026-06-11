@@ -35,9 +35,9 @@ def test_usuario_no_autenticado_no_puede_iniciar_sesion(gql_client, vehiculo_act
 
 
 @pytest.mark.django_db
-def test_guardia_puede_iniciar_sesion(gql_guardia, vehiculo_activo, espacio_disponible):
+def test_guardia_puede_iniciar_sesion(gql_guardia, vehiculo_en_campus, espacio_disponible):
     """Un guardia autenticado puede iniciar sesión de parqueo."""
-    r = graphql(gql_guardia, INICIAR, {"espacioId": espacio_disponible.id, "vehiculoId": vehiculo_activo.id})
+    r = graphql(gql_guardia, INICIAR, {"espacioId": espacio_disponible.id, "vehiculoId": vehiculo_en_campus.id})
     assert "errors" not in r
     assert r["data"]["iniciarSesionParqueo"]["estado"] == "activa"
 
@@ -146,21 +146,21 @@ def espacio_docente(db, zona):
 
 
 @pytest.mark.django_db
-def test_espacio_docente_rechaza_propietario_sin_rol(gql_guardia, vehiculo_activo, espacio_docente):
+def test_espacio_docente_rechaza_propietario_sin_rol(gql_guardia, vehiculo_en_campus, espacio_docente):
     """El dueño de vehiculo_activo no tiene rol Docente → asignación bloqueada."""
     r = graphql(gql_guardia, INICIAR, {
-        "espacioId": espacio_docente.id, "vehiculoId": vehiculo_activo.id,
+        "espacioId": espacio_docente.id, "vehiculoId": vehiculo_en_campus.id,
     })
     assert "errors" in r
     assert "Docente" in r["errors"][0]["message"]
 
 
 @pytest.mark.django_db
-def test_guardia_puede_autorizar_excepcion_de_categoria(gql_guardia, vehiculo_activo, espacio_docente):
+def test_guardia_puede_autorizar_excepcion_de_categoria(gql_guardia, vehiculo_en_campus, espacio_docente):
     """Con el override explícito, el guardia asigna y la excepción queda auditada."""
     from apps.acceso.models import AuditLog
     r = graphql(gql_guardia, INICIAR_CON_OVERRIDE, {
-        "espacioId": espacio_docente.id, "vehiculoId": vehiculo_activo.id, "permitir": True,
+        "espacioId": espacio_docente.id, "vehiculoId": vehiculo_en_campus.id, "permitir": True,
     })
     assert "errors" not in r
     assert r["data"]["iniciarSesionParqueo"]["estado"] == "activa"
@@ -169,10 +169,10 @@ def test_guardia_puede_autorizar_excepcion_de_categoria(gql_guardia, vehiculo_ac
 
 
 @pytest.mark.django_db
-def test_propietario_no_puede_usar_override_de_categoria(gql_usuario_normal, vehiculo_activo, espacio_docente):
+def test_propietario_no_puede_usar_override_de_categoria(gql_usuario_normal, vehiculo_en_campus, espacio_docente):
     """El override es prerrogativa del personal: un propietario no puede auto-autorizarse."""
     r = graphql(gql_usuario_normal, INICIAR_CON_OVERRIDE, {
-        "espacioId": espacio_docente.id, "vehiculoId": vehiculo_activo.id, "permitir": True,
+        "espacioId": espacio_docente.id, "vehiculoId": vehiculo_en_campus.id, "permitir": True,
     })
     assert "errors" in r
     assert "Docente" in r["errors"][0]["message"]

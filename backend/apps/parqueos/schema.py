@@ -621,6 +621,25 @@ class ParqueosMutation:
         if vehiculo.estado in ESTADOS_BLOQUEADOS:
             raise Exception(ESTADOS_BLOQUEADOS[vehiculo.estado])
 
+        # ── Coherencia con control de acceso ─────────────────────────────────
+        # Solo puede ocupar un espacio un vehículo que está físicamente dentro
+        # del campus: su último registro de acceso debe ser una ENTRADA.
+        # Sin esto, el parqueo y el portón viven en mundos separados (se podía
+        # "estacionar" un vehículo que jamás ingresó, o que ya salió).
+        from apps.acceso.models import RegistroAcceso
+        ultimo_acceso = (
+            RegistroAcceso.objects
+            .filter(vehiculo=vehiculo)
+            .order_by("-timestamp", "-pk")  # -pk desempata timestamps idénticos
+            .values("tipo")
+            .first()
+        )
+        if not ultimo_acceso or ultimo_acceso["tipo"] != "entrada":
+            raise Exception(
+                f"El vehículo {vehiculo.placa} no registra ingreso al campus. "
+                "Registre su entrada en el control de acceso antes de asignar un espacio de parqueo."
+            )
+
         from django.db import IntegrityError
 
         try:

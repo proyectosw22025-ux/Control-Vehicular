@@ -141,15 +141,15 @@ def test_espacios_por_zona_retorna_estado_y_placa(gql_admin, zona_activa, espaci
 
 
 @pytest.mark.django_db
-def test_iniciar_sesion_desde_demo(gql_admin, vehiculo_activo, espacio_libre):
+def test_iniciar_sesion_desde_demo(gql_admin, vehiculo_en_campus, espacio_libre):
     """El demo crea una SesionParqueo real y marca el espacio como ocupado."""
     r = graphql(gql_admin, INICIAR_SESION, {
-        "input": {"espacioId": espacio_libre.id, "vehiculoId": vehiculo_activo.id}
+        "input": {"espacioId": espacio_libre.id, "vehiculoId": vehiculo_en_campus.id}
     })
     assert "errors" not in r, r.get("errors")
     data = r["data"]["iniciarSesionParqueo"]
     assert data["estado"] == "activa"
-    assert data["placaVehiculo"] == vehiculo_activo.placa
+    assert data["placaVehiculo"] == vehiculo_en_campus.placa
     assert data["espacio"]["numero"] == espacio_libre.numero
 
     espacio_libre.refresh_from_db()
@@ -157,22 +157,22 @@ def test_iniciar_sesion_desde_demo(gql_admin, vehiculo_activo, espacio_libre):
 
 
 @pytest.mark.django_db
-def test_sesion_demo_aparece_en_sesiones_activas(gql_admin, vehiculo_activo, espacio_libre):
+def test_sesion_demo_aparece_en_sesiones_activas(gql_admin, vehiculo_en_campus, espacio_libre):
     """Una sesión creada desde el demo aparece en sesionesActivas."""
     graphql(gql_admin, INICIAR_SESION, {
-        "input": {"espacioId": espacio_libre.id, "vehiculoId": vehiculo_activo.id}
+        "input": {"espacioId": espacio_libre.id, "vehiculoId": vehiculo_en_campus.id}
     })
     r = graphql(gql_admin, SESIONES_ACTIVAS, {})
     assert "errors" not in r
     placas = [s["placaVehiculo"] for s in r["data"]["sesionesActivas"]]
-    assert vehiculo_activo.placa in placas
+    assert vehiculo_en_campus.placa in placas
 
 
 @pytest.mark.django_db
-def test_cerrar_sesion_libera_espacio(gql_admin, vehiculo_activo, espacio_libre):
+def test_cerrar_sesion_libera_espacio(gql_admin, vehiculo_en_campus, espacio_libre):
     """Al cerrar la sesión del demo el espacio vuelve a 'disponible'."""
     r_inicio = graphql(gql_admin, INICIAR_SESION, {
-        "input": {"espacioId": espacio_libre.id, "vehiculoId": vehiculo_activo.id}
+        "input": {"espacioId": espacio_libre.id, "vehiculoId": vehiculo_en_campus.id}
     })
     sesion_id = r_inicio["data"]["iniciarSesionParqueo"]["id"]
 
@@ -180,7 +180,7 @@ def test_cerrar_sesion_libera_espacio(gql_admin, vehiculo_activo, espacio_libre)
     assert "errors" not in r_cierre
     data = r_cierre["data"]["cerrarSesionParqueo"]
     assert data["estado"] in ("cerrada", "finalizada")
-    assert data["placaVehiculo"] == vehiculo_activo.placa
+    assert data["placaVehiculo"] == vehiculo_en_campus.placa
 
     espacio_libre.refresh_from_db()
     assert espacio_libre.estado == "disponible"
@@ -200,10 +200,10 @@ def test_vehiculo_expone_propietario_ci_y_roles(gql_admin, vehiculo_activo):
 
 
 @pytest.mark.django_db
-def test_espacio_ocupa_sesion_activa_id_correcto(gql_admin, vehiculo_activo, zona_activa, espacio_libre):
+def test_espacio_ocupa_sesion_activa_id_correcto(gql_admin, vehiculo_en_campus, zona_activa, espacio_libre):
     """El campo sesionActivaId retorna el ID correcto para cerrar desde el botón 'Salida'."""
     r_inicio = graphql(gql_admin, INICIAR_SESION, {
-        "input": {"espacioId": espacio_libre.id, "vehiculoId": vehiculo_activo.id}
+        "input": {"espacioId": espacio_libre.id, "vehiculoId": vehiculo_en_campus.id}
     })
     sesion_id_esperado = r_inicio["data"]["iniciarSesionParqueo"]["id"]
 
@@ -212,23 +212,23 @@ def test_espacio_ocupa_sesion_activa_id_correcto(gql_admin, vehiculo_activo, zon
     esp_data = next((e for e in espacios if e["id"] == espacio_libre.id), None)
     assert esp_data is not None
     assert esp_data["sesionActivaId"] == sesion_id_esperado
-    assert esp_data["placaVehiculoActivo"] == vehiculo_activo.placa
+    assert esp_data["placaVehiculoActivo"] == vehiculo_en_campus.placa
 
     graphql(gql_admin, CERRAR_SESION, {"sesionId": sesion_id_esperado})
 
 
 @pytest.mark.django_db
-def test_no_se_pueden_crear_dos_sesiones_mismo_espacio(gql_admin, vehiculo_activo, espacio_libre):
+def test_no_se_pueden_crear_dos_sesiones_mismo_espacio(gql_admin, vehiculo_en_campus, espacio_libre):
     """Un espacio ocupado no acepta una segunda sesión activa."""
     r1 = graphql(gql_admin, INICIAR_SESION, {
-        "input": {"espacioId": espacio_libre.id, "vehiculoId": vehiculo_activo.id}
+        "input": {"espacioId": espacio_libre.id, "vehiculoId": vehiculo_en_campus.id}
     })
     assert "errors" not in r1
     sesion_id = r1["data"]["iniciarSesionParqueo"]["id"]
 
     # Segunda sesión con el mismo espacio — debe fallar
     r2 = graphql(gql_admin, INICIAR_SESION, {
-        "input": {"espacioId": espacio_libre.id, "vehiculoId": vehiculo_activo.id}
+        "input": {"espacioId": espacio_libre.id, "vehiculoId": vehiculo_en_campus.id}
     })
     assert "errors" in r2
 
