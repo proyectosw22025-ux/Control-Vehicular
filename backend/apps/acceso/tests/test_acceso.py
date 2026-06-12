@@ -164,6 +164,34 @@ def test_acceso_manual_genera_audit_log(gql_guardia, vehiculo_activo, punto_acce
     assert AuditLog.objects.filter(accion="acceso_manual").exists()
 
 
+# ── Identidad en el acceso por QR ───────────────────────────────────────────
+# El QR es la credencial del vehículo; quien lo escanea debe ser personal
+# identificado. Un QR fotografiado no debe servir para registrar accesos
+# remotamente.
+
+@pytest.mark.django_db
+def test_acceso_qr_requiere_autenticacion(gql_client, vehiculo_activo, punto_acceso):
+    r = graphql(gql_client, REGISTRAR_ACCESO, {
+        "puntoId": punto_acceso.id,
+        "codigo": vehiculo_activo.codigo_qr,
+        "tipo": "entrada",
+    })
+    assert "errors" in r
+    assert "autenticación requerida" in r["errors"][0]["message"].lower()
+
+
+@pytest.mark.django_db
+def test_acceso_qr_solo_personal(gql_usuario_normal, vehiculo_activo, punto_acceso):
+    """Un usuario común no puede operar el escáner del portón — ni con un QR válido."""
+    r = graphql(gql_usuario_normal, REGISTRAR_ACCESO, {
+        "puntoId": punto_acceso.id,
+        "codigo": vehiculo_activo.codigo_qr,
+        "tipo": "entrada",
+    })
+    assert "errors" in r
+    assert "guardias" in r["errors"][0]["message"].lower()
+
+
 # ── Identidad y propiedad en el acceso manual ──────────────────────────────
 # El registro de accesos es evidencia: nadie escribe en él sin identificarse,
 # y un usuario común solo declara movimientos de SUS propios vehículos.

@@ -1,15 +1,11 @@
 from celery import shared_task
 from django.utils import timezone
-from datetime import timedelta
 
 
-@shared_task(name="acceso.limpiar_qr_expirados")
-def limpiar_qr_expirados():
-    from .models import QrSesion
-    resultado = QrSesion.objects.filter(
-        fecha_expiracion__lt=timezone.now(), usado=False
-    ).update(usado=True)
-    return f"QR de delegación expirados: {resultado}"
+# NOTA: la antigua task limpiar_qr_expirados se eliminó — crasheaba cada hora
+# porque QrSesion.usado es una @property (no un campo) desde el modelo de usos
+# múltiples. Era además redundante: QrSesion.vigente valida fecha_expiracion
+# en el momento del uso, así que un QR vencido nunca puede consumirse.
 
 
 @shared_task(name="acceso.limpiar_pases_expirados")

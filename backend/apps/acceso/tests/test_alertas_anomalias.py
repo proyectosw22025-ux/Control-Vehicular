@@ -83,8 +83,18 @@ def test_marcar_alerta_revisada(gql_admin, alerta_frecuencia):
 
 
 @pytest.mark.django_db
-def test_marcar_revisada_solo_admin(gql_guardia, alerta_frecuencia):
+def test_guardia_puede_marcar_revisada(gql_guardia, alerta_frecuencia):
+    """El guardia atiende las alertas desde su panel — puede marcarlas revisadas."""
     r = graphql(gql_guardia, MARCAR_REVISADA, {"id": alerta_frecuencia.id})
+    assert "errors" not in r
+    alerta_frecuencia.refresh_from_db()
+    assert alerta_frecuencia.revisada is True
+
+
+@pytest.mark.django_db
+def test_usuario_normal_no_puede_marcar_revisada(gql_usuario_normal, alerta_frecuencia):
+    """Las alertas de seguridad son operativas — un usuario común no las gestiona."""
+    r = graphql(gql_usuario_normal, MARCAR_REVISADA, {"id": alerta_frecuencia.id})
     assert "errors" in r
     alerta_frecuencia.refresh_from_db()
     assert alerta_frecuencia.revisada is False

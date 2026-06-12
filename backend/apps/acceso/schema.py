@@ -955,6 +955,17 @@ class AccesoMutation:
         que maneja concurrencia con select_for_update y caché Redis.
         """
         from .services import resolver_codigo
+        from apps.usuarios.utils import tiene_rol
+
+        # El QR es la credencial del vehículo, pero quien lo escanea debe ser
+        # personal de portón identificado. Sin esto, cualquiera que fotografíe
+        # un QR (p.ej. el permanente legacy, que es estático) podría registrar
+        # entradas/salidas remotamente y sin responsable en auditoría.
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida para registrar accesos")
+        if not (tiene_rol(user, "Guardia") or tiene_rol(user, "Administrador")):
+            raise Exception("Solo guardias y administradores pueden registrar accesos por QR")
 
         if input.tipo not in ["entrada", "salida"]:
             raise Exception("Tipo inválido. Opciones: entrada, salida")
@@ -971,7 +982,7 @@ class AccesoMutation:
         if resultado.vehiculo:
             _validar_transicion_acceso(resultado.vehiculo, input.tipo)
 
-        registrado_por = info.context.request.user if info.context.request.user.is_authenticated else None
+        registrado_por = user  # siempre autenticado — todo acceso QR tiene responsable
 
         # ── Autorización externa: observación automática con datos del proveedor ──
         obs_extra = ""

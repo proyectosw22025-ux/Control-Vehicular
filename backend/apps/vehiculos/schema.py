@@ -556,13 +556,31 @@ class VehiculosMutation:
     @strawberry.mutation
     def registrar_vehiculo(self, info: Info, input: CrearVehiculoInput) -> VehiculoType:
         from apps.usuarios.models import Usuario
+        from django.db.models import Value
+        from django.db.models.functions import Replace
+        from .utils import normalizar_placa, placa_comparable
         user = info.context.request.user
         if not user.is_authenticated:
             raise Exception("Autenticación requerida")
         if not tiene_rol(user, "Administrador") and input.propietario_id != user.pk:
             raise Exception("Solo puedes registrar vehículos a tu propia cuenta")
-        if Vehiculo.objects.filter(placa=input.placa.upper()).exists():
-            raise Exception(f"La placa {input.placa.upper()} ya está registrada en el sistema")
+
+        # Placa canónica: valida formato boliviano y unifica a "ABC-1234".
+        # La unicidad compara SIN separadores — sin esto, "ZYX123" y "ZYX-123"
+        # se registraban como dos vehículos distintos y el lookup tolerante del
+        # portón encontraba ambos, operando sobre uno arbitrario.
+        try:
+            placa_canonica = normalizar_placa(input.placa)
+        except ValueError as e:
+            raise Exception(str(e))
+        duplicada = (
+            Vehiculo.objects
+            .annotate(_comp=Replace(Replace("placa", Value("-"), Value("")), Value(" "), Value("")))
+            .filter(_comp=placa_comparable(placa_canonica))
+            .exists()
+        )
+        if duplicada:
+            raise Exception(f"La placa {placa_canonica} ya está registrada en el sistema")
         tipo       = TipoVehiculo.objects.filter(pk=input.tipo_id).first()
         propietario = Usuario.objects.filter(pk=input.propietario_id).first()
         if not tipo:
@@ -575,7 +593,7 @@ class VehiculosMutation:
         estado_inicial = "activo" if tiene_rol(user, "Administrador") else "pendiente"
         with transaction.atomic():
             vehiculo = Vehiculo.objects.create(
-                placa=input.placa.upper(),
+                placa=placa_canonica,
                 tipo=tipo, propietario=propietario,
                 marca=input.marca, modelo=input.modelo,
                 anio=input.anio, color=input.color,

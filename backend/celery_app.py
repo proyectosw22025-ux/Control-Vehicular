@@ -11,10 +11,6 @@ app.autodiscover_tasks()
 # Tareas periódicas — se ejecutan vía celery beat
 app.conf.beat_schedule = {
     # Cada hora — limpieza de accesos
-    "limpiar-qr-cada-hora": {
-        "task": "acceso.limpiar_qr_expirados",
-        "schedule": 3600.0,
-    },
     "limpiar-pases-cada-hora": {
         "task": "acceso.limpiar_pases_expirados",
         "schedule": 3600.0,

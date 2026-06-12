@@ -125,7 +125,7 @@ def test_resolver_qr_delegacion_ya_usado_falla(vehiculo_activo, admin):
         codigo_hash="DELEG_USADO_HASH",
         motivo="Test ya usado",
         fecha_expiracion=timezone.now() + timedelta(hours=1),
-        usado=True,
+        usos_max=1, usos_actual=1,  # todos los usos consumidos
         generado_por=admin,
     )
     with pytest.raises(Exception, match="no reconocido"):

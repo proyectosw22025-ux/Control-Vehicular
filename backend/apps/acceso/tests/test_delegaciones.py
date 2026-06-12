@@ -176,7 +176,7 @@ def test_revocar_qr_ya_usado_bloqueado(gql_usuario_normal, vehiculo_activo):
         codigo_hash="abc123usado",
         motivo="Ya usado",
         fecha_expiracion=timezone.now() + timedelta(hours=2),
-        usado=True,
+        usos_max=1, usos_actual=1,  # todos los usos consumidos
     )
     r = graphql(gql_usuario_normal, REVOCAR_QR, {"qrId": qr.id})
     assert "errors" in r
@@ -201,17 +201,17 @@ def test_mis_delegaciones_retorna_solo_vigentes(gql_usuario_normal, vehiculo_act
     # QR vigente
     QrSesion.objects.create(
         vehiculo=vehiculo_activo, codigo_hash="vigente123",
-        motivo="Vigente", fecha_expiracion=timezone.now() + timedelta(hours=4), usado=False,
+        motivo="Vigente", fecha_expiracion=timezone.now() + timedelta(hours=4),
     )
     # QR usado
     QrSesion.objects.create(
         vehiculo=vehiculo_activo, codigo_hash="usado456",
-        motivo="Usado", fecha_expiracion=timezone.now() + timedelta(hours=4), usado=True,
+        motivo="Usado", fecha_expiracion=timezone.now() + timedelta(hours=4), usos_max=1, usos_actual=1,
     )
     # QR expirado
     QrSesion.objects.create(
         vehiculo=vehiculo_activo, codigo_hash="expirado789",
-        motivo="Expirado", fecha_expiracion=timezone.now() - timedelta(hours=1), usado=False,
+        motivo="Expirado", fecha_expiracion=timezone.now() - timedelta(hours=1),
     )
 
     r = graphql(gql_usuario_normal, MIS_DELEGACIONES)
