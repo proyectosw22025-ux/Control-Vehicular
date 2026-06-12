@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, lazy, Suspense } from 'react'
+import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Users, Car, ParkingSquare,
@@ -32,7 +32,103 @@ const NAV_ITEMS = [
   { to: '/rastreo-en-vivo', label: '📡 Rastreo en Vivo',   icon: Navigation, roles: ['all'] },
 ]
 
+const PAGE_TITLES: Record<string, string> = {
+  '/':                       'Dashboard',
+  '/guardia':                'Panel Guardia',
+  '/usuarios':               'Usuarios',
+  '/vehiculos':              'Vehículos',
+  '/parqueos':               'Parqueos',
+  '/acceso':                 'Control de Acceso',
+  '/autorizaciones-externas':'Autorizaciones Externas',
+  '/visitantes':             'Visitantes',
+  '/infracciones':           'Infracciones',
+  '/notificaciones':         'Notificaciones',
+  '/reportes':               'Reportes',
+  '/auditoria':              'Auditoría',
+  '/mi-pase-qr':             'Mi Pase QR',
+  '/mis-accesos':            'Mis Accesos',
+  '/parqueo-demo':           'Guía de Parqueo',
+  '/rastreo-en-vivo':        'Rastreo en Vivo',
+  '/perfil':                 'Mi Perfil',
+}
+
 interface Toast extends NotifPayload { key: number }
+
+type NavItem = typeof NAV_ITEMS[number]
+
+// ── Navegación del sidebar ──────────────────────────────────────────────────
+// Vive FUERA de Layout a propósito: si se definiera adentro, cada render de
+// Layout crearía un componente nuevo y React desmontaría/remontaría el <nav>,
+// perdiendo la posición del scroll al navegar entre módulos.
+function SidebarNav({ items, conteo, onItemClick, onLogout }: {
+  items: NavItem[]
+  conteo: number
+  onItemClick?: () => void
+  onLogout: () => void
+}) {
+  const navRef = useRef<HTMLElement>(null)
+
+  // Al montar (p.ej. recargar la página estando en un módulo del fondo),
+  // dejar visible el ítem activo sin que el usuario tenga que buscarlo.
+  useEffect(() => {
+    navRef.current?.querySelector('[aria-current="page"]')
+      ?.scrollIntoView({ block: 'nearest' })
+  }, [])
+
+  return (
+    <>
+      <nav ref={navRef} className="flex-1 py-3 space-y-0.5 overflow-y-auto scrollbar-slim">
+        {items.map(({ to, label, icon: Icon }) => (
+          <NavLink
+            key={to}
+            to={to}
+            end={to === '/'}
+            onClick={onItemClick}
+            className={({ isActive }) =>
+              `flex items-center gap-3 px-4 py-2.5 text-sm transition-all
+               ${isActive
+                 ? 'text-white font-semibold border-l-2'
+                 : 'text-blue-100/70 hover:text-white hover:bg-white/10'}`
+            }
+            style={({ isActive }) => isActive ? { borderColor: '#e8951a', background: 'rgba(255,255,255,0.12)' } : {}}
+          >
+            <span className="relative shrink-0">
+              {/* Campana oscila una vez al montar cuando hay notificaciones sin leer */}
+              <Icon size={18}
+                className={to === '/notificaciones' && conteo > 0 ? 'animate-swing-bell' : ''} />
+              {to === '/notificaciones' && conteo > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full animate-badge-entrar">
+                  {conteo > 9 ? '9+' : conteo}
+                </span>
+              )}
+            </span>
+            <span>{label}</span>
+          </NavLink>
+        ))}
+      </nav>
+
+      <NavLink
+        to="/perfil"
+        onClick={onItemClick}
+        className={({ isActive }) =>
+          `flex items-center gap-3 px-4 py-2.5 text-sm transition-colors border-t border-slate-700
+           ${isActive ? 'bg-slate-600 text-white' : 'text-slate-300 hover:bg-slate-700 hover:text-white'}`
+        }
+      >
+        <UserCircle size={18} className="shrink-0" />
+        <span>Mi perfil</span>
+      </NavLink>
+
+      <button
+        onClick={() => { onLogout(); onItemClick?.() }}
+        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-slate-300 hover:bg-slate-700 hover:text-white border-t border-slate-700"
+      >
+        <LogOut size={18} className="shrink-0" />
+        <span>Cerrar sesión</span>
+      </button>
+    </>
+  )
+}
 
 function ToastPanel({ toasts, onClose }: { toasts: Toast[]; onClose: (key: number) => void }) {
   if (toasts.length === 0) return null
@@ -76,20 +172,6 @@ export default function Layout() {
   const location  = useLocation()
 
   // Cerrar sidebar mobile al cambiar de ruta + actualizar document.title
-  const PAGE_TITLES: Record<string, string> = {
-    '/':               'Dashboard',
-    '/guardia':        'Panel Guardia',
-    '/usuarios':       'Usuarios',
-    '/vehiculos':      'Vehículos',
-    '/parqueos':       'Parqueos',
-    '/acceso':         'Control de Acceso',
-    '/visitantes':     'Visitantes',
-    '/infracciones':   'Infracciones',
-    '/notificaciones': 'Notificaciones',
-    '/reportes':       'Reportes',
-    '/auditoria':      'Auditoría',
-    '/perfil':         'Mi Perfil',
-  }
   useEffect(() => {
     setMobileOpen(false)
     const ruta = Object.keys(PAGE_TITLES).find(k => location.pathname === k || location.pathname.startsWith(k + '/'))
@@ -145,69 +227,13 @@ export default function Layout() {
     return () => window.removeEventListener('keydown', handleGlobalKey)
   }, [])
 
-  const esUsuarioNormal = ['Estudiante', 'Docente', 'Personal Administrativo'].some(r => roles.includes(r))
   const itemsVisibles = NAV_ITEMS.filter(item =>
     item.roles.includes('all') ||
     esAdmin ||
-    (esUsuarioNormal && item.roles.includes('Residente')) ||
     item.roles.some(r => roles.includes(r))
   )
 
   function handleLogout() { logout(); navigate('/login') }
-
-  const NavContent = ({ onItemClick }: { onItemClick?: () => void }) => (
-    <>
-      <nav className="flex-1 py-3 space-y-0.5 overflow-y-auto">
-        {itemsVisibles.map(({ to, label, icon: Icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={to === '/'}
-            onClick={onItemClick}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-2.5 text-sm transition-all
-               ${isActive
-                 ? 'text-white font-semibold border-l-2'
-                 : 'text-blue-100/70 hover:text-white hover:bg-white/10'}`
-            }
-            style={({ isActive }) => isActive ? { borderColor: '#e8951a', background: 'rgba(255,255,255,0.12)' } : {}}
-          >
-            <span className="relative shrink-0">
-              {/* Campana oscila una vez al montar cuando hay notificaciones sin leer */}
-              <Icon size={18}
-                className={to === '/notificaciones' && conteo > 0 ? 'animate-swing-bell' : ''} />
-              {to === '/notificaciones' && conteo > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full animate-badge-entrar">
-                  {conteo > 9 ? '9+' : conteo}
-                </span>
-              )}
-            </span>
-            <span>{label}</span>
-          </NavLink>
-        ))}
-      </nav>
-
-      <NavLink
-        to="/perfil"
-        onClick={onItemClick}
-        className={({ isActive }) =>
-          `flex items-center gap-3 px-4 py-2.5 text-sm transition-colors border-t border-slate-700
-           ${isActive ? 'bg-slate-600 text-white' : 'text-slate-300 hover:bg-slate-700 hover:text-white'}`
-        }
-      >
-        <UserCircle size={18} className="shrink-0" />
-        <span>Mi perfil</span>
-      </NavLink>
-
-      <button
-        onClick={() => { handleLogout(); onItemClick?.() }}
-        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-slate-300 hover:bg-slate-700 hover:text-white border-t border-slate-700"
-      >
-        <LogOut size={18} className="shrink-0" />
-        <span>Cerrar sesión</span>
-      </button>
-    </>
-  )
 
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden">
@@ -257,11 +283,11 @@ export default function Layout() {
         )}
 
         {desktopOpen ? (
-          <NavContent />
+          <SidebarNav items={itemsVisibles} conteo={conteo} onLogout={handleLogout} />
         ) : (
           /* Modo icono colapsado */
           <>
-            <nav className="flex-1 py-3 space-y-0.5 overflow-y-auto">
+            <nav className="flex-1 py-3 space-y-0.5 overflow-y-auto scrollbar-slim">
               {itemsVisibles.map(({ to, label, icon: Icon }) => (
                 <NavLink
                   key={to}
@@ -334,7 +360,8 @@ export default function Layout() {
             }
           </div>
         </div>
-        <NavContent onItemClick={() => setMobileOpen(false)} />
+        <SidebarNav items={itemsVisibles} conteo={conteo} onLogout={handleLogout}
+          onItemClick={() => setMobileOpen(false)} />
       </aside>
 
       {/* ── CONTENIDO PRINCIPAL — aplica tema claro/oscuro ─── */}
@@ -376,7 +403,7 @@ export default function Layout() {
           </div>
         )}
 
-        <main className="flex-1 overflow-auto">
+        <main className="flex-1 overflow-auto scrollbar-slim-light">
           <Outlet />
         </main>
       </div>

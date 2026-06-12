@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Control Vehicular</title>
+    <!-- La foto del campus del login empieza a descargarse junto con el JS,
+         no después del primer render — reduce la espera del fade-in del fondo -->
+    <link rel="preload" as="image"
+      href="https://res.cloudinary.com/dhrd5ee5c/image/upload/q_auto,f_auto,c_fill,w_1920/uagrm-campus" />
   </head>
   <body>
     <div id="root"></div>

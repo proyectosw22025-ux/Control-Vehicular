@@ -19,11 +19,22 @@ const inputBase = 'w-full border border-slate-200 rounded-xl px-4 py-3 text-sm b
 // cambio de estado (ci, password, error...) re-renderizaba también el fondo
 // animado de Ken Burns y el bloque de marca, generando un parpadeo perceptible.
 const LoginDecor = memo(function LoginDecor() {
+  // La foto del campus llega de Cloudinary DESPUÉS del primer render: sin esto,
+  // "aparecía de golpe" sobre el fondo azul — el parpadeo que se percibía como
+  // un re-render. Esperamos a que el navegador la tenga y la fundimos suave.
+  const [bgLista, setBgLista] = useState(false)
+  useEffect(() => {
+    const img = new Image()
+    img.onload = () => setBgLista(true)
+    img.src = CAMPUS_BG
+  }, [])
+
   return (
     <>
       {/* Fondo animado con kenburns-top — div separado para que el zoom no afecte el contenido */}
-      <div className="absolute inset-0 animate-kenburns"
+      <div className="absolute inset-0 animate-kenburns transition-opacity duration-700"
         style={{
+          opacity: bgLista ? 1 : 0,
           backgroundImage: `
             linear-gradient(160deg, rgba(6,24,64,0.83) 0%, rgba(10,42,110,0.78) 50%, rgba(15,30,74,0.86) 100%),
             url('${CAMPUS_BG}')

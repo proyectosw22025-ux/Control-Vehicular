@@ -280,3 +280,39 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── Scrollbar fino — reemplaza el scrollbar nativo ancho ──────────
+   .scrollbar-slim       → para fondos oscuros (sidebar azul marino)
+   .scrollbar-slim-light → para fondos claros (contenido principal)
+   En ambos: 6px de ancho, pista invisible, pulgar redondeado que se
+   intensifica al pasar el mouse. Firefox usa scrollbar-width/color. */
+.scrollbar-slim,
+.scrollbar-slim-light {
+  scrollbar-width: thin;            /* Firefox */
+}
+.scrollbar-slim        { scrollbar-color: rgba(255,255,255,.25) transparent; }
+.scrollbar-slim-light  { scrollbar-color: rgba(100,116,139,.35) transparent; }
+
+.scrollbar-slim::-webkit-scrollbar,
+.scrollbar-slim-light::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-slim::-webkit-scrollbar-track,
+.scrollbar-slim-light::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-slim::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,.22);
+  border-radius: 9999px;
+}
+.scrollbar-slim::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,.45);
+}
+.scrollbar-slim-light::-webkit-scrollbar-thumb {
+  background: rgba(100,116,139,.35);
+  border-radius: 9999px;
+}
+.scrollbar-slim-light::-webkit-scrollbar-thumb:hover {
+  background: rgba(100,116,139,.6);
+}
