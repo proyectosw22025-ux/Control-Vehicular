@@ -1121,6 +1121,15 @@ class AccesoMutation:
         from django.db.models import Value
         from django.db.models.functions import Replace
         from apps.vehiculos.models import Vehiculo
+        from apps.usuarios.utils import tiene_rol
+
+        # El registro de accesos es la evidencia central del control vehicular:
+        # todo acceso manual debe tener un responsable identificado. Sin login, no hay registro.
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida para registrar accesos")
+        es_personal = tiene_rol(user, "Administrador") or tiene_rol(user, "Guardia")
+
         if input.tipo not in ["entrada", "salida"]:
             raise Exception("Tipo inválido. Opciones: entrada, salida")
         punto = PuntoAcceso.objects.filter(pk=input.punto_acceso_id, activo=True).first()
@@ -1140,6 +1149,16 @@ class AccesoMutation:
         )
         if not vehiculo:
             raise Exception(f"Vehículo con placa {input.placa.upper()} no registrado en el sistema")
+
+        # Guardia/Admin registran cualquier vehículo (es su función en el portón).
+        # Un usuario común solo puede declarar movimientos de SUS propios vehículos
+        # — evita salidas/entradas falsas sobre placas ajenas y registros sin responsable.
+        if not es_personal and vehiculo.propietario_id != user.pk:
+            raise Exception(
+                "Solo puedes registrar accesos de tus propios vehículos. "
+                "El registro manual de otros vehículos es exclusivo del personal de seguridad."
+            )
+
         if vehiculo.estado == "pendiente":
             raise Exception("Vehículo pendiente de aprobación. No puede ingresar hasta ser aprobado por el administrador.")
         if vehiculo.estado == "sancionado":
@@ -1150,7 +1169,7 @@ class AccesoMutation:
         # Validar transición de estado (entrada/salida) — máquina de estados completa
         _validar_transicion_acceso(vehiculo, input.tipo)
 
-        registrado_por = info.context.request.user if info.context.request.user.is_authenticated else None
+        registrado_por = user  # siempre autenticado — todo acceso manual tiene responsable
         registro = RegistroAcceso.objects.create(
             punto_acceso=punto,
             vehiculo=vehiculo,

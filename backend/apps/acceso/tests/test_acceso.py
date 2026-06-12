@@ -164,6 +164,64 @@ def test_acceso_manual_genera_audit_log(gql_guardia, vehiculo_activo, punto_acce
     assert AuditLog.objects.filter(accion="acceso_manual").exists()
 
 
+# ── Identidad y propiedad en el acceso manual ──────────────────────────────
+# El registro de accesos es evidencia: nadie escribe en él sin identificarse,
+# y un usuario común solo declara movimientos de SUS propios vehículos.
+
+@pytest.mark.django_db
+def test_acceso_manual_requiere_autenticacion(gql_client, vehiculo_activo, punto_acceso):
+    """Sin login no se puede registrar ningún acceso manual."""
+    r = graphql(gql_client, REGISTRAR_MANUAL, {
+        "puntoId": punto_acceso.id,
+        "placa": vehiculo_activo.placa,
+        "tipo": "entrada",
+    })
+    assert "errors" in r
+    assert "autenticación requerida" in r["errors"][0]["message"].lower()
+
+
+@pytest.mark.django_db
+def test_propietario_puede_registrar_acceso_de_su_vehiculo(gql_usuario_normal, vehiculo_activo, punto_acceso):
+    """El dueño declara la entrada de su propio vehículo — caso legítimo (y base del demo)."""
+    r = graphql(gql_usuario_normal, REGISTRAR_MANUAL, {
+        "puntoId": punto_acceso.id,
+        "placa": vehiculo_activo.placa,
+        "tipo": "entrada",
+    })
+    assert "errors" not in r
+    assert r["data"]["registrarAccesoManual"]["placaVehiculo"] == vehiculo_activo.placa
+
+
+@pytest.mark.django_db
+def test_propietario_no_puede_registrar_acceso_de_vehiculo_ajeno(gql_usuario_normal, guardia, tipo_vehiculo, punto_acceso):
+    """Registrar la 'salida' del vehículo de otro contamina la evidencia — bloqueado."""
+    from apps.vehiculos.models import Vehiculo
+    ajeno = Vehiculo.objects.create(
+        placa="AJN-777", tipo=tipo_vehiculo, propietario=guardia,
+        marca="Suzuki", modelo="Swift", anio=2023, color="gris", estado="activo",
+    )
+    r = graphql(gql_usuario_normal, REGISTRAR_MANUAL, {
+        "puntoId": punto_acceso.id,
+        "placa": ajeno.placa,
+        "tipo": "entrada",
+    })
+    assert "errors" in r
+    assert "tus propios vehículos" in r["errors"][0]["message"]
+
+
+@pytest.mark.django_db
+def test_acceso_manual_siempre_registra_responsable(gql_guardia, guardia, vehiculo_activo, punto_acceso):
+    """Todo acceso manual queda firmado: registrado_por nunca es anónimo."""
+    graphql(gql_guardia, REGISTRAR_MANUAL, {
+        "puntoId": punto_acceso.id,
+        "placa": vehiculo_activo.placa,
+        "tipo": "entrada",
+    })
+    registro = RegistroAcceso.objects.filter(vehiculo=vehiculo_activo, metodo_acceso="manual").first()
+    assert registro is not None
+    assert registro.registrado_por_id == guardia.pk
+
+
 @pytest.mark.django_db
 def test_acceso_manual_bloquea_vehiculo_pendiente(gql_guardia, vehiculo_pendiente, punto_acceso):
     """Un guardia no puede dar acceso manual a un vehículo sin aprobar — security gap cerrado."""
