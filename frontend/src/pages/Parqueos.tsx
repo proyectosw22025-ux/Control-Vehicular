@@ -17,6 +17,7 @@ import {
   CAMBIAR_ESTADO_ESPACIO_MUTATION,
 } from '../graphql/mutations/parqueos'
 import { useAuth } from '../hooks/useAuth'
+import { BuscadorVehiculo } from '../components/BuscadorVehiculo'
 
 const ESTADO_COLOR: Record<string, string> = {
   disponible:    'bg-green-100 text-green-700 border-green-200',
@@ -125,11 +126,6 @@ export default function Parqueos() {
     setEspacioSel(espacio ?? null)
     setVehSel(null)
     setModal('sesion')
-  }
-
-  function handleVehiculoChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const v = vehiculos.find((v: any) => v.id === parseInt(e.target.value))
-    setVehSel(v ?? null)
   }
 
   function handleIniciarSesion(e: FormEvent<HTMLFormElement>) {
@@ -514,20 +510,13 @@ export default function Parqueos() {
               <p className="text-xs font-bold uppercase text-slate-400 tracking-wide mb-3 flex items-center gap-1.5">
                 <Car size={12} /> Vehículo a estacionar
               </p>
-              <select
-                name="vehiculoId"
-                required
-                value={vehiculoSel?.id ?? ''}
-                onChange={handleVehiculoChange}
-                className={cls}
-              >
-                <option value="">Buscar vehículo por placa...</option>
-                {vehiculos.map((v: any) => (
-                  <option key={v.id} value={v.id}>
-                    {v.placa} — {v.marca} {v.modelo} ({v.anio})
-                  </option>
-                ))}
-              </select>
+              {/* Typeahead server-side: busca por placa/marca/dueño sin cargar
+                  toda la flota. Para usuarios no-personal, restringido a los suyos. */}
+              <BuscadorVehiculo
+                propietarioId={esPersonalFlag ? undefined : (usuario?.id ? Number(usuario.id) : undefined)}
+                seleccionado={vehiculoSel}
+                onSelect={setVehSel}
+              />
 
               {/* Info del propietario — aparece al seleccionar vehículo */}
               {vehiculoSel && (
