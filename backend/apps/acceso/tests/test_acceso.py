@@ -164,6 +164,78 @@ def test_acceso_manual_genera_audit_log(gql_guardia, vehiculo_activo, punto_acce
     assert AuditLog.objects.filter(accion="acceso_manual").exists()
 
 
+# ── Modo "Auto": el backend deduce entrada/salida ───────────────────────────
+
+@pytest.mark.django_db
+def test_acceso_auto_primer_registro_es_entrada(gql_guardia, vehiculo_activo, punto_acceso):
+    """Sin historial previo, 'auto' resuelve a entrada."""
+    r = graphql(gql_guardia, REGISTRAR_MANUAL, {
+        "puntoId": punto_acceso.id, "placa": vehiculo_activo.placa, "tipo": "auto",
+    })
+    assert "errors" not in r
+    assert r["data"]["registrarAccesoManual"]["tipo"] == "entrada"
+
+
+@pytest.mark.django_db
+def test_acceso_auto_alterna_entrada_salida(gql_guardia, vehiculo_activo, punto_acceso):
+    """Auto alterna según el estado: entrada → salida → entrada."""
+    def auto():
+        return graphql(gql_guardia, REGISTRAR_MANUAL, {
+            "puntoId": punto_acceso.id, "placa": vehiculo_activo.placa, "tipo": "auto",
+        })["data"]["registrarAccesoManual"]["tipo"]
+    assert auto() == "entrada"
+    assert auto() == "salida"
+    assert auto() == "entrada"
+
+
+@pytest.mark.django_db
+def test_acceso_auto_qr_alterna(gql_guardia, vehiculo_activo, punto_acceso):
+    """Mismo comportamiento por QR dinámico/permanente."""
+    def auto():
+        return graphql(gql_guardia, REGISTRAR_ACCESO, {
+            "puntoId": punto_acceso.id, "codigo": vehiculo_activo.codigo_qr, "tipo": "auto",
+        })["data"]["registrarAcceso"]["tipo"]
+    assert auto() == "entrada"
+    assert auto() == "salida"
+
+
+# ── Espacio sugerido tras la entrada (asignación de un toque) ────────────────
+
+REGISTRAR_MANUAL_ESPACIO = """
+mutation RegistrarManual($puntoId: Int!, $placa: String!, $tipo: String!) {
+  registrarAccesoManual(input: { puntoAccesoId: $puntoId, placa: $placa, tipo: $tipo }) {
+    id tipo
+    espacioSugerido { espacioId numero zonaNombre vehiculoId }
+  }
+}
+"""
+
+
+@pytest.mark.django_db
+def test_entrada_sugiere_espacio_libre(gql_guardia, vehiculo_activo, punto_acceso, espacio_disponible):
+    """Tras una entrada, la respuesta incluye un espacio libre compatible."""
+    r = graphql(gql_guardia, REGISTRAR_MANUAL_ESPACIO, {
+        "puntoId": punto_acceso.id, "placa": vehiculo_activo.placa, "tipo": "entrada",
+    })
+    assert "errors" not in r
+    sug = r["data"]["registrarAccesoManual"]["espacioSugerido"]
+    assert sug is not None
+    assert sug["numero"] == espacio_disponible.numero
+    assert sug["vehiculoId"] == vehiculo_activo.id
+
+
+@pytest.mark.django_db
+def test_salida_no_sugiere_espacio(gql_guardia, vehiculo_activo, punto_acceso, espacio_disponible):
+    """En salida no hay sugerencia de espacio."""
+    graphql(gql_guardia, REGISTRAR_MANUAL_ESPACIO, {
+        "puntoId": punto_acceso.id, "placa": vehiculo_activo.placa, "tipo": "entrada",
+    })
+    r = graphql(gql_guardia, REGISTRAR_MANUAL_ESPACIO, {
+        "puntoId": punto_acceso.id, "placa": vehiculo_activo.placa, "tipo": "salida",
+    })
+    assert r["data"]["registrarAccesoManual"]["espacioSugerido"] is None
+
+
 # ── Identidad en el acceso por QR ───────────────────────────────────────────
 # El QR es la credencial del vehículo; quien lo escanea debe ser personal
 # identificado. Un QR fotografiado no debe servir para registrar accesos

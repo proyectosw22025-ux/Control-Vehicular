@@ -113,3 +113,11 @@ export const QR_DINAMICO_QUERY = gql`
     }
   }
 `
+
+export const SUGERENCIAS_PLACA_QUERY = gql`
+  query SugerenciasPlaca($placa: String!) {
+    sugerenciasPlaca(placa: $placa) {
+      id placa marca modelo color propietarioNombre
+    }
+  }
+`

@@ -369,10 +369,54 @@ def _notificar_vehiculo_rechazado(vehiculo, motivo: str) -> None:
     threading.Thread(target=_enviar, daemon=True).start()
 
 
+@strawberry.type
+class SugerenciaPlacaType:
+    """Vehículo candidato cuando el OCR/tipeo leyó una placa que no existe."""
+    id: int
+    placa: str
+    marca: str
+    modelo: str
+    color: str
+    estado: str
+    propietario_nombre: str
+
+
 # ── Queries ────────────────────────────────────────────────────────────────
 
 @strawberry.type
 class VehiculosQuery:
+    @strawberry.field
+    def sugerencias_placa(self, info: Info, placa: str) -> List[SugerenciaPlacaType]:
+        """
+        Cuando una placa no se encuentra (OCR confundió un carácter, p.ej.
+        leyó 'ZVX123' en vez de 'ZYX123'), sugiere vehículos ACTIVOS cuya placa
+        difiere en a lo sumo un carácter — el guardia confirma contra el vehículo
+        físico con un toque, en vez de teclear los 7 caracteres a mano.
+        Solo personal de portón: revela datos del propietario.
+        """
+        from .utils import placas_cercanas
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not (tiene_rol(user, "Guardia") or tiene_rol(user, "Administrador")):
+            raise Exception("Solo guardias y administradores pueden usar sugerencias de placa")
+
+        activos = list(
+            Vehiculo.objects.filter(estado="activo")
+            .select_related("propietario")
+            .only("id", "placa", "marca", "modelo", "color", "estado",
+                  "propietario__nombre", "propietario__apellido")
+        )
+        cercanas_placas = set(placas_cercanas(placa, [v.placa for v in activos]))
+        return [
+            SugerenciaPlacaType(
+                id=v.id, placa=v.placa, marca=v.marca, modelo=v.modelo,
+                color=v.color, estado=v.estado,
+                propietario_nombre=f"{v.propietario.nombre} {v.propietario.apellido}",
+            )
+            for v in activos if v.placa in cercanas_placas
+        ][:5]
+
     @strawberry.field
     def vehiculos(
         self,

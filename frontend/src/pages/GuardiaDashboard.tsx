@@ -16,12 +16,13 @@ import {
   ShieldCheck, ArrowDownCircle, ArrowUpCircle, Camera, CameraOff,
   CheckCircle2, XCircle, Clock, ParkingSquare, UserCheck, DoorOpen,
   Wifi, WifiOff, RefreshCw, Loader2, Type, Keyboard,
-  AlertTriangle, Bell, Eye, Truck, LogOut, Plus, Timer,
+  AlertTriangle, Bell, Eye, Truck, LogOut, Plus, Timer, Repeat,
 } from 'lucide-react'
 import { QrScanner }     from '../components/QrScanner'
 import { PlacaScanner } from '../components/PlacaScanner'
 import { PUNTOS_ACCESO_QUERY, REGISTROS_ACCESO_QUERY, ALERTAS_PANEL_QUERY, VEHICULOS_TEMPORALES_QUERY } from '../graphql/queries/acceso'
 import { MARCAR_ALERTA_REVISADA_MUTATION, REGISTRAR_ACCESO_TEMPORAL_MUTATION, REGISTRAR_SALIDA_TEMPORAL_MUTATION } from '../graphql/mutations/acceso'
+import { INICIAR_SESION_MUTATION } from '../graphql/mutations/parqueos'
 import { VISITAS_ACTIVAS_QUERY } from '../graphql/queries/visitantes'
 import { useAccesoGuardia, type TipoAcceso, type AlertaInfo } from '../hooks/useAccesoGuardia'
 import { useOfflineAccess } from '../hooks/useOfflineAccess'
@@ -44,7 +45,7 @@ const METODO_LABEL: Record<string, string> = {
 
 export default function GuardiaDashboard() {
   type ModoScanner = 'qr' | 'placa' | 'manual'
-  const [tipo, setTipo]             = useState<TipoAcceso>('entrada')
+  const [tipo, setTipo]             = useState<TipoAcceso>('auto')
   const [modo, setModo]             = useState<ModoScanner>('qr')
   const [camaraActiva, setCamara]   = useState(false)
   const [placaActiva, setPlacaOcr]  = useState(false)
@@ -201,6 +202,29 @@ export default function GuardiaDashboard() {
 
   const resultado = acceso.resultado
 
+  // Confirmación de una sugerencia de placa cercana: re-registra con la placa
+  // REAL almacenada (un toque), tras la verificación visual del guardia.
+  const confirmarSugerencia = useCallback(async (placaReal: string) => {
+    await registrarManual(placaReal, tipo)
+    refetchRegistros()
+    refetchStats()
+  }, [registrarManual, tipo, refetchRegistros, refetchStats])
+
+  // Asignación de espacio de un toque tras la entrada.
+  const [asignarEspacio, { loading: asignandoEspacio }] = useMutation(INICIAR_SESION_MUTATION)
+  const [espacioAsignadoMsg, setEspacioAsignadoMsg] = useState('')
+  const handleAsignarEspacio = useCallback(async (espacioId: number, vehiculoId: number, numero: string, zona: string) => {
+    try {
+      await asignarEspacio({ variables: { input: { espacioId, vehiculoId } } })
+      setEspacioAsignadoMsg(`Espacio ${numero} (${zona}) asignado ✓`)
+      refetchStats()
+      setTimeout(() => setEspacioAsignadoMsg(''), 4000)
+    } catch (e: any) {
+      setEspacioAsignadoMsg(`No se pudo asignar: ${e?.message ?? 'error'}`)
+      setTimeout(() => setEspacioAsignadoMsg(''), 5000)
+    }
+  }, [asignarEspacio, refetchStats])
+
   // Verificar alertas cada vez que llega un resultado de acceso
   useEffect(() => {
     if (resultado?.ok && resultado.alertas?.length) {
@@ -237,6 +261,7 @@ export default function GuardiaDashboard() {
     horario_inusual:     'Horario inusual',
     punto_inusual:       'Punto inusual',
     placas_similares:    'Placas similares',
+    documento_vencido:   'Documento vencido',
   }
 
   return (
@@ -519,20 +544,33 @@ export default function GuardiaDashboard() {
         {/* ── Panel izquierdo: controles ─────────────────────── */}
         <div className="space-y-3">
 
-          {/* Toggle Entrada/Salida */}
-          <div className="grid grid-cols-2 gap-2">
-            {(['entrada', 'salida'] as TipoAcceso[]).map(t => (
-              <button key={t} onClick={() => setTipo(t)}
-                className={`flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm transition-colors
-                  ${t === tipo
-                    ? t === 'entrada' ? 'bg-green-500 text-white shadow-lg shadow-green-200' : 'bg-red-500 text-white shadow-lg shadow-red-200'
-                    : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300'
-                  }`}
-              >
-                {t === 'entrada' ? <ArrowDownCircle size={18} /> : <ArrowUpCircle size={18} />}
-                {t === 'entrada' ? 'Entrada' : 'Salida'}
-              </button>
-            ))}
+          {/* Modo de registro — Auto (recomendado) + override manual.
+              En Auto el sistema decide entrada/salida por el estado del vehículo:
+              cero errores de dirección y flujo mixto sin fricción en hora pico. */}
+          <div>
+            <button onClick={() => setTipo('auto')}
+              className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm transition-colors
+                ${tipo === 'auto'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-200'
+                  : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300'}`}
+            >
+              <Repeat size={18} />
+              Automático {tipo === 'auto' && '· el sistema detecta entrada/salida'}
+            </button>
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              {(['entrada', 'salida'] as TipoAcceso[]).map(t => (
+                <button key={t} onClick={() => setTipo(t)}
+                  className={`flex items-center justify-center gap-2 py-2 rounded-xl font-medium text-sm transition-colors
+                    ${t === tipo
+                      ? t === 'entrada' ? 'bg-green-500 text-white shadow-lg shadow-green-200' : 'bg-red-500 text-white shadow-lg shadow-red-200'
+                      : 'bg-white text-slate-500 border border-slate-200 hover:border-slate-300'
+                    }`}
+                >
+                  {t === 'entrada' ? <ArrowDownCircle size={16} /> : <ArrowUpCircle size={16} />}
+                  Forzar {t === 'entrada' ? 'entrada' : 'salida'}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* ── Selector de modo: QR / Placa OCR / Manual ─────── */}
@@ -636,8 +674,72 @@ export default function GuardiaDashboard() {
             </div>
           )}
 
-          {/* ── Sugerencia de guía de parqueo tras entrada exitosa ── */}
-          {resultado?.ok && tipo === 'entrada' && (
+          {/* ── Sugerencias de placa cercana (OCR mal leído) ── */}
+          {resultado && !resultado.ok && (resultado.sugerencias?.length ?? 0) > 0 && (
+            <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4">
+              <p className="text-xs font-bold text-amber-800 mb-2 flex items-center gap-1.5">
+                <AlertTriangle size={13} /> ¿Quisiste registrar alguno de estos?
+              </p>
+              <div className="space-y-2">
+                {resultado.sugerencias!.map(s => (
+                  <button key={s.id} onClick={() => confirmarSugerencia(s.placa)}
+                    className="w-full flex items-center justify-between gap-2 bg-white hover:bg-amber-100 border border-amber-200 rounded-xl px-3 py-2 transition-colors text-left">
+                    <div className="min-w-0">
+                      <p className="font-mono font-bold text-sm text-slate-800 tracking-wider">{s.placa}</p>
+                      <p className="text-[11px] text-slate-500 truncate">
+                        {s.marca} {s.modelo} · {s.color} · {s.propietarioNombre}
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-[11px] font-semibold text-amber-700 bg-amber-100 px-2.5 py-1 rounded-lg">
+                      Confirmar →
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-amber-600 mt-2">
+                Verifica la placa contra el vehículo físico antes de confirmar.
+              </p>
+            </div>
+          )}
+
+          {/* ── Asignación de espacio de un toque tras la entrada ── */}
+          {espacioAsignadoMsg && (
+            <div className="bg-green-50 border border-green-300 rounded-xl p-3 text-sm font-semibold text-green-800 flex items-center gap-2">
+              <ParkingSquare size={16} /> {espacioAsignadoMsg}
+            </div>
+          )}
+          {resultado?.ok && resultado.espacioSugerido && !espacioAsignadoMsg && (
+            <div className="bg-violet-50 border border-violet-300 rounded-xl p-4">
+              <p className="text-xs font-bold text-violet-800 mb-1 flex items-center gap-1.5">
+                <ParkingSquare size={14} /> Espacio libre sugerido
+              </p>
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-black text-lg text-slate-800">
+                    #{resultado.espacioSugerido.numero}
+                    <span className="text-xs font-medium text-slate-500 ml-2">{resultado.espacioSugerido.zonaNombre}</span>
+                  </p>
+                  <p className="text-[11px] text-violet-600">Categoría: {resultado.espacioSugerido.categoriaNombre}</p>
+                </div>
+                <button
+                  disabled={asignandoEspacio}
+                  onClick={() => handleAsignarEspacio(
+                    resultado.espacioSugerido!.espacioId,
+                    resultado.espacioSugerido!.vehiculoId,
+                    resultado.espacioSugerido!.numero,
+                    resultado.espacioSugerido!.zonaNombre,
+                  )}
+                  className="shrink-0 bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
+                >
+                  {asignandoEspacio ? <Loader2 size={14} className="animate-spin" /> : <ParkingSquare size={14} />}
+                  Asignar espacio
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Guía de parqueo (fallback cuando no hay espacio sugerido) ── */}
+          {resultado?.ok && resultado.mensaje.startsWith('Entrada') && !resultado.espacioSugerido && !espacioAsignadoMsg && (
             <div className="bg-violet-50 border border-violet-200 rounded-xl p-3 flex items-center gap-3">
               <span className="text-xl shrink-0">🅿</span>
               <div className="flex-1 min-w-0">

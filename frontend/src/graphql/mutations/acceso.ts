@@ -1,5 +1,11 @@
 import { gql } from '@apollo/client'
 
+const ESPACIO_SUGERIDO = `
+  espacioSugerido {
+    espacioId numero zonaNombre categoriaNombre vehiculoId
+  }
+`
+
 export const REGISTRAR_ACCESO_MUTATION = gql`
   mutation RegistrarAcceso($input: ValidarAccesoInput!) {
     registrarAcceso(input: $input) {
@@ -7,6 +13,7 @@ export const REGISTRAR_ACCESO_MUTATION = gql`
       alertasDetectadas {
         id tipoAnomalia severidad descripcion fecha vehiculoPlaca
       }
+      ${ESPACIO_SUGERIDO}
     }
   }
 `
@@ -18,6 +25,7 @@ export const REGISTRAR_ACCESO_MANUAL_MUTATION = gql`
       alertasDetectadas {
         id tipoAnomalia severidad descripcion fecha vehiculoPlaca
       }
+      ${ESPACIO_SUGERIDO}
     }
   }
 `

@@ -11,6 +11,28 @@ from .models import PuntoAcceso, QrSesion, PaseTemporal, RegistroAcceso, AuditLo
 from datetime import date
 
 
+def _ultimo_tipo_acceso(vehiculo) -> "str | None":
+    """Tipo del último registro de acceso del vehículo, o None si nunca tuvo."""
+    ultimo = (
+        RegistroAcceso.objects
+        .filter(vehiculo=vehiculo)
+        .order_by("-timestamp", "-pk")  # -pk desempata timestamps idénticos
+        .values("tipo")
+        .first()
+    )
+    return ultimo["tipo"] if ultimo else None
+
+
+def _inferir_tipo_acceso(vehiculo) -> str:
+    """
+    Modo "Auto": deduce si este acceso es entrada o salida según el estado real
+    del vehículo (su último registro). Si está dentro → toca salir; si está
+    fuera o nunca entró → toca entrar. Elimina el toggle manual del guardia y
+    los errores de dirección en hora pico (la causa #1 de colas a contraflujo).
+    """
+    return "salida" if _ultimo_tipo_acceso(vehiculo) == "entrada" else "entrada"
+
+
 def _validar_transicion_acceso(vehiculo, tipo_solicitado: str) -> None:
     """
     Máquina de estados para accesos: entrada → salida → entrada → salida...
@@ -23,13 +45,8 @@ def _validar_transicion_acceso(vehiculo, tipo_solicitado: str) -> None:
 
     Aplica a QR y manual para garantizar consistencia en toda la capa de dominio.
     """
-    ultimo = (
-        RegistroAcceso.objects
-        .filter(vehiculo=vehiculo)
-        .order_by("-timestamp")
-        .values("tipo")
-        .first()
-    )
+    ultimo_tipo = _ultimo_tipo_acceso(vehiculo)
+    ultimo = {"tipo": ultimo_tipo} if ultimo_tipo else None
 
     if tipo_solicitado == "entrada":
         if ultimo and ultimo["tipo"] == "entrada":
@@ -188,6 +205,24 @@ class RegistroAccesoType:
         """
         return getattr(self, "_destinatario_delegacion", None)
 
+    @strawberry.field
+    def espacio_sugerido(self) -> Optional["EspacioSugeridoType"]:
+        """
+        Tras una ENTRADA, primer espacio libre compatible con el rol del
+        propietario — para que el guardia lo asigne con un toque desde la
+        misma tarjeta de confirmación, sin navegar al módulo de Parqueos.
+        """
+        return getattr(self, "_espacio_sugerido", None)
+
+
+@strawberry.type
+class EspacioSugeridoType:
+    espacio_id: int
+    numero: str
+    zona_nombre: str
+    categoria_nombre: str
+    vehiculo_id: int
+
 
 @strawberry.type
 class AuditLogType:
@@ -224,14 +259,14 @@ class GenerarQrDelegacionInput:
 class ValidarAccesoInput:
     punto_acceso_id: int
     codigo: str
-    tipo: str
+    tipo: str  # "entrada" | "salida" | "auto" (el backend infiere la dirección)
 
 
 @strawberry.input
 class AccesoManualInput:
     punto_acceso_id: int
     placa: str
-    tipo: str
+    tipo: str  # "entrada" | "salida" | "auto"
     observacion: Optional[str] = ""
 
 
@@ -468,7 +503,84 @@ def _detectar_anomalias_acceso(vehiculo, tipo_acceso: str) -> list:
     except Exception:
         pass
 
+    # ── 3. Documentos vencidos (SOAT, técnica, circulación) ────────────────────
+    # La universidad no debería permitir circular en su campus un vehículo sin
+    # SOAT vigente. No bloqueamos el ingreso (alertamos, no fiscalizamos tránsito),
+    # pero el guardia debe enterarse en garita — antes era invisible para él.
+    try:
+        from apps.vehiculos.models import DocumentoVehiculo
+        vencidos = list(
+            DocumentoVehiculo.objects.filter(
+                vehiculo=vehiculo, fecha_vencimiento__lt=hoy
+            ).order_by("fecha_vencimiento")
+        )
+        if vencidos:
+            ya_existe = AlertaAcceso.objects.filter(
+                vehiculo=vehiculo,
+                tipo_anomalia="documento_vencido",
+                revisada=False,
+                fecha__gte=ahora - timedelta(hours=24),
+            ).exists()
+            if not ya_existe:
+                detalle = ", ".join(
+                    f"{d.get_tipo_doc_display()} (venció {d.fecha_vencimiento:%d/%m/%Y})"
+                    for d in vencidos[:3]
+                )
+                # Crítico si algún documento lleva más de 30 días vencido.
+                dias_max = max((hoy - d.fecha_vencimiento).days for d in vencidos)
+                severidad = "critica" if dias_max > 30 else "advertencia"
+                a = AlertaAcceso.objects.create(
+                    vehiculo=vehiculo,
+                    tipo_anomalia="documento_vencido",
+                    severidad=severidad,
+                    descripcion=f"{vehiculo.placa} circula con documento(s) vencido(s): {detalle}.",
+                    fecha_analisis=hoy,
+                    datos_extra={"documentos_vencidos": len(vencidos), "dias_max_vencido": dias_max},
+                )
+                _broadcast_alerta_ws(a, vehiculo)
+                nuevas.append(a)
+    except Exception:
+        pass
+
     return nuevas
+
+
+def _sugerir_espacio_parqueo(vehiculo):
+    """
+    Primer espacio disponible compatible con el rol del propietario, priorizando
+    espacios cuya categoría coincide con su rol. Devuelve un EspacioSugeridoType
+    o None. Se llama tras una entrada para ofrecer asignación de un toque.
+    """
+    try:
+        from apps.parqueos.models import EspacioParqueo, SesionParqueo
+        from apps.parqueos.schema import _motivo_incompatibilidad_categoria
+
+        # Si el vehículo ya tiene sesión activa, no sugerir.
+        if SesionParqueo.objects.filter(vehiculo=vehiculo, estado="activa").exists():
+            return None
+
+        libres = (
+            EspacioParqueo.objects
+            .filter(estado="disponible", zona__activo=True)
+            .select_related("zona", "categoria")
+            .order_by("zona__nombre", "numero")
+        )
+        # Primer espacio sin incompatibilidad de categoría (rol del propietario).
+        elegido = next(
+            (e for e in libres if _motivo_incompatibilidad_categoria(e, vehiculo) is None),
+            None,
+        )
+        if not elegido:
+            return None
+        return EspacioSugeridoType(
+            espacio_id=elegido.id,
+            numero=elegido.numero,
+            zona_nombre=elegido.zona.nombre,
+            categoria_nombre=elegido.categoria.nombre,
+            vehiculo_id=vehiculo.id,
+        )
+    except Exception:
+        return None
 
 
 def _enviar_email_autorizacion_async(auth) -> None:
@@ -967,20 +1079,37 @@ class AccesoMutation:
         if not (tiene_rol(user, "Guardia") or tiene_rol(user, "Administrador")):
             raise Exception("Solo guardias y administradores pueden registrar accesos por QR")
 
-        if input.tipo not in ["entrada", "salida"]:
-            raise Exception("Tipo inválido. Opciones: entrada, salida")
+        if input.tipo not in ["entrada", "salida", "auto"]:
+            raise Exception("Tipo inválido. Opciones: entrada, salida, auto")
 
         punto = PuntoAcceso.objects.filter(pk=input.punto_acceso_id, activo=True).first()
         if not punto:
             raise Exception("Punto de acceso no encontrado o inactivo")
 
-        # Resolver código — maneja TOTP, delegación y pase temporal de forma atómica
-        # tipo_acceso se pasa para validar tipo_delegacion antes de consumir el uso
-        resultado = resolver_codigo(input.codigo, tipo_acceso=input.tipo)
+        # Resolver código — maneja TOTP, delegación y pase temporal de forma atómica.
+        # En modo "auto" no validamos la dirección de la delegación antes de
+        # resolver (aún no conocemos el vehículo); la derivamos justo después.
+        tipo_para_resolver = None if input.tipo == "auto" else input.tipo
+        resultado = resolver_codigo(input.codigo, tipo_acceso=tipo_para_resolver)
+
+        # ── Modo "Auto": el backend deduce entrada/salida ──────────────────
+        # - QR de delegación de una sola vía → esa es la dirección (su propósito).
+        # - Resto (TOTP, permanente, "ambos") → según el estado del vehículo.
+        # - Autorización externa sin historial → entrada.
+        if input.tipo == "auto":
+            deleg = resultado.qr_delegacion
+            if deleg and deleg.tipo_delegacion in ("entrada", "salida"):
+                tipo_efectivo = deleg.tipo_delegacion
+            elif resultado.vehiculo:
+                tipo_efectivo = _inferir_tipo_acceso(resultado.vehiculo)
+            else:
+                tipo_efectivo = "entrada"
+        else:
+            tipo_efectivo = input.tipo
 
         # Validar transición de estado (entrada/salida) — máquina de estados completa
         if resultado.vehiculo:
-            _validar_transicion_acceso(resultado.vehiculo, input.tipo)
+            _validar_transicion_acceso(resultado.vehiculo, tipo_efectivo)
 
         registrado_por = user  # siempre autenticado — todo acceso QR tiene responsable
 
@@ -996,7 +1125,7 @@ class AccesoMutation:
             vehiculo=resultado.vehiculo,
             qr_delegacion=resultado.qr_delegacion,
             pase_temporal=resultado.pase_temporal,
-            tipo=input.tipo,
+            tipo=tipo_efectivo,
             metodo_acceso=resultado.metodo_acceso,
             observacion=obs_extra,
             registrado_por=registrado_por,
@@ -1013,7 +1142,7 @@ class AccesoMutation:
         log_audit(
             registrado_por,
             "registrar_acceso",
-            f"{input.tipo.capitalize()} de {placa_log} en {punto.nombre} vía {resultado.metodo_acceso}",
+            f"{tipo_efectivo.capitalize()} de {placa_log} en {punto.nombre} vía {resultado.metodo_acceso}",
             request=info.context.request,
         )
 
@@ -1022,7 +1151,7 @@ class AccesoMutation:
         # ── Fix 2: Al registrar SALIDA, cerrar automáticamente la SesionParqueo activa ──
         # El espacio debe liberarse cuando el vehículo sale del campus, no solo
         # cuando el guardia lo hace manualmente desde el módulo de Parqueos.
-        if input.tipo == "salida" and resultado.vehiculo:
+        if tipo_efectivo == "salida" and resultado.vehiculo:
             from apps.parqueos.models import SesionParqueo as _SP
             sesion_activa = (
                 _SP.objects
@@ -1049,17 +1178,17 @@ class AccesoMutation:
             from apps.notificaciones.utils import enviar_notificacion
             from django.utils import timezone as _tz
             hora_str = _tz.localtime().strftime("%H:%M")
-            accion   = "entró a" if input.tipo == "entrada" else "salió de"
+            accion   = "entró a" if tipo_efectivo == "entrada" else "salió de"
 
             # Notificación en app (WebSocket) — siempre
             enviar_notificacion(
                 usuario=propietario,
                 titulo=f"Vehículo {accion} la universidad",
-                mensaje=f"{resultado.vehiculo.placa} registró {input.tipo} en {punto.nombre}.",
+                mensaje=f"{resultado.vehiculo.placa} registró {tipo_efectivo} en {punto.nombre}.",
                 tipo_codigo="acceso_vehiculo",
             )
 
-            if input.tipo == "entrada":
+            if tipo_efectivo == "entrada":
                 # Notificación de orientación de parqueo (abre modal en la app)
                 enviar_notificacion(
                     usuario=propietario,
@@ -1107,7 +1236,7 @@ class AccesoMutation:
                 .order_by("-severidad", "-fecha")[:5]
             )
             # Detectar nuevas anomalías en tiempo real
-            alertas_nuevas = _detectar_anomalias_acceso(resultado.vehiculo, input.tipo)
+            alertas_nuevas = _detectar_anomalias_acceso(resultado.vehiculo, tipo_efectivo)
             alertas_detectadas = alertas_existentes + alertas_nuevas
 
             # Auto-observación si hay alertas críticas
@@ -1120,9 +1249,13 @@ class AccesoMutation:
 
         registro._alertas_detectadas = alertas_detectadas
 
+        # ── Sugerencia de espacio de parqueo (un toque) tras una entrada ──────
+        if tipo_efectivo == "entrada" and resultado.vehiculo:
+            registro._espacio_sugerido = _sugerir_espacio_parqueo(resultado.vehiculo)
+
         # ── Rastreo en vivo: sincronizar estado del vehículo en el mapa ──────
         if resultado.vehiculo and punto.latitud is not None:
-            _sincronizar_rastreo(resultado.vehiculo, punto, input.tipo, registro, propietario)
+            _sincronizar_rastreo(resultado.vehiculo, punto, tipo_efectivo, registro, propietario)
 
         return registro
 
@@ -1141,8 +1274,8 @@ class AccesoMutation:
             raise Exception("Autenticación requerida para registrar accesos")
         es_personal = tiene_rol(user, "Administrador") or tiene_rol(user, "Guardia")
 
-        if input.tipo not in ["entrada", "salida"]:
-            raise Exception("Tipo inválido. Opciones: entrada, salida")
+        if input.tipo not in ["entrada", "salida", "auto"]:
+            raise Exception("Tipo inválido. Opciones: entrada, salida, auto")
         punto = PuntoAcceso.objects.filter(pk=input.punto_acceso_id, activo=True).first()
         if not punto:
             raise Exception("Punto de acceso no encontrado o inactivo")
@@ -1177,14 +1310,17 @@ class AccesoMutation:
         if vehiculo.estado == "inactivo":
             raise Exception("Vehículo inactivo. Contacte a la administración.")
 
+        # Modo "Auto": deduce entrada/salida según el estado real del vehículo.
+        tipo_efectivo = _inferir_tipo_acceso(vehiculo) if input.tipo == "auto" else input.tipo
+
         # Validar transición de estado (entrada/salida) — máquina de estados completa
-        _validar_transicion_acceso(vehiculo, input.tipo)
+        _validar_transicion_acceso(vehiculo, tipo_efectivo)
 
         registrado_por = user  # siempre autenticado — todo acceso manual tiene responsable
         registro = RegistroAcceso.objects.create(
             punto_acceso=punto,
             vehiculo=vehiculo,
-            tipo=input.tipo,
+            tipo=tipo_efectivo,
             metodo_acceso="manual",
             observacion=input.observacion or "",
             registrado_por=registrado_por,
@@ -1192,12 +1328,12 @@ class AccesoMutation:
         log_audit(
             registrado_por,
             "acceso_manual",
-            f"{input.tipo.capitalize()} manual de {vehiculo.placa} en {punto.nombre}",
+            f"{tipo_efectivo.capitalize()} manual de {vehiculo.placa} en {punto.nombre}",
             request=info.context.request,
         )
 
         # Fix 2: cerrar SesionParqueo activa también en acceso manual de SALIDA
-        if input.tipo == "salida":
+        if tipo_efectivo == "salida":
             from apps.parqueos.models import SesionParqueo as _SP
             sesion = _SP.objects.select_related("espacio").filter(vehiculo=vehiculo, estado="activa").first()
             if sesion:
@@ -1218,9 +1354,12 @@ class AccesoMutation:
             .select_related("vehiculo")
             .order_by("-severidad", "-fecha")[:5]
         )
-        alertas_nuevas = _detectar_anomalias_acceso(vehiculo, input.tipo)
+        alertas_nuevas = _detectar_anomalias_acceso(vehiculo, tipo_efectivo)
         alertas_detectadas = alertas_existentes + alertas_nuevas
         registro._alertas_detectadas = alertas_detectadas
+
+        if tipo_efectivo == "entrada":
+            registro._espacio_sugerido = _sugerir_espacio_parqueo(vehiculo)
 
         return registro
 

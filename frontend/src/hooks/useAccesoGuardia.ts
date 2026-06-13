@@ -7,15 +7,18 @@
  * Regla 5 (Clean Code): cada función es testeable de forma aislada.
  */
 import { useState, useCallback, useRef } from 'react'
-import { useMutation } from '@apollo/client'
+import { useMutation, useApolloClient } from '@apollo/client'
 import {
   REGISTRAR_ACCESO_MUTATION,
   REGISTRAR_ACCESO_MANUAL_MUTATION,
 } from '../graphql/mutations/acceso'
+import { SUGERENCIAS_PLACA_QUERY } from '../graphql/queries/vehiculos'
 
 // ── Tipos estrictos alineados con el schema Strawberry ───────────────────
 
-export type TipoAcceso = 'entrada' | 'salida'
+// 'auto' = el backend deduce entrada/salida según el estado del vehículo.
+// El guardia no decide la dirección: cero errores de toggle, cero colas a contraflujo.
+export type TipoAcceso = 'entrada' | 'salida' | 'auto'
 
 export interface AlertaInfo {
   id:             number
@@ -26,12 +29,33 @@ export interface AlertaInfo {
   vehiculoPlaca?: string
 }
 
+export interface SugerenciaPlaca {
+  id:                number
+  placa:             string
+  marca:             string
+  modelo:            string
+  color:             string
+  propietarioNombre: string
+}
+
+export interface EspacioSugerido {
+  espacioId:       number
+  numero:          string
+  zonaNombre:      string
+  categoriaNombre: string
+  vehiculoId:      number
+}
+
 export interface ResultadoAcceso {
   ok:      boolean
   mensaje: string
   placa?:  string
   metodo?: string
   alertas: AlertaInfo[]
+  // Cuando la placa no se encontró, candidatos a distancia de edición 1.
+  sugerencias?: SugerenciaPlaca[]
+  // Tras una entrada, espacio libre compatible para asignar con un toque.
+  espacioSugerido?: EspacioSugerido | null
 }
 
 export interface EstadoConexion {
@@ -48,6 +72,7 @@ const DELAY_BASE_MS  = 1000  // exponential backoff: 1s, 2s, 4s
 // ── Hook principal ────────────────────────────────────────────────────────
 
 export function useAccesoGuardia() {
+  const apollo = useApolloClient()
   const [resultado, setResultado]         = useState<ResultadoAcceso | null>(null)
   const [procesando, setProcesando]       = useState(false)
   const [procesandoQr, setProcesandoQr]   = useState(false) // feedback previo a la red
@@ -68,6 +93,22 @@ export function useAccesoGuardia() {
   // Ref síncrono para prevenir doble-ejecución antes del re-render.
   // `procesando` es estado (asincrónico) y no es suficiente como guard.
   const enEjecucionRef = useRef(false)
+
+  // Busca placas a distancia 1 cuando el lookup falló ("no registrado").
+  // Devuelve [] ante cualquier problema — la sugerencia es un extra, no debe
+  // romper el flujo de error principal.
+  async function buscarSugerencias(placa: string): Promise<SugerenciaPlaca[]> {
+    try {
+      const { data } = await apollo.query({
+        query: SUGERENCIAS_PLACA_QUERY,
+        variables: { placa },
+        fetchPolicy: 'network-only',
+      })
+      return data?.sugerenciasPlaca ?? []
+    } catch {
+      return []
+    }
+  }
 
   // Limpia el resultado después de N segundos
   // Éxito = 3000ms (guardia procesa la placa en 2s) | Error = 7000ms (necesita más tiempo para leer)
@@ -160,13 +201,16 @@ export function useAccesoGuardia() {
         fecha:          a.fecha,
         vehiculoPlaca:  a.vehiculoPlaca,
       }))
+      // En modo Auto el backend decide la dirección; el mensaje refleja r.tipo real.
+      const dir = (r.tipo ?? tipo) === 'entrada' ? 'Entrada' : 'Salida'
       mostrarResultado({
         ok:      true,
-        mensaje: tipo === 'entrada' ? 'Entrada registrada' : 'Salida registrada',
+        mensaje: `${dir} registrada`,
         placa:   r.placaVehiculo,
         metodo:  r.metodoAcceso,
         alertas,
-      })
+        espacioSugerido: r.espacioSugerido ?? null,
+      }, r.espacioSugerido ? 12000 : undefined)  // más tiempo si hay acción pendiente
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al registrar acceso'
       mostrarResultado({ ok: false, mensaje: msg, alertas: [] }, 7000)
@@ -214,16 +258,22 @@ export function useAccesoGuardia() {
         fecha:          a.fecha,
         vehiculoPlaca:  a.vehiculoPlaca,
       }))
+      const dir = (r.tipo ?? tipo) === 'entrada' ? 'Entrada' : 'Salida'
       mostrarResultado({
         ok:      true,
-        mensaje: tipo === 'entrada' ? 'Entrada manual registrada' : 'Salida manual registrada',
+        mensaje: `${dir} manual registrada`,
         placa:   r.placaVehiculo,
         metodo:  'manual',
         alertas: alertasM,
-      })
+        espacioSugerido: r.espacioSugerido ?? null,
+      }, r.espacioSugerido ? 12000 : undefined)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al registrar acceso'
-      mostrarResultado({ ok: false, mensaje: msg, alertas: [] }, 7000)
+      // Si la placa no existe (OCR mal leído o tipeo), ofrecer placas cercanas.
+      const sugerencias = /no registrad/i.test(msg)
+        ? await buscarSugerencias(placa)
+        : []
+      mostrarResultado({ ok: false, mensaje: msg, alertas: [], sugerencias }, sugerencias.length ? 10000 : 7000)
     } finally {
       setProcesando(false)
       setConexion(c => ({ ...c, reintentando: false, intentos: 0 }))

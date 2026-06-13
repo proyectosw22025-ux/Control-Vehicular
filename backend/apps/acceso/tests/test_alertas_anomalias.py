@@ -167,3 +167,48 @@ def test_task_no_duplica_alertas(vehiculo_activo, punto_acceso):
         fecha_analisis=ayer,
     ).count()
     assert count == 1  # no se duplicó
+
+
+# ── Documento vencido detectado en garita al ingresar ────────────────────────
+
+@pytest.mark.django_db
+def test_entrada_con_soat_vencido_genera_alerta(vehiculo_activo):
+    """Al ingresar, un SOAT vencido crea AlertaAcceso visible para el guardia."""
+    from datetime import date, timedelta as td
+    from apps.vehiculos.models import DocumentoVehiculo
+    from apps.acceso.schema import _detectar_anomalias_acceso
+    DocumentoVehiculo.objects.create(
+        vehiculo=vehiculo_activo, tipo_doc="soat", numero="X-1",
+        fecha_vencimiento=date.today() - td(days=45),  # >30 días → crítica
+    )
+    nuevas = _detectar_anomalias_acceso(vehiculo_activo, "entrada")
+    docs = [a for a in nuevas if a.tipo_anomalia == "documento_vencido"]
+    assert len(docs) == 1
+    assert docs[0].severidad == "critica"
+
+
+@pytest.mark.django_db
+def test_documento_vigente_no_genera_alerta(vehiculo_activo):
+    from datetime import date, timedelta as td
+    from apps.vehiculos.models import DocumentoVehiculo
+    from apps.acceso.schema import _detectar_anomalias_acceso
+    DocumentoVehiculo.objects.create(
+        vehiculo=vehiculo_activo, tipo_doc="soat", numero="X-2",
+        fecha_vencimiento=date.today() + td(days=120),
+    )
+    nuevas = _detectar_anomalias_acceso(vehiculo_activo, "entrada")
+    assert not any(a.tipo_anomalia == "documento_vencido" for a in nuevas)
+
+
+@pytest.mark.django_db
+def test_documento_vencido_no_alerta_en_salida(vehiculo_activo):
+    """La detección de anomalías solo corre en entradas."""
+    from datetime import date, timedelta as td
+    from apps.vehiculos.models import DocumentoVehiculo
+    from apps.acceso.schema import _detectar_anomalias_acceso
+    DocumentoVehiculo.objects.create(
+        vehiculo=vehiculo_activo, tipo_doc="soat", numero="X-3",
+        fecha_vencimiento=date.today() - td(days=10),
+    )
+    nuevas = _detectar_anomalias_acceso(vehiculo_activo, "salida")
+    assert nuevas == []

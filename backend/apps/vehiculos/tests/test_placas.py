@@ -7,7 +7,7 @@ y "ZYX-123" son EL MISMO vehículo físico y no pueden coexistir.
 """
 import pytest
 from apps.vehiculos.models import Vehiculo
-from apps.vehiculos.utils import normalizar_placa, placa_comparable
+from apps.vehiculos.utils import normalizar_placa, placa_comparable, placas_cercanas
 from conftest import graphql
 
 REGISTRAR = """
@@ -53,6 +53,27 @@ class TestNormalizarPlaca:
         assert placa_comparable("Z y-X. 12 3") == "ZYX123"
 
 
+class TestPlacasCercanas:
+    def test_un_caracter_sustituido(self):
+        """El caso real del OCR: ZVX123 leído cuando era ZYX123 (V↔Y)."""
+        cercanas = placas_cercanas("ZVX-123", ["ZYX-123", "ABC-1234", "LPZ-9999"])
+        assert cercanas == ["ZYX-123"]
+
+    def test_ignora_separadores_en_la_comparacion(self):
+        cercanas = placas_cercanas("ZVX123", ["ZYX-123"])
+        assert cercanas == ["ZYX-123"]
+
+    def test_un_caracter_de_mas(self):
+        """Letra extra: ABC1234 vs ABC-123."""
+        assert "ABC-123" in placas_cercanas("ABC1234", ["ABC-123"])
+
+    def test_dos_diferencias_no_sugiere(self):
+        assert placas_cercanas("ZVZ-123", ["ZYX-123"]) == []
+
+    def test_no_se_sugiere_a_si_misma(self):
+        assert placas_cercanas("ZYX-123", ["ZYX-123"]) == []
+
+
 # ── Integración: la mutación de registro ─────────────────────────────────────
 
 @pytest.mark.django_db
@@ -82,3 +103,35 @@ def test_formato_invalido_rechazado_con_mensaje_claro(gql_admin, tipo_vehiculo, 
     r = graphql(gql_admin, REGISTRAR, {"input": _input(tipo_vehiculo, admin, "PLACA-FALSA")})
     assert "errors" in r
     assert "Formato de placa inválido" in r["errors"][0]["message"]
+
+
+# ── Sugerencia de placa cercana (query del guardia) ──────────────────────────
+
+SUGERENCIAS = """
+query Sugerencias($placa: String!) {
+  sugerenciasPlaca(placa: $placa) { placa marca propietarioNombre }
+}
+"""
+
+
+@pytest.mark.django_db
+def test_sugerencia_placa_cercana_para_guardia(gql_guardia, tipo_vehiculo, usuario_normal):
+    """El OCR leyó 'ZVX-123' (V por Y); el vehículo real 'ZYX-123' se sugiere."""
+    Vehiculo.objects.create(
+        placa="ZYX-123", tipo=tipo_vehiculo, propietario=usuario_normal,
+        marca="Toyota", modelo="Corolla", anio=2021, color="blanco", estado="activo",
+    )
+    r = graphql(gql_guardia, SUGERENCIAS, {"placa": "ZVX-123"})
+    assert "errors" not in r
+    placas = [s["placa"] for s in r["data"]["sugerenciasPlaca"]]
+    assert placas == ["ZYX-123"]
+
+
+@pytest.mark.django_db
+def test_sugerencia_requiere_personal(gql_usuario_normal, tipo_vehiculo, usuario_normal):
+    Vehiculo.objects.create(
+        placa="ZYX-123", tipo=tipo_vehiculo, propietario=usuario_normal,
+        marca="Toyota", modelo="Corolla", anio=2021, color="blanco", estado="activo",
+    )
+    r = graphql(gql_usuario_normal, SUGERENCIAS, {"placa": "ZVX-123"})
+    assert "errors" in r
