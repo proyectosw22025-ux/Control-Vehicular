@@ -8,9 +8,10 @@ encuentra varios candidatos y opera sobre uno arbitrario.
 """
 import re
 
-# Formato boliviano usado en todo el sistema (OCR, seeds, tests):
-# 2-3 letras (código departamental) + 3-4 dígitos + letra final opcional.
-PLACA_CANONICA_RE = re.compile(r"^([A-Z]{2,3})(\d{3,4})([A-Z]?)$")
+# Formato de placa boliviano vigente (unificación 2016): 3 o 4 NÚMEROS seguidos
+# de 3 LETRAS — p.ej. "1234ABC" o "123ABC". La forma canónica almacenada
+# inserta un guion separador: "1234-ABC".
+PLACA_CANONICA_RE = re.compile(r"^(\d{3,4})([A-Z]{3})$")
 
 
 def placa_comparable(placa: str) -> str:
@@ -67,15 +68,15 @@ def placas_cercanas(placa_buscada: str, candidatas: list[str]) -> list[str]:
 
 def normalizar_placa(placa: str) -> str:
     """
-    Valida el formato boliviano y retorna la forma canónica "ABC-1234".
-    Lanza ValueError con mensaje claro si el formato no es válido.
+    Valida el formato boliviano vigente (3-4 números + 3 letras) y retorna la
+    forma canónica "1234-ABC". Lanza ValueError con mensaje claro si no es válido.
     """
     comparable = placa_comparable(placa)
     m = PLACA_CANONICA_RE.match(comparable)
     if not m:
         raise ValueError(
             f"Formato de placa inválido: '{placa}'. "
-            "Formato boliviano esperado: 2-3 letras + 3-4 dígitos "
-            "(letra final opcional). Ejemplos: ABC-1234, SCZ-123, LP-1234A."
+            "Formato boliviano esperado: 3 o 4 números seguidos de 3 letras. "
+            "Ejemplos: 1234-ABC, 123-XYZ."
         )
-    return f"{m.group(1)}-{m.group(2)}{m.group(3)}"
+    return f"{m.group(1)}-{m.group(2)}"

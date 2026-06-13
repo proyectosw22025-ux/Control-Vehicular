@@ -216,7 +216,7 @@ function FormularioNuevaAutorizacion({ onCreada, onCancelar }: {
               <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">
                 Placa *
               </label>
-              <input type="text" placeholder="ABC-1234"
+              <input type="text" placeholder="1234-ABC"
                 value={form.placa}
                 onChange={e => set('placa', e.target.value.toUpperCase())}
                 className="w-full border-2 border-slate-200 focus:border-blue-400 rounded-xl px-3.5 py-2.5 text-sm font-mono uppercase outline-none transition-colors bg-slate-50 focus:bg-white" />

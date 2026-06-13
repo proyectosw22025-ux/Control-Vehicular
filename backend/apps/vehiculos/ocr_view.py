@@ -38,12 +38,12 @@ from django.views import View
 
 logger = logging.getLogger(__name__)
 
-# Regex principal: letras + guión opcional + dígitos (formato estándar)
-PLACA_RE      = re.compile(r'([A-Z]{2,4}[-\s]?\d{3,4}[A-Z]?)', re.IGNORECASE)
-# Regex flexible: captura letras y dígitos separados (placas bolivianas dos líneas)
-LETRAS_RE     = re.compile(r'([A-Z]{2,4})', re.IGNORECASE)
+# Formato boliviano vigente (2016): 3-4 dígitos + 3 letras. Ej: 1234ABC.
+# Regex principal: dígitos + guión/espacio opcional + 3 letras.
+PLACA_RE      = re.compile(r'(\d{3,4}[-\s]?[A-Z]{3})', re.IGNORECASE)
+# Regex flexible: captura dígitos y letras por separado (placas de dos líneas).
+LETRAS_RE     = re.compile(r'([A-Z]{3})', re.IGNORECASE)
 NUMEROS_RE    = re.compile(r'(\d{3,4})')
-DEPTOS_BO     = {"SCZ", "CBB", "LPZ", "ORU", "TJA", "PTS", "BEN", "PAN", "CHU"}
 
 # ── Singleton FastALPR — se carga una sola vez por proceso ────────────────────
 _fast_alpr_instance = None
@@ -164,7 +164,7 @@ def _reconocer_pytesseract(img_bytes: bytes) -> dict:
         raw = pytesseract.image_to_string(img_pil, config=TESSERACT_CONFIG)
         ms  = round((time.time() - t0) * 1000)
         placa = _normalizar_placa(raw)
-        conf  = 0.80 if placa and re.match(r'^[A-Z]{2,4}-\d{3,4}[A-Z]?$', placa) else 0.65
+        conf  = 0.80 if placa and re.match(r'^\d{3,4}-[A-Z]{3}$', placa) else 0.65
         return {"placa": placa, "confianza": conf, "metodo": "pytesseract", "ms": ms}
     except Exception as exc:
         return {"placa": None, "confianza": 0.0, "metodo": "pytesseract-error",
@@ -175,9 +175,9 @@ def _reconocer_pytesseract(img_bytes: bytes) -> dict:
 
 def _normalizar_placa(texto_raw: str) -> str | None:
     """
-    Normaliza el texto OCR al formato boliviano: SCZ-1234, CBB-001, etc.
-    Maneja el caso especial de placas bolivianas de dos líneas donde
-    FastALPR devuelve "SCZ 1234", "SCZ P 1234", "S C Z 1234", etc.
+    Normaliza el texto OCR al formato boliviano vigente: 3-4 dígitos + 3 letras
+    → "1234-ABC". Maneja placas de dos líneas donde FastALPR devuelve los dígitos
+    y las letras separados o en distinto orden ("1234 ABC", "1 2 3 4 ABC").
     """
     if not texto_raw:
         return None
@@ -186,46 +186,25 @@ def _normalizar_placa(texto_raw: str) -> str | None:
     upper  = texto_raw.upper()
     limpio = re.sub(r"[^A-Z0-9\s-]", " ", upper).strip()
 
-    # Intento 1: formato estándar junto (SCZ-1234, SCZP1234, SCZ1234)
-    sin_espacios   = re.sub(r"\s+", "", limpio)
+    # Intento 1: dígitos+letras juntos en orden canónico (1234ABC, 1234-ABC)
     sin_todo_extra = re.sub(r"[-\s]", "", limpio)  # sin espacios NI guiones
-
-    # Caso Bolivia: código depto (2-3 letras) + letra de serie opcional + dígitos
-    # Ej: SCZP1234 → SCZ-1234 / SCZ1234 → SCZ-1234
-    m_bo = re.match(r"([A-Z]{2,3})([A-Z]?)(\d{3,4})([A-Z]?)$", sin_todo_extra)
+    m_bo = re.match(r"(\d{3,4})([A-Z]{3})$", sin_todo_extra)
     if m_bo:
-        codigo_base = m_bo.group(1)
-        letra_serie = m_bo.group(2)   # letra de serie boliviana (P, A, B…) → descartar
-        numero      = m_bo.group(3)
-        letra_fin   = m_bo.group(4)   # letra al final de algunos países → conservar
-        if codigo_base in DEPTOS_BO or (2 <= len(codigo_base) <= 3 and letra_serie):
-            return f"{codigo_base}-{numero}{letra_fin}"
+        return f"{m_bo.group(1)}-{m_bo.group(2)}"
 
-    match = PLACA_RE.search(sin_espacios)
+    # Búsqueda dentro de texto con ruido (formato dígitos→letras en cualquier parte)
+    match = PLACA_RE.search(re.sub(r"\s+", "", limpio))
     if match:
-        placa = match.group(0).upper()
-        if "-" not in placa:
-            m2 = re.match(r"([A-Z]{2,4})(\d{3,4}[A-Z]?)", placa)
-            if m2:
-                placa = f"{m2.group(1)}-{m2.group(2)}"
-        return placa
+        comp = re.sub(r"[-\s]", "", match.group(0).upper())
+        m2 = re.match(r"(\d{3,4})([A-Z]{3})", comp)
+        if m2:
+            return f"{m2.group(1)}-{m2.group(2)}"
 
-    # Intento 2: letras y números separados (placas bolivianas dos líneas)
-    # Ej: "S C Z P 1234" → busca código depto + número
-    partes  = re.sub(r"\s+", " ", limpio)
-    numeros = NUMEROS_RE.findall(partes)
-    letras  = LETRAS_RE.findall(partes)
-
-    # Priorizar código departamental conocido
-    codigo = next((l for l in letras if l in DEPTOS_BO), None)
-    if not codigo:
-        # Tomar primeras 2-3 letras consecutivas (excluyendo palabras largas)
-        codigo = next((l for l in letras if 2 <= len(l) <= 3), None)
-
-    numero = next((n for n in numeros if 3 <= len(n) <= 4), None)
-
-    if codigo and numero:
-        return f"{codigo}-{numero}"
+    # Intento 2: dígitos y letras sueltos (placas de dos líneas, OCR los separa)
+    numero = next((n for n in NUMEROS_RE.findall(limpio) if 3 <= len(n) <= 4), None)
+    letras = next((l for l in LETRAS_RE.findall(limpio) if len(l) == 3), None)
+    if numero and letras:
+        return f"{numero}-{letras}"
 
     return None
 

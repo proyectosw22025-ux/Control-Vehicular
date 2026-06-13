@@ -1187,7 +1187,8 @@ function BtnSubmit({ loading, label }: { loading: boolean; label: string }) {
 
 // ── Wizard de registro de vehículo en 3 pasos ─────────────────────────────
 
-const PLACA_RE = /^[A-Z0-9]{2,4}[-]?\d{3,4}[A-Z]?$/i
+// Formato boliviano vigente (2016): 3-4 números + 3 letras (ej. 1234-ABC).
+const PLACA_RE = /^\d{3,4}[-\s]?[A-Z]{3}$/i
 
 const COLORES_PRESET = [
   { nombre: 'Blanco',      hex: '#FFFFFF' },
@@ -1362,7 +1363,7 @@ export function WizardRegistrarVehiculo({ tipos, usuarios, esAdmin, usuario, onC
                 type="text"
                 value={placa}
                 onChange={e => setPlaca(e.target.value.toUpperCase())}
-                placeholder="ABC-1234"
+                placeholder="1234-ABC"
                 maxLength={10}
                 className={`${inputCls} pr-8 font-mono tracking-widest transition-colors ${
                   placa.length > 2
@@ -1379,7 +1380,7 @@ export function WizardRegistrarVehiculo({ tipos, usuarios, esAdmin, usuario, onC
               )}
             </div>
             {placa.length > 2 && !placaValida && (
-              <p className="text-xs text-red-600 mt-1">Formato: 2-4 letras + 3-4 números (ej: ABC-1234, SCZ3456)</p>
+              <p className="text-xs text-red-600 mt-1">Formato: 3-4 números + 3 letras (ej: 1234-ABC, 123-XYZ)</p>
             )}
           </div>
 

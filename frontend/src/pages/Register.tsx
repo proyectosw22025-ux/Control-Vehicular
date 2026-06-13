@@ -438,7 +438,7 @@ function FormularioVisitante() {
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1">Placa de tu vehículo</label>
             <input type="text" value={form.placa}
-              placeholder="Ej: ABC-123 · 123ABC · MOTO-456"
+              placeholder="Ej: 1234-ABC · 123-XYZ"
               maxLength={15}
               onChange={e => set('placa', e.target.value.toUpperCase())}
               style={{ textTransform: 'uppercase' }}

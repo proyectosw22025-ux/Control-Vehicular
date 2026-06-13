@@ -229,18 +229,19 @@ class Command(BaseCommand):
         def propietario(ci):
             return Usuario.objects.filter(ci=ci).first()
 
+        # Formato boliviano vigente (2016): 3-4 números + 3 letras → "1234-ABC".
         vehiculos = [
             # (placa, tipo, ci_propietario, marca, modelo, anio, color, estado)
-            ("SCZ-1234", "Automóvil",   "D001", "Toyota",   "Corolla",   2020, "Blanco",  "activo"),
-            ("SCZ-5678", "Camioneta",   "D002", "Ford",     "Explorer",  2019, "Plata",   "activo"),
-            ("SCZ-9012", "Automóvil",   "D003", "Hyundai",  "Tucson",    2021, "Negro",   "activo"),
-            ("SCZ-3456", "Motocicleta", "E001", "Honda",    "CB300",     2022, "Rojo",    "activo"),
-            ("SCZ-7890", "Automóvil",   "E002", "Chevrolet","Sail",      2018, "Azul",    "activo"),
-            ("SCZ-2345", "Motocicleta", "E003", "Yamaha",   "FZ-S",      2021, "Negro",   "activo"),
-            ("SCZ-6789", "Automóvil",   "E004", "Kia",      "Rio",       2020, "Gris",    "activo"),
-            ("SCZ-0123", "Automóvil",   "PA001","Nissan",   "Sentra",    2019, "Blanco",  "activo"),
-            ("SCZ-4567", "Camioneta",   "PA002","Toyota",   "Hilux",     2022, "Verde",   "activo"),
-            ("SCZ-8888", "Automóvil",   "E001", "Suzuki",   "Swift",     2017, "Amarillo","pendiente"),
+            ("1234-SCZ", "Automóvil",   "D001", "Toyota",   "Corolla",   2020, "Blanco",  "activo"),
+            ("5678-SCZ", "Camioneta",   "D002", "Ford",     "Explorer",  2019, "Plata",   "activo"),
+            ("9012-SCZ", "Automóvil",   "D003", "Hyundai",  "Tucson",    2021, "Negro",   "activo"),
+            ("3456-SCZ", "Motocicleta", "E001", "Honda",    "CB300",     2022, "Rojo",    "activo"),
+            ("7890-SCZ", "Automóvil",   "E002", "Chevrolet","Sail",      2018, "Azul",    "activo"),
+            ("2345-SCZ", "Motocicleta", "E003", "Yamaha",   "FZ-S",      2021, "Negro",   "activo"),
+            ("6789-SCZ", "Automóvil",   "E004", "Kia",      "Rio",       2020, "Gris",    "activo"),
+            ("123-XYZ",  "Automóvil",   "PA001","Nissan",   "Sentra",    2019, "Blanco",  "activo"),
+            ("4567-CBB", "Camioneta",   "PA002","Toyota",   "Hilux",     2022, "Verde",   "activo"),
+            ("8888-LPZ", "Automóvil",   "E001", "Suzuki",   "Swift",     2017, "Amarillo","pendiente"),
         ]
 
         for placa, tipo_nombre, ci, marca, modelo, anio, color, estado in vehiculos:

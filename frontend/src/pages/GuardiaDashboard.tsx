@@ -436,7 +436,7 @@ export default function GuardiaDashboard() {
             <div className="grid grid-cols-2 gap-2 mb-2">
               <div>
                 <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Placa *</label>
-                <input type="text" placeholder="ABC-1234"
+                <input type="text" placeholder="1234-ABC"
                   value={formTemp.placa}
                   onChange={e => { setErrorTemp(''); setFormTemp(p => ({ ...p, placa: e.target.value.toUpperCase() })) }}
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-orange-400" />
@@ -876,7 +876,7 @@ export default function GuardiaDashboard() {
                 value={placaManual}
                 onChange={e => setPlaca(e.target.value.toUpperCase())}
                 onKeyDown={e => e.key === 'Enter' && handleManual()}
-                placeholder="ABC-1234"
+                placeholder="1234-ABC"
                 disabled={!acceso.puntoId}
                 className="flex-1 border border-slate-300 rounded-lg px-3 py-2.5 text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-orange-400 disabled:opacity-40"
               />

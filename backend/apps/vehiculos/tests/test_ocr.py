@@ -50,7 +50,7 @@ def test_ocr_sin_auth_devuelve_401(gql_client):
 
 @pytest.mark.django_db
 def test_ocr_detecta_placa_con_guion(gql_admin):
-    with _patch_fallback_pytesseract("SCZ-3456"):
+    with _patch_fallback_pytesseract("1234-SCZ"):
         r = gql_admin.post(
             "/api/ocr/placa/",
             data=json.dumps({"imagen": _imagen_b64()}),
@@ -58,34 +58,34 @@ def test_ocr_detecta_placa_con_guion(gql_admin):
         )
     assert r.status_code == 200
     data = r.json()
-    assert data["placa"] == "SCZ-3456"
+    assert data["placa"] == "1234-SCZ"
     assert data["confianza"] >= 0.80  # formato valido -> confianza del fallback
 
 
 @pytest.mark.django_db
 def test_ocr_normaliza_placa_sin_guion(gql_admin):
-    """SCZ3456 → SCZ-3456 (inserta guión automáticamente)."""
-    with _patch_fallback_pytesseract("SCZ3456"):
+    """1234SCZ → 1234-SCZ (inserta guión automáticamente)."""
+    with _patch_fallback_pytesseract("1234SCZ"):
         r = gql_admin.post(
             "/api/ocr/placa/",
             data=json.dumps({"imagen": _imagen_b64()}),
             content_type="application/json",
         )
     assert r.status_code == 200
-    assert r.json()["placa"] == "SCZ-3456"
+    assert r.json()["placa"] == "1234-SCZ"
 
 
 @pytest.mark.django_db
 def test_ocr_ignora_ruido_y_extrae_placa(gql_admin):
     """Texto con ruido alrededor → extrae solo la placa."""
-    with _patch_fallback_pytesseract("...ABC 1234!!!"):
+    with _patch_fallback_pytesseract("...123 ABC!!!"):
         r = gql_admin.post(
             "/api/ocr/placa/",
             data=json.dumps({"imagen": _imagen_b64()}),
             content_type="application/json",
         )
     assert r.status_code == 200
-    assert r.json()["placa"] == "ABC-1234"
+    assert r.json()["placa"] == "123-ABC"
 
 
 # ── Sin detección ─────────────────────────────────────────────────────────
@@ -151,7 +151,7 @@ def test_ocr_json_invalido_devuelve_400(gql_admin):
 @pytest.mark.django_db
 def test_ocr_confianza_alta_con_guion(gql_admin):
     """Placa con formato válido → confianza 0.80 del fallback pytesseract."""
-    with _patch_fallback_pytesseract("CBB-4567"):
+    with _patch_fallback_pytesseract("4567-CBB"):
         r = gql_admin.post(
             "/api/ocr/placa/",
             data=json.dumps({"imagen": _imagen_b64()}),
