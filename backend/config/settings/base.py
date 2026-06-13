@@ -129,6 +129,13 @@ CACHES = {
 
 AUTH_USER_MODEL = "usuarios.Usuario"
 
+# El QR permanente (estático, legacy) es menos seguro que el QR dinámico TOTP:
+# una foto sirve para siempre. Este flag permite cortarlo cuando la métrica de
+# uso (query metricasQrPermanente) muestre que ya casi nadie lo usa. Default
+# True para no romper a usuarios actuales — se cambia a False vía variable de
+# entorno cuando se decida la deprecación.
+QR_PERMANENTE_HABILITADO = config("QR_PERMANENTE_HABILITADO", default=True, cast=bool)
+
 # AllowAllUsersModelBackend lets authenticate() return the user even when
 # is_active=False so our login mutation can raise a meaningful "Usuario inactivo"
 # error instead of the generic "Credenciales inválidas".

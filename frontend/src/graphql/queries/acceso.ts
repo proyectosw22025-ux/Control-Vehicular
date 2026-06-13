@@ -36,7 +36,7 @@ export const VEHICULOS_TEMPORALES_QUERY = gql`
     vehiculosTemporalesActivos {
       id placa tipo tipoDisplay destino responsable
       horaIngreso horaLimite horaSalida
-      activo observacion minutosRestantes vencido
+      activo observacion minutosRestantes vencido espacioParqueo
     }
   }
 `
@@ -59,6 +59,16 @@ export const REGISTROS_ACCESO_QUERY = gql`
       observacion
       puntoNombre
       placaVehiculo
+    }
+  }
+`
+
+export const VEHICULOS_EN_CAMPUS_QUERY = gql`
+  query VehiculosEnCampus {
+    vehiculosEnCampus {
+      vehiculoId placa marcaModelo
+      propietarioNombre propietarioTelefono
+      horaEntrada espacioParqueo
     }
   }
 `

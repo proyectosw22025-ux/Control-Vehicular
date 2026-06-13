@@ -106,3 +106,11 @@ export const MAPA_PARQUEO_QUERY = gql`
     }
   }
 `
+
+export const ESPACIOS_DISPONIBLES_QUERY = gql`
+  query EspaciosDisponibles($zonaId: Int) {
+    espaciosDisponibles(zonaId: $zonaId) {
+      id numero zona { id nombre }
+    }
+  }
+`

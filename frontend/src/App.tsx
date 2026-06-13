@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ApolloProvider } from '@apollo/client'
 import { client } from './apollo/client'
@@ -18,14 +19,26 @@ import Visitantes from './pages/Visitantes'
 import Infracciones from './pages/Infracciones'
 import Notificaciones from './pages/Notificaciones'
 import Perfil from './pages/Perfil'
-import Reportes from './pages/Reportes'
 import GuardiaDashboard from './pages/GuardiaDashboard'
 import HistorialVehiculo from './pages/HistorialVehiculo'
 import Auditoria from './pages/Auditoria'
-import ParqueoDemo    from './pages/ParqueoDemo'
-import RastreoEnVivo  from './pages/RastreoEnVivo'
 import MisAccesos     from './pages/MisAccesos'
 import MiPaseQR      from './pages/MiPaseQR'
+
+// Páginas pesadas (Leaflet/OSRM en mapas, Recharts en reportes): se cargan SOLO
+// al abrirlas, en su propio chunk. Antes viajaban en el bundle inicial y todo
+// usuario las descargaba aunque solo entrara a ver su QR.
+const ParqueoDemo   = lazy(() => import('./pages/ParqueoDemo'))
+const RastreoEnVivo = lazy(() => import('./pages/RastreoEnVivo'))
+const Reportes      = lazy(() => import('./pages/Reportes'))
+
+function CargandoPagina() {
+  return (
+    <div className="flex items-center justify-center h-full py-20 text-slate-400 text-sm">
+      Cargando…
+    </div>
+  )
+}
 
 export default function App() {
   return (
@@ -55,12 +68,12 @@ export default function App() {
             <Route path="infracciones" element={<Infracciones />} />
             <Route path="notificaciones" element={<Notificaciones />} />
             <Route path="perfil" element={<Perfil />} />
-            <Route path="reportes" element={<PrivateRoute roles={['Administrador']}><Reportes /></PrivateRoute>} />
+            <Route path="reportes" element={<PrivateRoute roles={['Administrador']}><Suspense fallback={<CargandoPagina />}><Reportes /></Suspense></PrivateRoute>} />
             <Route path="guardia" element={<PrivateRoute roles={['Administrador', 'Guardia']}><GuardiaDashboard /></PrivateRoute>} />
             <Route path="vehiculos/:vehiculoId/historial" element={<HistorialVehiculo />} />
             <Route path="auditoria" element={<PrivateRoute roles={['Administrador']}><Auditoria /></PrivateRoute>} />
-            <Route path="parqueo-demo"   element={<ParqueoDemo />} />
-            <Route path="rastreo-en-vivo" element={<RastreoEnVivo />} />
+            <Route path="parqueo-demo"   element={<Suspense fallback={<CargandoPagina />}><ParqueoDemo /></Suspense>} />
+            <Route path="rastreo-en-vivo" element={<Suspense fallback={<CargandoPagina />}><RastreoEnVivo /></Suspense>} />
             <Route path="mis-accesos"    element={<MisAccesos />} />
             <Route path="mi-pase-qr"     element={<MiPaseQR />} />
           </Route>

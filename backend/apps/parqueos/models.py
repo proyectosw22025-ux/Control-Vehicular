@@ -70,12 +70,28 @@ class SesionParqueo(models.Model):
     espacio = models.ForeignKey(
         EspacioParqueo, on_delete=models.PROTECT, related_name="sesiones"
     )
+    # Una sesión la ocupa un vehículo REGISTRADO o uno TEMPORAL (proveedor,
+    # mantenimiento, visitante externo). Exactamente uno de los dos.
     vehiculo = models.ForeignKey(
-        "vehiculos.Vehiculo", on_delete=models.PROTECT, related_name="sesiones_parqueo"
+        "vehiculos.Vehiculo", on_delete=models.PROTECT,
+        related_name="sesiones_parqueo", null=True, blank=True,
+    )
+    vehiculo_temporal = models.ForeignKey(
+        "acceso.VehiculoTemporal", on_delete=models.PROTECT,
+        related_name="sesiones_parqueo", null=True, blank=True,
     )
     hora_entrada = models.DateTimeField(default=timezone.now)
     hora_salida = models.DateTimeField(null=True, blank=True)
     estado = models.CharField(max_length=10, choices=ESTADOS, default="activa")
+
+    @property
+    def placa_ocupante(self) -> str:
+        """Placa del ocupante, sea vehículo registrado o temporal."""
+        if self.vehiculo_id:
+            return self.vehiculo.placa
+        if self.vehiculo_temporal_id:
+            return self.vehiculo_temporal.placa
+        return "—"
 
     class Meta:
         db_table = "sesiones_parqueo"
@@ -85,6 +101,8 @@ class SesionParqueo(models.Model):
         constraints = [
             # Garantía a nivel de datos: aunque dos requests concurrentes pasen
             # las validaciones del resolver, la BD impide duplicar sesión activa.
+            # (Postgres trata NULL como distinto, así que múltiples sesiones de
+            # temporales —vehiculo NULL— no colisionan entre sí.)
             models.UniqueConstraint(
                 fields=["vehiculo"],
                 condition=models.Q(estado="activa"),
@@ -98,6 +116,6 @@ class SesionParqueo(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.vehiculo} en {self.espacio} ({self.get_estado_display()})"
+        return f"{self.placa_ocupante} en {self.espacio} ({self.get_estado_display()})"
 
 

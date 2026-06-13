@@ -295,9 +295,12 @@ export default function Layout() {
                   end={to === '/'}
                   title={label}
                   className={({ isActive }) =>
-                    `flex items-center justify-center px-4 py-2.5 text-sm transition-colors
-                     ${isActive ? 'bg-slate-600 text-white' : 'text-slate-300 hover:bg-slate-700 hover:text-white'}`
+                    `flex items-center justify-center px-4 py-2.5 text-sm transition-all
+                     ${isActive
+                       ? 'text-white font-semibold border-l-2'
+                       : 'text-blue-100/70 hover:text-white hover:bg-white/10'}`
                   }
+                  style={({ isActive }) => isActive ? { borderColor: '#e8951a', background: 'rgba(255,255,255,0.12)' } : {}}
                 >
                   <span className="relative">
                     <Icon size={18} />

@@ -14,6 +14,7 @@ import { VEHICULOS_QUERY } from '../graphql/queries/vehiculos'
 import {
   CREAR_ZONA_MUTATION, CREAR_ESPACIO_MUTATION,
   INICIAR_SESION_MUTATION, CERRAR_SESION_MUTATION,
+  CAMBIAR_ESTADO_ESPACIO_MUTATION,
 } from '../graphql/mutations/parqueos'
 import { useAuth } from '../hooks/useAuth'
 
@@ -105,6 +106,15 @@ export default function Parqueos() {
       if (zonaSelId) refetchEspacios(); refetchZonas(); refetchActivas()
     },
     onError(e) { toast.error('Error al cerrar sesión', e.message) },
+  })
+  const [cambiarEstadoEspacio, { loading: lMant }] = useMutation(CAMBIAR_ESTADO_ESPACIO_MUTATION, {
+    onCompleted(d) {
+      const e = d.cambiarEstadoEspacio
+      toast.exito(e.estado === 'mantenimiento' ? 'Espacio fuera de servicio' : 'Espacio reactivado',
+        `#${e.numero} ahora está ${e.estado}`)
+      if (zonaSelId) refetchEspacios(); refetchZonas()
+    },
+    onError(e) { toast.error('No se pudo cambiar el estado', e.message) },
   })
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -295,6 +305,20 @@ export default function Parqueos() {
                     <button onClick={() => cerrarSesion({ variables: { sesionId: e.sesionActivaId } })} disabled={lCerrar}
                       className="mt-1.5 text-[10px] bg-white/70 hover:bg-white rounded px-1.5 py-0.5 border border-current transition-colors disabled:opacity-40">
                       Salida
+                    </button>
+                  )}
+                  {/* Mantenimiento — solo admin. Disponible→fuera de servicio y viceversa. */}
+                  {esAdmin && e.estado === 'disponible' && (
+                    <button onClick={() => cambiarEstadoEspacio({ variables: { espacioId: e.id, enMantenimiento: true } })} disabled={lMant}
+                      title="Poner fuera de servicio"
+                      className="mt-1 block w-full text-[9px] text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-40">
+                      ⚙ Fuera de servicio
+                    </button>
+                  )}
+                  {esAdmin && e.estado === 'mantenimiento' && (
+                    <button onClick={() => cambiarEstadoEspacio({ variables: { espacioId: e.id, enMantenimiento: false } })} disabled={lMant}
+                      className="mt-1.5 text-[10px] bg-white/70 hover:bg-white rounded px-1.5 py-0.5 border border-current font-semibold transition-colors disabled:opacity-40">
+                      Reactivar
                     </button>
                   )}
                 </div>

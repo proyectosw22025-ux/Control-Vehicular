@@ -43,3 +43,19 @@ export const CERRAR_SESION_MUTATION = gql`
     }
   }
 `
+
+export const CAMBIAR_ESTADO_ESPACIO_MUTATION = gql`
+  mutation CambiarEstadoEspacio($espacioId: Int!, $enMantenimiento: Boolean!) {
+    cambiarEstadoEspacio(espacioId: $espacioId, enMantenimiento: $enMantenimiento) {
+      id numero estado
+    }
+  }
+`
+
+export const OCUPAR_ESPACIO_TEMPORAL_MUTATION = gql`
+  mutation OcuparEspacioTemporal($espacioId: Int!, $vtId: Int!) {
+    ocuparEspacioTemporal(espacioId: $espacioId, vehiculoTemporalId: $vtId) {
+      id placaVehiculo espacio { numero zona { nombre } }
+    }
+  }
+`

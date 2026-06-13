@@ -125,3 +125,96 @@ def test_no_estacionar_vehiculo_que_ya_salio_del_campus(gql_admin, vehiculo_en_c
     })
     assert "errors" in r
     assert "no registra ingreso" in r["errors"][0]["message"]
+
+
+# ── Mantenimiento de espacios desde la app ───────────────────────────────────
+
+MANTENIMIENTO = """
+mutation Mant($espacioId: Int!, $enMantenimiento: Boolean!) {
+  cambiarEstadoEspacio(espacioId: $espacioId, enMantenimiento: $enMantenimiento) {
+    id numero estado
+  }
+}
+"""
+
+
+@pytest.mark.django_db
+def test_admin_pone_espacio_en_mantenimiento(gql_admin, espacio_disponible):
+    r = graphql(gql_admin, MANTENIMIENTO, {"espacioId": espacio_disponible.id, "enMantenimiento": True})
+    assert "errors" not in r
+    assert r["data"]["cambiarEstadoEspacio"]["estado"] == "mantenimiento"
+
+
+@pytest.mark.django_db
+def test_reactivar_espacio_en_mantenimiento(gql_admin, espacio_disponible):
+    graphql(gql_admin, MANTENIMIENTO, {"espacioId": espacio_disponible.id, "enMantenimiento": True})
+    r = graphql(gql_admin, MANTENIMIENTO, {"espacioId": espacio_disponible.id, "enMantenimiento": False})
+    assert r["data"]["cambiarEstadoEspacio"]["estado"] == "disponible"
+
+
+@pytest.mark.django_db
+def test_no_mantenimiento_con_vehiculo_dentro(gql_admin, vehiculo_en_campus, espacio_disponible):
+    """No se puede sacar de servicio un espacio ocupado — se exige cerrar la sesión."""
+    graphql(gql_admin, INICIAR, {"espacioId": espacio_disponible.id, "vehiculoId": vehiculo_en_campus.id})
+    r = graphql(gql_admin, MANTENIMIENTO, {"espacioId": espacio_disponible.id, "enMantenimiento": True})
+    assert "errors" in r
+    assert "vehículo dentro" in r["errors"][0]["message"]
+
+
+@pytest.mark.django_db
+def test_mantenimiento_solo_admin(gql_guardia, espacio_disponible):
+    r = graphql(gql_guardia, MANTENIMIENTO, {"espacioId": espacio_disponible.id, "enMantenimiento": True})
+    assert "errors" in r
+    assert "administradores" in r["errors"][0]["message"].lower()
+
+
+# ── Vehículos temporales ocupando espacios ───────────────────────────────────
+
+OCUPAR_TEMPORAL = """
+mutation Ocupar($espacioId: Int!, $vtId: Int!) {
+  ocuparEspacioTemporal(espacioId: $espacioId, vehiculoTemporalId: $vtId) {
+    id estado placaVehiculo esTemporal
+  }
+}
+"""
+
+
+def _crear_temporal(placa="PROV-1"):
+    from django.utils import timezone
+    from datetime import timedelta
+    from apps.acceso.models import VehiculoTemporal
+    return VehiculoTemporal.objects.create(
+        placa=placa, tipo="proveedor", destino="Bloque A",
+        hora_limite=timezone.now() + timedelta(hours=2),
+    )
+
+
+@pytest.mark.django_db
+def test_temporal_ocupa_espacio(gql_guardia, espacio_disponible):
+    vt = _crear_temporal()
+    r = graphql(gql_guardia, OCUPAR_TEMPORAL, {"espacioId": espacio_disponible.id, "vtId": vt.id})
+    assert "errors" not in r
+    data = r["data"]["ocuparEspacioTemporal"]
+    assert data["estado"] == "activa"
+    assert data["placaVehiculo"] == "PROV-1"
+    assert data["esTemporal"] is True
+    espacio_disponible.refresh_from_db()
+    assert espacio_disponible.estado == "ocupado"
+
+
+@pytest.mark.django_db
+def test_salida_temporal_libera_espacio(gql_guardia, espacio_disponible):
+    """Cuando el temporal registra salida, su espacio vuelve a estar disponible."""
+    from conftest import graphql as _g
+    vt = _crear_temporal("PROV-2")
+    graphql(gql_guardia, OCUPAR_TEMPORAL, {"espacioId": espacio_disponible.id, "vtId": vt.id})
+
+    salida = """
+    mutation Salida($placa: String!) {
+      registrarSalidaTemporal(placa: $placa) { id activo }
+    }
+    """
+    r = _g(gql_guardia, salida, {"placa": "PROV-2"})
+    assert "errors" not in r
+    espacio_disponible.refresh_from_db()
+    assert espacio_disponible.estado == "disponible"

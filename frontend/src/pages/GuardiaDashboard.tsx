@@ -11,7 +11,7 @@
  *   y detecta Error 4001 (token JWT expirado en WebSocket).
  */
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useQuery, useMutation, gql } from '@apollo/client'
+import { useQuery, useMutation, useApolloClient, gql } from '@apollo/client'
 import {
   ShieldCheck, ArrowDownCircle, ArrowUpCircle, Camera, CameraOff,
   CheckCircle2, XCircle, Clock, ParkingSquare, UserCheck, DoorOpen,
@@ -20,9 +20,10 @@ import {
 } from 'lucide-react'
 import { QrScanner }     from '../components/QrScanner'
 import { PlacaScanner } from '../components/PlacaScanner'
-import { PUNTOS_ACCESO_QUERY, REGISTROS_ACCESO_QUERY, ALERTAS_PANEL_QUERY, VEHICULOS_TEMPORALES_QUERY } from '../graphql/queries/acceso'
+import { PUNTOS_ACCESO_QUERY, REGISTROS_ACCESO_QUERY, ALERTAS_PANEL_QUERY, VEHICULOS_TEMPORALES_QUERY, VEHICULOS_EN_CAMPUS_QUERY } from '../graphql/queries/acceso'
 import { MARCAR_ALERTA_REVISADA_MUTATION, REGISTRAR_ACCESO_TEMPORAL_MUTATION, REGISTRAR_SALIDA_TEMPORAL_MUTATION } from '../graphql/mutations/acceso'
-import { INICIAR_SESION_MUTATION } from '../graphql/mutations/parqueos'
+import { INICIAR_SESION_MUTATION, OCUPAR_ESPACIO_TEMPORAL_MUTATION } from '../graphql/mutations/parqueos'
+import { ESPACIOS_DISPONIBLES_QUERY } from '../graphql/queries/parqueos'
 import { VISITAS_ACTIVAS_QUERY } from '../graphql/queries/visitantes'
 import { useAccesoGuardia, type TipoAcceso, type AlertaInfo } from '../hooks/useAccesoGuardia'
 import { useOfflineAccess } from '../hooks/useOfflineAccess'
@@ -87,7 +88,7 @@ export default function GuardiaDashboard() {
     fetchPolicy: 'cache-and-network',
   })
   // ── Tab principal ─────────────────────────────────────────────────────────
-  const [tabPrincipal, setTabPrincipal] = useState<'acceso' | 'temporales'>('acceso')
+  const [tabPrincipal, setTabPrincipal] = useState<'acceso' | 'temporales' | 'campus'>('acceso')
 
   // ── Vehículos temporales ──────────────────────────────────────────────────
   const { data: temporalesData, refetch: refetchTemporales } = useQuery(VEHICULOS_TEMPORALES_QUERY, {
@@ -95,6 +96,38 @@ export default function GuardiaDashboard() {
     fetchPolicy: 'network-only',
     skip: tabPrincipal !== 'temporales',
   })
+
+  // ── Vehículos aún en campus (parte de control / cierre de jornada) ─────────
+  const { data: campusData, refetch: refetchCampus } = useQuery(VEHICULOS_EN_CAMPUS_QUERY, {
+    fetchPolicy: 'network-only',
+    skip: tabPrincipal !== 'campus',
+  })
+  const enCampus = campusData?.vehiculosEnCampus ?? []
+
+  // Feedback compartido de asignación de espacio (entrada y temporal).
+  const [espacioAsignadoMsg, setEspacioAsignadoMsg] = useState('')
+
+  // Asignar espacio a un vehículo temporal (proveedor, mantenimiento...):
+  // toma el primer espacio libre y lo ocupa, para que el mapa refleje la
+  // ocupación física real. La categoría no aplica a externos.
+  const apolloClient = useApolloClient()
+  const [ocuparTemporal, { loading: ocupandoTemporal }] = useMutation(OCUPAR_ESPACIO_TEMPORAL_MUTATION)
+  const handleOcuparTemporal = useCallback(async (vtId: number, placa: string) => {
+    try {
+      const { data } = await apolloClient.query({ query: ESPACIOS_DISPONIBLES_QUERY, fetchPolicy: 'network-only' })
+      const libre = data?.espaciosDisponibles?.[0]
+      if (!libre) { setErrorTemp('No hay espacios libres para asignar'); return }
+      const r = await ocuparTemporal({ variables: { espacioId: parseInt(libre.id), vtId } })
+      const e = r.data?.ocuparEspacioTemporal?.espacio
+      setErrorTemp('')
+      refetchTemporales()
+      refetchStats()
+      if (e) setEspacioAsignadoMsg(`${placa} → ${e.zona.nombre} #${e.numero} ✓`)
+      setTimeout(() => setEspacioAsignadoMsg(''), 4000)
+    } catch (err: any) {
+      setErrorTemp(err?.message ?? 'No se pudo asignar el espacio')
+    }
+  }, [apolloClient, ocuparTemporal, refetchTemporales, refetchStats])
   const [registrarTemporal, { loading: loadingTemporal }] = useMutation(REGISTRAR_ACCESO_TEMPORAL_MUTATION, {
     onCompleted: () => { setFormTemp({ placa: '', tipo: 'visitante', destino: '', responsable: '', duracion: '1' }); refetchTemporales() },
     onError: (e) => setErrorTemp(e.message),
@@ -212,7 +245,6 @@ export default function GuardiaDashboard() {
 
   // Asignación de espacio de un toque tras la entrada.
   const [asignarEspacio, { loading: asignandoEspacio }] = useMutation(INICIAR_SESION_MUTATION)
-  const [espacioAsignadoMsg, setEspacioAsignadoMsg] = useState('')
   const handleAsignarEspacio = useCallback(async (espacioId: number, vehiculoId: number, numero: string, zona: string) => {
     try {
       await asignarEspacio({ variables: { input: { espacioId, vehiculoId } } })
@@ -323,17 +355,18 @@ export default function GuardiaDashboard() {
       {/* ── Selector de tabs principal ─────────────────────────── */}
       <div className="flex gap-1 mb-4 bg-slate-100 p-1 rounded-xl">
         {([
-          { id: 'acceso',     label: 'Control de Acceso',  icon: ShieldCheck, badge: 0 },
+          { id: 'acceso',     label: 'Control de Acceso',  icon: ShieldCheck, badge: 0, corto: 'Acceso' },
           { id: 'temporales', label: 'Accesos Temporales', icon: Truck,
-            badge: temporales.filter((t: any) => t.vencido).length },
+            badge: temporales.filter((t: any) => t.vencido).length, corto: 'Temporales' },
+          { id: 'campus',     label: 'En campus',          icon: DoorOpen, badge: 0, corto: 'En campus' },
         ] as const).map(t => (
-          <button key={t.id} onClick={() => setTabPrincipal(t.id)}
+          <button key={t.id} onClick={() => { setTabPrincipal(t.id); if (t.id === 'campus') refetchCampus() }}
             className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-colors ${
               tabPrincipal === t.id ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'
             }`}>
             <t.icon size={13} />
             <span className="hidden sm:inline">{t.label}</span>
-            <span className="sm:hidden">{t.id === 'acceso' ? 'Acceso' : 'Temporales'}</span>
+            <span className="sm:hidden">{t.corto}</span>
             {t.badge > 0 && (
               <span className="bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full animate-pulse">
                 {t.badge}
@@ -467,6 +500,12 @@ export default function GuardiaDashboard() {
             </button>
           </div>
 
+          {espacioAsignadoMsg && (
+            <div className="bg-green-50 border border-green-300 rounded-xl p-2.5 text-xs font-semibold text-green-800 flex items-center gap-2">
+              <ParkingSquare size={14} /> {espacioAsignadoMsg}
+            </div>
+          )}
+
           {/* Lista de vehículos temporales activos */}
           <div className="bg-white rounded-xl border border-slate-200 p-4">
             <div className="flex items-center gap-2 mb-3">
@@ -517,6 +556,19 @@ export default function GuardiaDashboard() {
                       </div>
                       <p className="text-xs text-slate-600 truncate">{vt.destino}</p>
                       {vt.responsable && <p className="text-[10px] text-slate-400">Resp: {vt.responsable}</p>}
+                      {/* Espacio de parqueo: muestra el asignado o permite asignar uno */}
+                      {vt.espacioParqueo ? (
+                        <p className="text-[10px] text-violet-700 mt-1 flex items-center gap-1">
+                          <ParkingSquare size={10} /> {vt.espacioParqueo}
+                        </p>
+                      ) : (
+                        <button
+                          disabled={ocupandoTemporal}
+                          onClick={() => handleOcuparTemporal(vt.id, vt.placa)}
+                          className="mt-1 text-[10px] text-violet-600 hover:text-violet-800 transition-colors disabled:opacity-40 flex items-center gap-1">
+                          <ParkingSquare size={10} /> Asignar espacio
+                        </button>
+                      )}
                       <div className="mt-2 flex items-center gap-2">
                         <div className="flex-1 bg-slate-200 rounded-full h-1.5">
                           <div className="h-1.5 rounded-full transition-all"
@@ -535,6 +587,58 @@ export default function GuardiaDashboard() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ══════════════ TAB EN CAMPUS (parte de control) ════════ */}
+      {tabPrincipal === 'campus' && (
+        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+            <div>
+              <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                <DoorOpen size={16} className="text-blue-600" /> Vehículos aún en campus
+              </h3>
+              <p className="text-[11px] text-slate-400">Último acceso = entrada. Útil para el cierre de jornada.</p>
+            </div>
+            <span className="text-sm font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-lg">{enCampus.length}</span>
+          </div>
+          {enCampus.length === 0 ? (
+            <p className="text-center py-10 text-slate-400 text-sm">No hay vehículos dentro del campus en este momento.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-slate-500 text-[11px] uppercase">
+                  <tr>
+                    <th className="px-4 py-2 text-left">Placa</th>
+                    <th className="px-4 py-2 text-left">Vehículo</th>
+                    <th className="px-4 py-2 text-left">Propietario</th>
+                    <th className="px-4 py-2 text-left">Ingresó</th>
+                    <th className="px-4 py-2 text-left">Parqueo</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {enCampus.map((v: any) => (
+                    <tr key={v.vehiculoId} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-2 font-mono font-bold text-slate-800">{v.placa}</td>
+                      <td className="px-4 py-2 text-slate-600 text-xs">{v.marcaModelo}</td>
+                      <td className="px-4 py-2 text-slate-600 text-xs">
+                        {v.propietarioNombre}
+                        {v.propietarioTelefono && <span className="text-slate-400"> · {v.propietarioTelefono}</span>}
+                      </td>
+                      <td className="px-4 py-2 text-slate-500 text-xs">
+                        {new Date(v.horaEntrada).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' })}
+                      </td>
+                      <td className="px-4 py-2 text-xs">
+                        {v.espacioParqueo
+                          ? <span className="text-violet-700 font-medium">{v.espacioParqueo}</span>
+                          : <span className="text-slate-300">— sin asignar</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 

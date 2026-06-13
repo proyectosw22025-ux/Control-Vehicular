@@ -225,6 +225,28 @@ class EspacioSugeridoType:
 
 
 @strawberry.type
+class VehiculoEnCampusType:
+    """Vehículo que sigue dentro del campus (último acceso = entrada)."""
+    vehiculo_id: int
+    placa: str
+    marca_modelo: str
+    propietario_nombre: str
+    propietario_telefono: str
+    hora_entrada: datetime
+    espacio_parqueo: Optional[str]  # "Zona B #07" o None si no tiene sesión activa
+
+
+@strawberry.type
+class MetricaQrPermanenteType:
+    """Uso del QR permanente legacy — para decidir su deprecación."""
+    dias: int
+    total_accesos: int
+    accesos_qr_permanente: int
+    porcentaje: float
+    habilitado: bool
+
+
+@strawberry.type
 class AuditLogType:
     id: int
     accion: str
@@ -368,6 +390,18 @@ class VehiculoTemporalType:
     @strawberry.field
     def vencido(self) -> bool:
         return self.activo and timezone.now() > self.hora_limite
+
+    @strawberry.field
+    def espacio_parqueo(self) -> Optional[str]:
+        """Espacio de parqueo asignado a este temporal, o None — para el panel."""
+        from apps.parqueos.models import SesionParqueo
+        sesion = (
+            SesionParqueo.objects
+            .select_related("espacio__zona")
+            .filter(vehiculo_temporal_id=self.id, estado="activa")
+            .first()
+        )
+        return f"{sesion.espacio.zona.nombre} #{sesion.espacio.numero}" if sesion else None
 
 
 @strawberry.type
@@ -792,6 +826,72 @@ class AccesoQuery:
         return list(qs[:limite])
 
     @strawberry.field
+    def vehiculos_en_campus(self, info: Info) -> List["VehiculoEnCampusType"]:
+        """
+        Parte de control: vehículos cuyo último registro de acceso es ENTRADA
+        (siguen dentro). Para el corte de jornada del guardia y la pregunta
+        "¿qué queda adentro?". Incluye espacio de parqueo y hora de ingreso.
+        Solo Guardia/Administrador.
+        """
+        from apps.usuarios.utils import tiene_rol
+        from django.db.models import OuterRef, Subquery
+        from apps.parqueos.models import SesionParqueo
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not (tiene_rol(user, "Guardia") or tiene_rol(user, "Administrador")):
+            raise Exception("Solo guardias y administradores pueden ver el parte de campus")
+
+        # Último tipo de acceso por vehículo, vía subconsulta correlacionada.
+        ultimo_tipo = (
+            RegistroAcceso.objects
+            .filter(vehiculo=OuterRef("vehiculo"))
+            .order_by("-timestamp", "-pk")
+            .values("tipo")[:1]
+        )
+        # Registros que SON el último de su vehículo y son entrada.
+        dentro = (
+            RegistroAcceso.objects
+            .filter(vehiculo__isnull=False, tipo="entrada")
+            .annotate(_ult=Subquery(ultimo_tipo))
+            .filter(_ult="entrada")
+            .filter(pk=Subquery(
+                RegistroAcceso.objects
+                .filter(vehiculo=OuterRef("vehiculo"))
+                .order_by("-timestamp", "-pk")
+                .values("pk")[:1]
+            ))
+            .select_related("vehiculo__propietario")
+            .order_by("timestamp")
+        )
+
+        # Sesiones de parqueo activas por vehículo (un solo query).
+        sesiones = {
+            s.vehiculo_id: s
+            for s in SesionParqueo.objects.filter(estado="activa").select_related("espacio__zona")
+        }
+
+        resultado = []
+        for reg in dentro:
+            v = reg.vehiculo
+            sesion = sesiones.get(v.id)
+            espacio_txt = (
+                f"{sesion.espacio.zona.nombre} #{sesion.espacio.numero}"
+                if sesion else None
+            )
+            prop = v.propietario
+            resultado.append(VehiculoEnCampusType(
+                vehiculo_id=v.id,
+                placa=v.placa,
+                marca_modelo=f"{v.marca} {v.modelo}".strip(),
+                propietario_nombre=f"{prop.nombre} {prop.apellido}" if prop else "—",
+                propietario_telefono=getattr(prop, "telefono", "") or "",
+                hora_entrada=reg.timestamp,
+                espacio_parqueo=espacio_txt,
+            ))
+        return resultado
+
+    @strawberry.field
     def validar_pase(self, info: Info, codigo: str) -> PaseTemporalType:
         pase = PaseTemporal.objects.filter(codigo=codigo).first()
         if not pase:
@@ -807,6 +907,32 @@ class AccesoQuery:
         if not tiene_rol(info.context.request.user, "Administrador"):
             raise Exception("Solo administradores pueden ver el registro de auditoría")
         return list(AuditLog.objects.select_related("usuario")[:limite])
+
+    @strawberry.field
+    def metricas_qr_permanente(self, info: Info, dias: int = 30) -> "MetricaQrPermanenteType":
+        """
+        Cuántos accesos de los últimos N días usaron el QR permanente (legacy)
+        vs. el total. Informa la decisión de deprecarlo: si el porcentaje es
+        marginal, se puede apagar (QR_PERMANENTE_HABILITADO=False) sin afectar
+        prácticamente a nadie. Solo Administrador.
+        """
+        from datetime import timedelta
+        from django.conf import settings as _settings
+        from apps.usuarios.utils import tiene_rol
+        if not tiene_rol(info.context.request.user, "Administrador"):
+            raise Exception("Solo administradores pueden ver estas métricas")
+        desde = timezone.now() - timedelta(days=dias)
+        base = RegistroAcceso.objects.filter(timestamp__gte=desde)
+        total = base.count()
+        permanente = base.filter(metodo_acceso="qr_permanente").count()
+        pct = round(permanente / total * 100, 1) if total else 0.0
+        return MetricaQrPermanenteType(
+            dias=dias,
+            total_accesos=total,
+            accesos_qr_permanente=permanente,
+            porcentaje=pct,
+            habilitado=getattr(_settings, "QR_PERMANENTE_HABILITADO", True),
+        )
 
     @strawberry.field
     def autorizaciones_externas(
@@ -1678,6 +1804,20 @@ class AccesoMutation:
         if observacion:
             vt.observacion = f"{vt.observacion} | Salida: {observacion}".strip(" |")
         vt.save(update_fields=["activo", "hora_salida", "observacion"])
+
+        # Si el temporal tenía un espacio de parqueo asignado, liberarlo.
+        from apps.parqueos.models import SesionParqueo as _SP
+        sesion = _SP.objects.select_related("espacio").filter(
+            vehiculo_temporal=vt, estado="activa"
+        ).first()
+        if sesion:
+            sesion.hora_salida = timezone.now()
+            sesion.estado = "cerrada"
+            sesion.save(update_fields=["hora_salida", "estado"])
+            sesion.espacio.estado = "disponible"
+            sesion.espacio.save(update_fields=["estado"])
+            from apps.parqueos.schema import broadcast_disponibilidad
+            broadcast_disponibilidad(sesion.espacio.zona_id)
 
         punto = PuntoAcceso.objects.filter(activo=True).first()
         if punto:

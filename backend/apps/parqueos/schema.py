@@ -282,8 +282,13 @@ class EspacioParqueoType:
         """
         if hasattr(self, "_placa_activa"):
             return self._placa_activa
-        sesion = SesionParqueo.objects.filter(espacio_id=self.pk, estado="activa").first()
-        return sesion.vehiculo.placa if sesion else None
+        sesion = (
+            SesionParqueo.objects
+            .select_related("vehiculo", "vehiculo_temporal")
+            .filter(espacio_id=self.pk, estado="activa")
+            .first()
+        )
+        return sesion.placa_ocupante if sesion else None
 
     @strawberry.field
     def sesion_activa_id(self) -> Optional[int]:
@@ -307,7 +312,11 @@ class SesionParqueoType:
 
     @strawberry.field
     def placa_vehiculo(self) -> str:
-        return self.vehiculo.placa
+        return self.placa_ocupante  # registrado o temporal
+
+    @strawberry.field
+    def es_temporal(self) -> bool:
+        return self.vehiculo_id is None and self.vehiculo_temporal_id is not None
 
     @strawberry.field
     def duracion_minutos(self) -> Optional[int]:
@@ -426,7 +435,7 @@ class ParqueosQuery:
         return list(
             SesionParqueo.objects
             .filter(estado="activa")
-            .select_related("espacio__zona", "espacio__categoria", "vehiculo")
+            .select_related("espacio__zona", "espacio__categoria", "vehiculo", "vehiculo_temporal")
             .order_by("-hora_entrada")
         )
 
@@ -509,11 +518,15 @@ class ParqueosQuery:
         (La vista pública sin login es disponibilidad_zonas — solo agregados.)
         """
         _usuario_autenticado(info)
-        # Q3: una sola query para todas las sesiones activas (placa + id de sesión)
+        # Q3: una sola query para todas las sesiones activas (placa + id de sesión).
+        # La placa puede venir del vehículo registrado o del temporal — coalesce.
         sesiones_activas: dict[int, tuple[int, str]] = {
-            row["espacio_id"]: (row["id"], row["vehiculo__placa"])
+            row["espacio_id"]: (
+                row["id"],
+                row["vehiculo__placa"] or row["vehiculo_temporal__placa"],
+            )
             for row in SesionParqueo.objects.filter(estado="activa")
-            .values("id", "espacio_id", "vehiculo__placa")
+            .values("id", "espacio_id", "vehiculo__placa", "vehiculo_temporal__placa")
         }
 
         zonas = list(
@@ -711,8 +724,11 @@ class ParqueosMutation:
         with transaction.atomic():
             sesion = (
                 SesionParqueo.objects
-                .select_for_update()
-                .select_related("espacio__zona", "vehiculo__propietario")
+                # of=("self",): bloquea SOLO la fila de sesión. Sin esto, el FOR
+                # UPDATE intenta bloquear los joins de vehiculo (ahora nullable) y
+                # Postgres rechaza FOR UPDATE sobre el lado nullable de un outer join.
+                .select_for_update(of=("self",))
+                .select_related("espacio__zona", "vehiculo__propietario", "vehiculo_temporal")
                 .filter(pk=sesion_id, estado="activa")
                 .first()
             )
@@ -738,5 +754,110 @@ class ParqueosMutation:
                 request=info.context.request,
             )
         broadcast_disponibilidad(sesion.espacio.zona_id)
+        return sesion
+
+    @strawberry.mutation
+    def cambiar_estado_espacio(self, info: Info, espacio_id: int, en_mantenimiento: bool) -> EspacioParqueoType:
+        """
+        Pone un espacio fuera de servicio (mantenimiento) o lo reactiva, desde la
+        app — antes solo era posible por el admin de Django, que los operadores no
+        usan. No se puede sacar de servicio un espacio con sesión activa.
+        Solo Administrador.
+        """
+        from apps.usuarios.utils import tiene_rol
+        from apps.acceso.utils import log_audit
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not tiene_rol(user, "Administrador"):
+            raise Exception("Solo administradores pueden cambiar el estado de un espacio")
+
+        with transaction.atomic():
+            espacio = (
+                EspacioParqueo.objects
+                .select_for_update()
+                .select_related("zona")
+                .filter(pk=espacio_id)
+                .first()
+            )
+            if not espacio:
+                raise Exception("Espacio no encontrado")
+
+            if en_mantenimiento:
+                if espacio.estado == "ocupado" or SesionParqueo.objects.filter(
+                    espacio=espacio, estado="activa"
+                ).exists():
+                    raise Exception(
+                        f"El espacio #{espacio.numero} tiene un vehículo dentro. "
+                        "Cierre la sesión antes de ponerlo en mantenimiento."
+                    )
+                espacio.estado = "mantenimiento"
+                accion, detalle = "espacio_mantenimiento", "puesto en mantenimiento"
+            else:
+                if espacio.estado != "mantenimiento":
+                    raise Exception("El espacio no está en mantenimiento.")
+                espacio.estado = "disponible"
+                accion, detalle = "espacio_reactivado", "reactivado (disponible)"
+
+            espacio.save(update_fields=["estado"])
+            log_audit(
+                user, accion,
+                f"Espacio {espacio.zona.nombre}#{espacio.numero} {detalle}",
+                request=info.context.request,
+            )
+        broadcast_disponibilidad(espacio.zona_id)
+        return espacio
+
+    @strawberry.mutation
+    def ocupar_espacio_temporal(self, info: Info, espacio_id: int, vehiculo_temporal_id: int) -> SesionParqueoType:
+        """
+        El guardia marca un espacio como ocupado por un vehículo TEMPORAL
+        (proveedor, mantenimiento, visitante externo). Así el mapa deja de
+        mostrar como libre un espacio físicamente ocupado por un externo.
+        La sesión se cierra sola cuando el temporal registra su salida.
+        Solo Guardia/Administrador.
+        """
+        from apps.usuarios.utils import tiene_rol
+        from apps.acceso.utils import log_audit
+        from apps.acceso.models import VehiculoTemporal
+        from django.db import IntegrityError
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not (tiene_rol(user, "Administrador") or tiene_rol(user, "Guardia")):
+            raise Exception("Solo guardias y administradores pueden ocupar espacios con temporales")
+
+        vt = VehiculoTemporal.objects.filter(pk=vehiculo_temporal_id, activo=True).first()
+        if not vt:
+            raise Exception("Vehículo temporal no encontrado o ya salió")
+        if SesionParqueo.objects.filter(vehiculo_temporal=vt, estado="activa").exists():
+            raise Exception(f"{vt.placa} ya tiene un espacio asignado")
+
+        try:
+            with transaction.atomic():
+                espacio = (
+                    EspacioParqueo.objects
+                    .select_for_update()
+                    .select_related("zona")
+                    .filter(pk=espacio_id)
+                    .first()
+                )
+                if not espacio:
+                    raise Exception("Espacio no encontrado")
+                if espacio.estado != "disponible":
+                    raise Exception(
+                        f"El espacio #{espacio.numero} no está disponible (estado: {espacio.estado})"
+                    )
+                sesion = SesionParqueo.objects.create(espacio=espacio, vehiculo_temporal=vt)
+                espacio.estado = "ocupado"
+                espacio.save(update_fields=["estado"])
+                log_audit(
+                    user, "sesion_parqueo_temporal",
+                    f"Espacio {espacio.zona.nombre}#{espacio.numero} ocupado por temporal {vt.placa}",
+                    request=info.context.request,
+                )
+        except IntegrityError:
+            raise Exception("El espacio acaba de ser ocupado. Reintente.")
+        broadcast_disponibilidad(espacio.zona_id)
         return sesion
 

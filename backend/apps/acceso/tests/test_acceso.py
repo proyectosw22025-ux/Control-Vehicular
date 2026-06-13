@@ -431,3 +431,81 @@ def test_flujo_completo_entrada_salida_entrada(gql_guardia, vehiculo_activo, pun
             "puntoId": punto_acceso.id, "placa": vehiculo_activo.placa, "tipo": tipo,
         })
         assert "errors" not in r, f"Falló en paso '{tipo}': {r.get('errors')}"
+
+
+# ── Parte de control: vehículos aún en campus ────────────────────────────────
+
+EN_CAMPUS = """
+query { vehiculosEnCampus { placa espacioParqueo horaEntrada } }
+"""
+
+
+@pytest.mark.django_db
+def test_vehiculos_en_campus_lista_los_que_entraron(gql_guardia, vehiculo_activo, punto_acceso):
+    """Un vehículo con último acceso = entrada aparece en el parte."""
+    graphql(gql_guardia, REGISTRAR_MANUAL, {
+        "puntoId": punto_acceso.id, "placa": vehiculo_activo.placa, "tipo": "entrada",
+    })
+    r = graphql(gql_guardia, EN_CAMPUS, {})
+    assert "errors" not in r
+    placas = [v["placa"] for v in r["data"]["vehiculosEnCampus"]]
+    assert vehiculo_activo.placa in placas
+
+
+@pytest.mark.django_db
+def test_vehiculo_que_salio_no_aparece_en_campus(gql_guardia, vehiculo_activo, punto_acceso):
+    """Tras entrada + salida, ya no figura como dentro."""
+    graphql(gql_guardia, REGISTRAR_MANUAL, {
+        "puntoId": punto_acceso.id, "placa": vehiculo_activo.placa, "tipo": "entrada",
+    })
+    graphql(gql_guardia, REGISTRAR_MANUAL, {
+        "puntoId": punto_acceso.id, "placa": vehiculo_activo.placa, "tipo": "salida",
+    })
+    r = graphql(gql_guardia, EN_CAMPUS, {})
+    placas = [v["placa"] for v in r["data"]["vehiculosEnCampus"]]
+    assert vehiculo_activo.placa not in placas
+
+
+@pytest.mark.django_db
+def test_parte_en_campus_requiere_personal(gql_usuario_normal):
+    r = graphql(gql_usuario_normal, EN_CAMPUS, {})
+    assert "errors" in r
+
+
+# ── Deprecación gradual del QR permanente (flag + métrica) ───────────────────
+
+METRICA_QR = """
+query { metricasQrPermanente(dias: 30) {
+  totalAccesos accesosQrPermanente porcentaje habilitado
+} }
+"""
+
+
+@pytest.mark.django_db
+def test_metrica_qr_permanente_solo_admin(gql_guardia):
+    r = graphql(gql_guardia, METRICA_QR, {})
+    assert "errors" in r
+
+
+@pytest.mark.django_db
+def test_metrica_qr_permanente_cuenta_accesos(gql_admin, gql_guardia, vehiculo_activo, punto_acceso):
+    """Tras un acceso por QR permanente, la métrica lo refleja."""
+    graphql(gql_guardia, REGISTRAR_ACCESO, {
+        "puntoId": punto_acceso.id, "codigo": vehiculo_activo.codigo_qr, "tipo": "entrada",
+    })
+    r = graphql(gql_admin, METRICA_QR, {})
+    assert "errors" not in r
+    m = r["data"]["metricasQrPermanente"]
+    assert m["accesosQrPermanente"] >= 1
+    assert m["habilitado"] is True
+
+
+@pytest.mark.django_db
+def test_qr_permanente_deshabilitado_no_resuelve(gql_guardia, vehiculo_activo, punto_acceso, settings):
+    """Con el flag apagado, el QR permanente deja de funcionar."""
+    settings.QR_PERMANENTE_HABILITADO = False
+    r = graphql(gql_guardia, REGISTRAR_ACCESO, {
+        "puntoId": punto_acceso.id, "codigo": vehiculo_activo.codigo_qr, "tipo": "entrada",
+    })
+    assert "errors" in r
+    assert "no reconocido" in r["errors"][0]["message"]

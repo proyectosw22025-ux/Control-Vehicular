@@ -63,17 +63,21 @@ def resolver_codigo(codigo: str, tipo_acceso: str = None) -> ResultadoValidacion
             )
 
     # ── Nivel 2: QR estático SHA-256 (legacy, compatibilidad) ───────────────
-    vehiculo_legacy = (
-        Vehiculo.objects.filter(codigo_qr=codigo_limpio).first()
-    )
-    if vehiculo_legacy:
-        validar_estado_vehiculo(vehiculo_legacy)
-        return ResultadoValidacion(
-            vehiculo=vehiculo_legacy,
-            qr_delegacion=None,
-            pase_temporal=None,
-            metodo_acceso="qr_permanente",
+    # Gateado por flag: cuando se decida deprecarlo (QR_PERMANENTE_HABILITADO=False),
+    # estos códigos dejan de resolverse y el usuario debe usar su QR dinámico.
+    from django.conf import settings as _settings
+    if getattr(_settings, "QR_PERMANENTE_HABILITADO", True):
+        vehiculo_legacy = (
+            Vehiculo.objects.filter(codigo_qr=codigo_limpio).first()
         )
+        if vehiculo_legacy:
+            validar_estado_vehiculo(vehiculo_legacy)
+            return ResultadoValidacion(
+                vehiculo=vehiculo_legacy,
+                qr_delegacion=None,
+                pase_temporal=None,
+                metodo_acceso="qr_permanente",
+            )
 
     # ── Nivel 3: QR de delegación (optimistic locking con usos) ──────────
     qr = (
