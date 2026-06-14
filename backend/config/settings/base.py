@@ -136,6 +136,10 @@ AUTH_USER_MODEL = "usuarios.Usuario"
 # entorno cuando se decida la deprecación.
 QR_PERMANENTE_HABILITADO = config("QR_PERMANENTE_HABILITADO", default=True, cast=bool)
 
+# Aforo máximo de vehículos dentro del campus (control de capacidad / evacuación).
+# 0 = sin límite. Se compara contra los vehículos cuyo último acceso es 'entrada'.
+AFORO_MAXIMO_CAMPUS = config("AFORO_MAXIMO_CAMPUS", default=0, cast=int)
+
 # AllowAllUsersModelBackend lets authenticate() return the user even when
 # is_active=False so our login mutation can raise a meaningful "Usuario inactivo"
 # error instead of the generic "Credenciales inválidas".

@@ -32,7 +32,8 @@ const CONF_2X    = 0.60   // confianza para confirmar con 2 lecturas iguales con
 
 interface Props {
   activo: boolean
-  onPlacaDetectada: (placa: string) => void
+  // frameB64: foto del frame capturado, para guardarla como evidencia del acceso.
+  onPlacaDetectada: (placa: string, frameB64?: string) => void
 }
 
 type Estado = 'idle' | 'iniciando' | 'capturando' | 'detectando' | 'revisar' | 'parcial' | 'detectado' | 'error'
@@ -71,6 +72,7 @@ export function PlacaScanner({ activo, onPlacaDetectada }: Props) {
   const enviandoRef = useRef(false)           // previene envíos simultáneos
   const ultimaRef   = useRef<string | null>(null)  // última placa detectada
   const consecutRef = useRef(0)              // contador de detecciones iguales
+  const ultimoFrameRef = useRef<string | null>(null)  // último frame JPEG (evidencia)
 
   const [estado,       setEstado]      = useState<Estado>('idle')
   const [errorMsg,     setErrorMsg]    = useState('')
@@ -181,6 +183,7 @@ export function PlacaScanner({ activo, onPlacaDetectada }: Props) {
 
     // ── Enviar al backend ────────────────────────────────────────────────────
     const base64 = canvas.toDataURL('image/jpeg', JPEG_QUAL).split(',')[1]
+    ultimoFrameRef.current = base64   // guardar como posible evidencia del acceso
     enviandoRef.current = true
     setEstado('detectando')
 
@@ -238,7 +241,7 @@ export function PlacaScanner({ activo, onPlacaDetectada }: Props) {
   function _confirmarPlaca(placa: string) {
     if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null }
     setEstado('detectado')
-    onPlacaDetectada(placa)
+    onPlacaDetectada(placa, ultimoFrameRef.current ?? undefined)
     setTimeout(() => detener(), 800)
   }
 

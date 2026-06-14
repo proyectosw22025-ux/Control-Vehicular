@@ -59,6 +59,21 @@ export const REGISTROS_ACCESO_QUERY = gql`
       observacion
       puntoNombre
       placaVehiculo
+      imagenUrl
+    }
+  }
+`
+
+export const AFORO_CAMPUS_QUERY = gql`
+  query AforoCampus {
+    aforoCampus { dentro maximo porcentaje estado }
+  }
+`
+
+export const METRICAS_DESPACHO_QUERY = gql`
+  query MetricasDespacho($dias: Int) {
+    metricasDespacho(dias: $dias) {
+      puntoNombre totalAccesos segundosMediana accesosPorHora horaPico
     }
   }
 `

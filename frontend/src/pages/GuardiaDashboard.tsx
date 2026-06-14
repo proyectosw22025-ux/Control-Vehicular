@@ -16,16 +16,16 @@ import {
   ShieldCheck, ArrowDownCircle, ArrowUpCircle, Camera, CameraOff,
   CheckCircle2, XCircle, Clock, ParkingSquare, UserCheck, DoorOpen,
   Wifi, WifiOff, RefreshCw, Loader2, Type, Keyboard,
-  AlertTriangle, Bell, Eye, Truck, LogOut, Plus, Timer, Repeat,
+  AlertTriangle, Bell, Eye, Truck, LogOut, Plus, Timer, Repeat, Volume2, VolumeX,
 } from 'lucide-react'
 import { QrScanner }     from '../components/QrScanner'
 import { PlacaScanner } from '../components/PlacaScanner'
-import { PUNTOS_ACCESO_QUERY, REGISTROS_ACCESO_QUERY, ALERTAS_PANEL_QUERY, VEHICULOS_TEMPORALES_QUERY, VEHICULOS_EN_CAMPUS_QUERY } from '../graphql/queries/acceso'
+import { PUNTOS_ACCESO_QUERY, REGISTROS_ACCESO_QUERY, ALERTAS_PANEL_QUERY, VEHICULOS_TEMPORALES_QUERY, VEHICULOS_EN_CAMPUS_QUERY, AFORO_CAMPUS_QUERY, METRICAS_DESPACHO_QUERY } from '../graphql/queries/acceso'
 import { MARCAR_ALERTA_REVISADA_MUTATION, REGISTRAR_ACCESO_TEMPORAL_MUTATION, REGISTRAR_SALIDA_TEMPORAL_MUTATION } from '../graphql/mutations/acceso'
 import { INICIAR_SESION_MUTATION, OCUPAR_ESPACIO_TEMPORAL_MUTATION } from '../graphql/mutations/parqueos'
 import { ESPACIOS_DISPONIBLES_QUERY } from '../graphql/queries/parqueos'
 import { VISITAS_ACTIVAS_QUERY } from '../graphql/queries/visitantes'
-import { useAccesoGuardia, type TipoAcceso, type AlertaInfo } from '../hooks/useAccesoGuardia'
+import { useAccesoGuardia, type TipoAcceso, type AlertaInfo, type ResultadoAcceso } from '../hooks/useAccesoGuardia'
 import { useOfflineAccess } from '../hooks/useOfflineAccess'
 
 const GUARDIA_STATS_QUERY = gql`
@@ -77,6 +77,11 @@ export default function GuardiaDashboard() {
     pollInterval: 30_000,
     fetchPolicy: 'cache-and-network',
   })
+  const { data: aforoData, refetch: refetchAforo } = useQuery(AFORO_CAMPUS_QUERY, {
+    pollInterval: 30_000,
+    fetchPolicy: 'cache-and-network',
+  })
+  const aforo = aforoData?.aforoCampus
   const { data: puntosData } = useQuery(PUNTOS_ACCESO_QUERY)
   const { data: registrosData, refetch: refetchRegistros } = useQuery(REGISTROS_ACCESO_QUERY, {
     variables: { limite: 8 },
@@ -103,6 +108,14 @@ export default function GuardiaDashboard() {
     skip: tabPrincipal !== 'campus',
   })
   const enCampus = campusData?.vehiculosEnCampus ?? []
+
+  // Métrica de despacho (throughput del portón) — solo al abrir la pestaña campus.
+  const { data: despachoData } = useQuery(METRICAS_DESPACHO_QUERY, {
+    variables: { dias: 7 },
+    fetchPolicy: 'cache-and-network',
+    skip: tabPrincipal !== 'campus',
+  })
+  const despacho = despachoData?.metricasDespacho ?? []
 
   // Feedback compartido de asignación de espacio (entrada y temporal).
   const [espacioAsignadoMsg, setEspacioAsignadoMsg] = useState('')
@@ -151,7 +164,34 @@ export default function GuardiaDashboard() {
 
   // Alertas en tiempo real — se añaden por WS desde Layout.tsx via evento DOM
   const [alertasLocales, setAlertasLocales] = useState<AlertaInfo[]>([])
-  const sonidoRef = useRef<HTMLAudioElement | null>(null)
+  // Sonido on/off (persistido) — el guardia opera de oído sin mirar la pantalla.
+  const [sonidoOn, setSonidoOn] = useState(() => localStorage.getItem('guardia_sonido') !== 'off')
+  const toggleSonido = useCallback(() => {
+    setSonidoOn(v => { localStorage.setItem('guardia_sonido', v ? 'off' : 'on'); return !v })
+  }, [])
+
+  // Tono sintetizado (Web Audio) — sin assets. tipo: ok | denegado | alerta.
+  const reproducirTono = useCallback((kind: 'ok' | 'denegado' | 'alerta') => {
+    if (!sonidoOn) return
+    try {
+      const ctx = new AudioContext()
+      const beep = (freq: number, start: number, dur: number) => {
+        const osc = ctx.createOscillator(); const gain = ctx.createGain()
+        osc.connect(gain); gain.connect(ctx.destination)
+        osc.frequency.value = freq
+        gain.gain.setValueAtTime(0.25, ctx.currentTime + start)
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur)
+        osc.start(ctx.currentTime + start); osc.stop(ctx.currentTime + start + dur)
+      }
+      if (kind === 'ok') {
+        beep(880, 0, 0.12)                         // un pitido alto y corto = aceptado
+      } else if (kind === 'denegado') {
+        beep(220, 0, 0.18); beep(180, 0.2, 0.25)   // dos graves descendentes = denegado
+      } else {
+        beep(880, 0, 0.15); beep(880, 0.22, 0.15); beep(880, 0.44, 0.3)  // triple = alerta
+      }
+    } catch { /* sin audio en algunos navegadores */ }
+  }, [sonidoOn])
 
   useEffect(() => {
     const handler = (e: CustomEvent) => {
@@ -160,26 +200,22 @@ export default function GuardiaDashboard() {
         if (prev.some(a => a.id === d.id)) return prev
         return [d, ...prev].slice(0, 20)
       })
-      // Sonido de alerta para alertas críticas
-      if (d.severidad === 'critica') {
-        try {
-          if (!sonidoRef.current) {
-            sonidoRef.current = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAA...')
-          }
-          const ctx = new AudioContext()
-          const osc = ctx.createOscillator()
-          const gain = ctx.createGain()
-          osc.connect(gain); gain.connect(ctx.destination)
-          osc.frequency.value = 880
-          gain.gain.setValueAtTime(0.3, ctx.currentTime)
-          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
-          osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.5)
-        } catch { /* sin audio en algunos navegadores */ }
-      }
+      if (d.severidad === 'critica') reproducirTono('alerta')
     }
     window.addEventListener('alerta-acceso', handler as EventListener)
     return () => window.removeEventListener('alerta-acceso', handler as EventListener)
-  }, [])
+  }, [reproducirTono])
+
+  // Sonido al recibir un resultado: aceptado vs denegado (el guardia lo oye
+  // sin mirar la pantalla — más rápido en un portón ruidoso).
+  const ultimoResultadoRef = useRef<ResultadoAcceso | null>(null)
+  useEffect(() => {
+    const r = acceso.resultado
+    if (r && r !== ultimoResultadoRef.current) {
+      ultimoResultadoRef.current = r
+      reproducirTono(r.ok ? 'ok' : 'denegado')
+    }
+  }, [acceso.resultado, reproducirTono])
 
   // Modal de alerta crítica — se muestra cuando el escaneo detecta alertas
   const [modalAlertas, setModalAlertas] = useState<AlertaInfo[] | null>(null)
@@ -198,7 +234,8 @@ export default function GuardiaDashboard() {
     await registrarQr(codigo, tipo)
     refetchRegistros()
     refetchStats()
-  }, [registrarQr, tipo, refetchRegistros, refetchStats])
+    refetchAforo()
+  }, [registrarQr, tipo, refetchRegistros, refetchStats, refetchAforo])
 
   // Callback de placa manual — depende de registrarManual (estable)
   const handleManual = useCallback(async () => {
@@ -209,29 +246,31 @@ export default function GuardiaDashboard() {
       setPlaca('')
       refetchRegistros()
       refetchStats()
+      refetchAforo()
     } catch (e: any) {
       const msg = e?.message ?? ''
       if (msg.toLowerCase().includes('no registrado') || msg.toLowerCase().includes('no encontrado')) {
         setVehiculoNoEncontrado(placaManual.trim().toUpperCase())
       }
     }
-  }, [registrarManual, placaManual, tipo, refetchRegistros, refetchStats])
+  }, [registrarManual, placaManual, tipo, refetchRegistros, refetchStats, refetchAforo])
 
-  // Callback de placa OCR detectada — depende de registrarManual (estable)
-  const handlePlacaOcr = useCallback(async (placa: string) => {
+  // Callback de placa OCR detectada — recibe también el frame para evidencia.
+  const handlePlacaOcr = useCallback(async (placa: string, frameB64?: string) => {
     setPlacaOcr(false)
     setVehiculoNoEncontrado('')
     try {
-      await registrarManual(placa, tipo)
+      await registrarManual(placa, tipo, frameB64)
       refetchRegistros()
       refetchStats()
+      refetchAforo()
     } catch (e: any) {
       const msg = e?.message ?? ''
       if (msg.toLowerCase().includes('no registrado') || msg.toLowerCase().includes('no encontrado')) {
         setVehiculoNoEncontrado(placa)
       }
     }
-  }, [registrarManual, tipo, refetchRegistros, refetchStats])
+  }, [registrarManual, tipo, refetchRegistros, refetchStats, refetchAforo])
 
   const resultado = acceso.resultado
 
@@ -336,6 +375,12 @@ export default function GuardiaDashboard() {
                 {offlineAcc.online ? 'Conectado' : '📴 Sin red — modo offline'}
               </span>
             </div>
+            <button onClick={toggleSonido} title={sonidoOn ? 'Silenciar sonido' : 'Activar sonido'}
+              className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${
+                sonidoOn ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-slate-100 text-slate-300'
+              }`}>
+              {sonidoOn ? <Volume2 size={14} /> : <VolumeX size={14} />}
+            </button>
           </div>
 
           {/* Selector de punto de acceso */}
@@ -416,6 +461,44 @@ export default function GuardiaDashboard() {
           <StatChip icon={DoorOpen}      label="Accesos hoy"   value={stats.accesosHoy}  color="text-orange-500" />
           <StatChip icon={ParkingSquare} label="Espacios"      value={`${stats.espaciosDisponibles}/${stats.totalEspacios}`} color="text-violet-500" />
           <StatChip icon={UserCheck}     label="Visitantes"    value={stats.visitantesActivos} color="text-cyan-500" />
+        </div>
+      )}
+
+      {/* ── Aforo del campus (control de capacidad / evacuación) ── */}
+      {aforo && (
+        <div className={`mb-4 rounded-xl p-3 border ${
+          aforo.estado === 'lleno' ? 'bg-red-50 border-red-300' :
+          aforo.estado === 'alto'  ? 'bg-amber-50 border-amber-300' :
+          'bg-slate-50 border-slate-200'
+        }`}>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs font-bold text-slate-600 flex items-center gap-1.5">
+              <DoorOpen size={13} /> Aforo del campus
+            </span>
+            <span className={`text-sm font-black ${
+              aforo.estado === 'lleno' ? 'text-red-600' :
+              aforo.estado === 'alto'  ? 'text-amber-600' : 'text-slate-700'
+            }`}>
+              {aforo.maximo > 0
+                ? `${aforo.dentro} / ${aforo.maximo}`
+                : `${aforo.dentro} dentro`}
+            </span>
+          </div>
+          {aforo.maximo > 0 && (
+            <>
+              <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                <div className={`h-full rounded-full transition-all ${
+                  aforo.estado === 'lleno' ? 'bg-red-500' :
+                  aforo.estado === 'alto'  ? 'bg-amber-500' : 'bg-emerald-500'
+                }`} style={{ width: `${Math.min(100, aforo.porcentaje)}%` }} />
+              </div>
+              {aforo.estado === 'lleno' && (
+                <p className="text-[11px] font-semibold text-red-600 mt-1">
+                  ⚠ Campus al límite — considere desviar al estacionamiento externo.
+                </p>
+              )}
+            </>
+          )}
         </div>
       )}
 
@@ -637,6 +720,31 @@ export default function GuardiaDashboard() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* Throughput del portón — sustenta "no generamos colas" con datos */}
+          {despacho.length > 0 && (
+            <div className="border-t border-slate-100 px-4 py-3">
+              <h4 className="text-xs font-bold text-slate-600 mb-2 flex items-center gap-1.5">
+                <Timer size={13} className="text-emerald-600" /> Tiempo de despacho (últimos 7 días)
+              </h4>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {despacho.map((m: any) => (
+                  <div key={m.puntoNombre} className="bg-slate-50 rounded-lg px-3 py-2 text-xs">
+                    <p className="font-semibold text-slate-700 truncate">{m.puntoNombre}</p>
+                    <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1 text-slate-500">
+                      <span>{m.totalAccesos} accesos</span>
+                      {m.segundosMediana != null && (
+                        <span className="text-emerald-700 font-medium">
+                          ~{m.segundosMediana}s entre vehículos
+                        </span>
+                      )}
+                      {m.horaPico != null && <span>pico: {String(m.horaPico).padStart(2, '0')}:00 h</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

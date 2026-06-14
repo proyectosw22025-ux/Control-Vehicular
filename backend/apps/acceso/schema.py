@@ -192,6 +192,11 @@ class RegistroAccesoType:
         return None
 
     @strawberry.field
+    def imagen_url(self) -> Optional[str]:
+        """Foto-evidencia del acceso (frame del OCR), si se capturó."""
+        return self.imagen_url or None
+
+    @strawberry.field
     def propietario_nombre(self) -> Optional[str]:
         """Nombre del dueño registrado — el guardia verifica de un vistazo."""
         p = getattr(self.vehiculo, "propietario", None) if self.vehiculo else None
@@ -262,6 +267,44 @@ class MetricaQrPermanenteType:
 
 
 @strawberry.type
+class AforoCampusType:
+    """Control de aforo: vehículos dentro vs. capacidad máxima."""
+    dentro: int
+    maximo: int          # 0 = sin límite configurado
+    porcentaje: float    # 0 si no hay límite
+    estado: str          # disponible | alto | lleno | sin_limite
+
+
+@strawberry.type
+class MetricaDespachoType:
+    """
+    Throughput del portón — sustenta con datos que NO se generan colas.
+    'segundos_mediana' = tiempo típico entre dos vehículos consecutivos.
+    """
+    punto_nombre: str
+    total_accesos: int
+    segundos_mediana: Optional[int]   # mediana del intervalo entre accesos
+    accesos_por_hora: float           # promedio en la ventana
+    hora_pico: Optional[int]          # hora (0-23) con más accesos
+
+
+def _contar_vehiculos_en_campus() -> int:
+    """Vehículos cuyo último registro de acceso es 'entrada' (siguen dentro)."""
+    from django.db.models import OuterRef, Subquery
+    return (
+        RegistroAcceso.objects
+        .filter(vehiculo__isnull=False, tipo="entrada")
+        .filter(pk=Subquery(
+            RegistroAcceso.objects
+            .filter(vehiculo=OuterRef("vehiculo"))
+            .order_by("-timestamp", "-pk")
+            .values("pk")[:1]
+        ))
+        .count()
+    )
+
+
+@strawberry.type
 class AuditLogType:
     id: int
     accion: str
@@ -305,6 +348,7 @@ class AccesoManualInput:
     placa: str
     tipo: str  # "entrada" | "salida" | "auto"
     observacion: Optional[str] = ""
+    imagen_evidencia: Optional[str] = None  # frame base64 del OCR (opcional)
 
 
 @strawberry.input
@@ -476,6 +520,34 @@ def _broadcast_alerta_ws(alerta, vehiculo):
             )
     except Exception:
         pass
+
+
+def _subir_evidencia_async(registro_id: int, imagen_b64: str) -> None:
+    """
+    Sube el frame de evidencia a Cloudinary en un hilo daemon y guarda la URL
+    en el RegistroAcceso. NUNCA bloquea el registro de acceso (anti-cola): si
+    falla o Cloudinary no está configurado, el acceso ya quedó registrado igual.
+    """
+    import threading
+    from django.conf import settings
+
+    if not getattr(settings, "_cloudinary_configurado", False):
+        return
+
+    def _worker():
+        try:
+            import cloudinary.uploader
+            data = imagen_b64 if imagen_b64.startswith("data:") else f"data:image/jpeg;base64,{imagen_b64}"
+            res = cloudinary.uploader.upload(
+                data, folder="accesos_evidencia", resource_type="image",
+            )
+            url = res.get("secure_url") or res.get("url")
+            if url:
+                RegistroAcceso.objects.filter(pk=registro_id).update(imagen_url=url)
+        except Exception:
+            pass  # la evidencia es best-effort; el acceso ya está registrado
+
+    threading.Thread(target=_worker, daemon=True).start()
 
 
 def _verificar_alerta_seguridad(vehiculo, punto, registrado_por, request) -> None:
@@ -945,6 +1017,79 @@ class AccesoQuery:
                 propietario_telefono=getattr(prop, "telefono", "") or "",
                 hora_entrada=reg.timestamp,
                 espacio_parqueo=espacio_txt,
+            ))
+        return resultado
+
+    @strawberry.field
+    def aforo_campus(self, info: Info) -> AforoCampusType:
+        """
+        Vehículos dentro del campus vs. capacidad máxima configurada. Para el
+        semáforo de aforo del guardia (seguridad/evacuación y evitar colas de
+        salida cuando ya no caben). Solo Guardia/Administrador.
+        """
+        from django.conf import settings as _settings
+        from apps.usuarios.utils import tiene_rol
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not (tiene_rol(user, "Guardia") or tiene_rol(user, "Administrador")):
+            raise Exception("Solo guardias y administradores pueden ver el aforo")
+
+        dentro = _contar_vehiculos_en_campus()
+        maximo = int(getattr(_settings, "AFORO_MAXIMO_CAMPUS", 0) or 0)
+        if maximo <= 0:
+            return AforoCampusType(dentro=dentro, maximo=0, porcentaje=0.0, estado="sin_limite")
+        pct = round(dentro / maximo * 100, 1)
+        estado = "lleno" if dentro >= maximo else ("alto" if pct >= 85 else "disponible")
+        return AforoCampusType(dentro=dentro, maximo=maximo, porcentaje=pct, estado=estado)
+
+    @strawberry.field
+    def metricas_despacho(self, info: Info, dias: int = 7) -> List[MetricaDespachoType]:
+        """
+        Tiempo de despacho por punto de acceso en los últimos N días: cuánto
+        tarda en promedio entre un vehículo y el siguiente (mediana del intervalo)
+        y la hora pico. Responde con datos a "¿cuánto agilizaron el acceso?".
+        Solo Guardia/Administrador.
+        """
+        import statistics
+        from collections import Counter
+        from datetime import timedelta
+        from apps.usuarios.utils import tiene_rol
+        user = info.context.request.user
+        if not user.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not (tiene_rol(user, "Guardia") or tiene_rol(user, "Administrador")):
+            raise Exception("Solo guardias y administradores pueden ver estas métricas")
+
+        desde = timezone.now() - timedelta(days=max(1, dias))
+        horas_ventana = max(1, dias) * 24
+        resultado = []
+        for punto in PuntoAcceso.objects.filter(activo=True):
+            ts = list(
+                RegistroAcceso.objects
+                .filter(punto_acceso=punto, timestamp__gte=desde)
+                .order_by("timestamp")
+                .values_list("timestamp", flat=True)
+            )
+            total = len(ts)
+            if total == 0:
+                continue
+            # Intervalos entre accesos consecutivos (en segundos).
+            deltas = [
+                (ts[i] - ts[i - 1]).total_seconds()
+                for i in range(1, total)
+                if (ts[i] - ts[i - 1]).total_seconds() < 3600  # ignora pausas largas (noche)
+            ]
+            mediana = int(statistics.median(deltas)) if deltas else None
+            # Hora pico (en zona horaria local).
+            horas = Counter(timezone.localtime(t).hour for t in ts)
+            pico = horas.most_common(1)[0][0] if horas else None
+            resultado.append(MetricaDespachoType(
+                punto_nombre=punto.nombre,
+                total_accesos=total,
+                segundos_mediana=mediana,
+                accesos_por_hora=round(total / horas_ventana, 2),
+                hora_pico=pico,
             ))
         return resultado
 
@@ -1546,6 +1691,10 @@ class AccesoMutation:
         alertas_nuevas = _detectar_anomalias_acceso(vehiculo, tipo_efectivo)
         alertas_detectadas = alertas_existentes + alertas_nuevas
         registro._alertas_detectadas = alertas_detectadas
+
+        # Evidencia fotográfica (best-effort, async — no bloquea el portón).
+        if input.imagen_evidencia:
+            _subir_evidencia_async(registro.pk, input.imagen_evidencia)
 
         if tipo_efectivo == "entrada":
             registro._espacio_sugerido = _sugerir_espacio_parqueo(vehiculo)

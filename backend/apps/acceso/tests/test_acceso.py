@@ -585,3 +585,74 @@ def test_quitar_alerta_restaura_acceso(gql_admin, gql_guardia, vehiculo_activo, 
         "puntoId": punto_acceso.id, "codigo": vehiculo_activo.codigo_qr, "tipo": "entrada",
     })
     assert "errors" not in r
+
+
+# ── Aforo del campus ─────────────────────────────────────────────────────────
+
+AFORO = "query { aforoCampus { dentro maximo porcentaje estado } }"
+
+
+@pytest.mark.django_db
+def test_aforo_sin_limite(gql_guardia, vehiculo_activo, punto_acceso):
+    """Sin AFORO_MAXIMO_CAMPUS configurado: estado sin_limite, cuenta los dentro."""
+    graphql(gql_guardia, REGISTRAR_MANUAL, {
+        "puntoId": punto_acceso.id, "placa": vehiculo_activo.placa, "tipo": "entrada",
+    })
+    r = graphql(gql_guardia, AFORO, {})
+    assert "errors" not in r
+    a = r["data"]["aforoCampus"]
+    assert a["dentro"] == 1
+    assert a["estado"] == "sin_limite"
+
+
+@pytest.mark.django_db
+def test_aforo_lleno(gql_guardia, vehiculo_activo, punto_acceso, settings):
+    settings.AFORO_MAXIMO_CAMPUS = 1
+    graphql(gql_guardia, REGISTRAR_MANUAL, {
+        "puntoId": punto_acceso.id, "placa": vehiculo_activo.placa, "tipo": "entrada",
+    })
+    r = graphql(gql_guardia, AFORO, {})
+    a = r["data"]["aforoCampus"]
+    assert a["dentro"] == 1 and a["maximo"] == 1
+    assert a["estado"] == "lleno"
+
+
+@pytest.mark.django_db
+def test_aforo_requiere_personal(gql_usuario_normal):
+    r = graphql(gql_usuario_normal, AFORO, {})
+    assert "errors" in r
+
+
+# ── Métrica de despacho (throughput) ─────────────────────────────────────────
+
+DESPACHO = """
+query { metricasDespacho(dias: 7) {
+  puntoNombre totalAccesos segundosMediana accesosPorHora horaPico
+} }
+"""
+
+
+@pytest.mark.django_db
+def test_metrica_despacho_calcula_mediana(gql_guardia, vehiculo_activo, punto_acceso):
+    """Con varios accesos espaciados, la mediana del intervalo se calcula."""
+    from datetime import timedelta
+    from django.utils import timezone
+    base = timezone.now() - timedelta(hours=1)
+    # 4 accesos a 10s de intervalo → mediana ~10s
+    for i in range(4):
+        r = RegistroAcceso.objects.create(
+            punto_acceso=punto_acceso, vehiculo=vehiculo_activo,
+            tipo="entrada" if i % 2 == 0 else "salida", metodo_acceso="manual",
+        )
+        RegistroAcceso.objects.filter(pk=r.pk).update(timestamp=base + timedelta(seconds=i * 10))
+    r = graphql(gql_guardia, DESPACHO, {})
+    assert "errors" not in r
+    m = next(x for x in r["data"]["metricasDespacho"] if x["puntoNombre"] == punto_acceso.nombre)
+    assert m["totalAccesos"] == 4
+    assert m["segundosMediana"] == 10
+
+
+@pytest.mark.django_db
+def test_metrica_despacho_requiere_personal(gql_usuario_normal):
+    r = graphql(gql_usuario_normal, DESPACHO, {})
+    assert "errors" in r

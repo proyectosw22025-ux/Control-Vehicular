@@ -229,7 +229,7 @@ export function useAccesoGuardia() {
 
   // ── Registrar acceso manual por placa ────────────────────────────────────
 
-  const registrarManual = useCallback(async (placa: string, tipo: TipoAcceso) => {
+  const registrarManual = useCallback(async (placa: string, tipo: TipoAcceso, imagenEvidencia?: string) => {
     if (enEjecucionRef.current) return
     enEjecucionRef.current = true
 
@@ -246,7 +246,10 @@ export function useAccesoGuardia() {
       const result = await ejecutarConRetry(() =>
         mutarManual({
           variables: {
-            input: { puntoAccesoId: puntoId, placa: placa.trim().toUpperCase(), tipo },
+            input: {
+              puntoAccesoId: puntoId, placa: placa.trim().toUpperCase(), tipo,
+              ...(imagenEvidencia ? { imagenEvidencia } : {}),
+            },
           },
         })
       )

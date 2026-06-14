@@ -275,7 +275,15 @@ export default function HistorialVehiculo() {
                     <td className="px-4 py-3 text-slate-700">{a.puntoNombre}</td>
                     <td className="px-4 py-3 text-slate-500 text-xs">{METODO_LABEL[a.metodoAcceso] ?? a.metodoAcceso}</td>
                     <td className="px-4 py-3 text-slate-500 text-xs">{fmt(a.timestamp)}</td>
-                    <td className="px-4 py-3 text-slate-400 text-xs">{a.observacion || '—'}</td>
+                    <td className="px-4 py-3 text-slate-400 text-xs">
+                      {a.imagenUrl ? (
+                        <a href={a.imagenUrl} target="_blank" rel="noreferrer"
+                          className="inline-block" title="Ver evidencia del acceso">
+                          <img src={a.imagenUrl} alt="Evidencia"
+                            className="w-12 h-9 object-cover rounded border border-slate-200 hover:ring-2 hover:ring-violet-300" />
+                        </a>
+                      ) : (a.observacion || '—')}
+                    </td>
                   </tr>
                 ))}
               </tbody>

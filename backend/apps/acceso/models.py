@@ -320,6 +320,10 @@ class RegistroAcceso(models.Model):
     metodo_acceso = models.CharField(max_length=15, choices=METODOS, default="qr_dinamico")
     timestamp = models.DateTimeField(auto_now_add=True)
     observacion = models.TextField(blank=True)
+    # Evidencia: foto del frame capturado por el OCR en el momento del acceso.
+    # Se sube a Cloudinary de forma asíncrona (no bloquea el portón). Convierte
+    # el registro en evidencia auditable ante un incidente o placa clonada.
+    imagen_url = models.URLField(blank=True)
     registrado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
