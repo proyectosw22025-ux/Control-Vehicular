@@ -370,6 +370,7 @@ class AlertaAcceso(models.Model):
         ("vehiculo_sancionado",  "Vehículo sancionado con acceso reciente"),
         ("placas_similares",     "Placas similares (posible clonación)"),
         ("documento_vencido",    "Documento vencido (SOAT, técnica, circulación)"),
+        ("vehiculo_en_alerta",   "Vehículo en alerta de seguridad (robo/búsqueda)"),
     ]
     SEVERIDADES = [
         ("info",        "Informativa"),

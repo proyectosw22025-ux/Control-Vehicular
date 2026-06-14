@@ -116,6 +116,8 @@ class VehiculoType:
     foto_vehiculo: str
     numero_soat: str
     capacidad_carga: str
+    en_alerta: bool
+    motivo_alerta: str
 
     @strawberry.field
     def tipo(self) -> TipoVehiculoType:
@@ -673,6 +675,38 @@ class VehiculosMutation:
         if estado_inicial == "pendiente":
             _notificar_vehiculo_pendiente(vehiculo, propietario)
         return vehiculo
+
+    @strawberry.mutation
+    def marcar_alerta_seguridad(
+        self, info: Info, vehiculo_id: int, en_alerta: bool, motivo: Optional[str] = ""
+    ) -> VehiculoType:
+        """
+        Pone o quita un vehículo de la lista de alerta de seguridad (robo,
+        búsqueda, acceso revocado). Un vehículo en alerta dispara una alerta
+        crítica y se le deniega el acceso en el portón. Solo Administrador.
+        """
+        from apps.acceso.utils import log_audit
+        admin = info.context.request.user
+        if not admin.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not tiene_rol(admin, "Administrador"):
+            raise Exception("Solo administradores pueden gestionar alertas de seguridad")
+        v = Vehiculo.objects.select_related("tipo", "propietario").filter(pk=vehiculo_id).first()
+        if not v:
+            raise Exception("Vehículo no encontrado")
+        if en_alerta and not (motivo or "").strip():
+            raise Exception("Debe indicar el motivo de la alerta de seguridad")
+        with transaction.atomic():
+            v.en_alerta = en_alerta
+            v.motivo_alerta = (motivo or "").strip() if en_alerta else ""
+            v.save(update_fields=["en_alerta", "motivo_alerta"])
+            accion = "vehiculo_alerta_activada" if en_alerta else "vehiculo_alerta_retirada"
+            detalle = (
+                f"Alerta de seguridad ACTIVADA en {v.placa}: {v.motivo_alerta}"
+                if en_alerta else f"Alerta de seguridad retirada de {v.placa}"
+            )
+            log_audit(admin, accion, detalle, request=info.context.request)
+        return v
 
     @strawberry.mutation
     def aprobar_vehiculo(self, info: Info, vehiculo_id: int) -> VehiculoType:

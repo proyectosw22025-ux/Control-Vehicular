@@ -757,11 +757,16 @@ export default function GuardiaDashboard() {
               }`}
               style={!resultado.ok ? { animation: 'resultadoEntrar 0.15s cubic-bezier(0.34,1.56,0.64,1) both' } : {}}
             >
-              {/* Ícono simple — sin animate-ping para no interferir con el scanner QR */}
-              {resultado.ok
-                ? <CheckCircle2 size={44} className="text-green-500 shrink-0" />
-                : <XCircle     size={44} className="text-red-500 shrink-0" />
-              }
+              {/* Foto del propietario para verificación visual (¿conduce el dueño?).
+                  Ícono de estado cuando no hay foto o el acceso fue denegado. */}
+              {resultado.ok && resultado.propietarioFotoUrl ? (
+                <img src={resultado.propietarioFotoUrl} alt="Propietario"
+                  className="w-16 h-16 rounded-xl object-cover shrink-0 border-2 border-green-300 shadow" />
+              ) : resultado.ok ? (
+                <CheckCircle2 size={44} className="text-green-500 shrink-0" />
+              ) : (
+                <XCircle size={44} className="text-red-500 shrink-0" />
+              )}
               <div className="flex-1 min-w-0">
                 {resultado.placa && (
                   <p className="font-black text-2xl font-mono tracking-widest leading-tight">
@@ -769,6 +774,11 @@ export default function GuardiaDashboard() {
                   </p>
                 )}
                 <p className="text-sm font-semibold mt-0.5">{resultado.mensaje}</p>
+                {resultado.ok && resultado.propietarioNombre && (
+                  <p className="text-xs font-medium mt-0.5 flex items-center gap-1">
+                    <UserCheck size={12} /> {resultado.propietarioNombre}
+                  </p>
+                )}
                 {resultado.metodo && (
                   <p className="text-xs opacity-70 mt-0.5">
                     {METODO_LABEL[resultado.metodo] ?? resultado.metodo}

@@ -37,6 +37,8 @@ export const VEHICULOS_QUERY = gql`
         anio
         color
         estado
+        enAlerta
+        motivoAlerta
         codigoQr
         createdAt
         tipo { id nombre }

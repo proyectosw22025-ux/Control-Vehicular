@@ -77,6 +77,13 @@ class Vehiculo(models.Model):
     anio = models.PositiveSmallIntegerField()
     color = models.CharField(max_length=40)
     estado = models.CharField(max_length=15, choices=ESTADOS, default="pendiente")
+    # ── Alerta de seguridad (lista negra) — ORTOGONAL al estado ─────────────
+    # Un vehículo robado o con acceso revocado puede estar 'activo' y a la vez
+    # 'en_alerta'. No se mezcla con `estado` a propósito: son ejes distintos.
+    # Al escanearse en el portón dispara una AlertaAcceso crítica y deniega el
+    # acceso con un mensaje de seguridad, dejando registrado el intento.
+    en_alerta     = models.BooleanField(default=False, db_index=True)
+    motivo_alerta = models.CharField(max_length=200, blank=True)
     foto = models.ImageField(upload_to="vehiculos/fotos/", blank=True, null=True)
     # ── Campos extendidos (todos opcionales, backward-compatible) ──────────
     numero_motor    = models.CharField(max_length=30, blank=True)

@@ -190,14 +190,31 @@ class UsuariosMutation:
         req = info.context.request
         x_fwd = req.META.get("HTTP_X_FORWARDED_FOR")
         ip = x_fwd.split(",")[0].strip() if x_fwd else (req.META.get("REMOTE_ADDR") or "unknown")
-        rate_key = f"login_attempts_{ip}"
-        attempts: int = cache.get(rate_key, 0)
-        if attempts >= 5:
+
+        # Doble defensa anti fuerza bruta:
+        #  - Por IP (5 / 60s): frena a una sola IP martillando.
+        #  - Por cuenta/CI (8 / 15min): frena un ataque distribuido (IPs rotativas)
+        #    contra UNA cuenta — que el límite por IP solo no detiene.
+        ip_key = f"login_attempts_{ip}"
+        ci_key = f"login_ci_attempts_{input.ci}"
+        ip_attempts: int = cache.get(ip_key, 0)
+        ci_attempts: int = cache.get(ci_key, 0)
+
+        def _registrar_fallo():
+            cache.set(ip_key, ip_attempts + 1, timeout=60)
+            cache.set(ci_key, ci_attempts + 1, timeout=900)
+
+        if ip_attempts >= 5:
             log_audit(None, "login_bloqueado", f"IP {ip} bloqueada por exceso de intentos (CI: {input.ci})", request=req)
             raise Exception("Demasiados intentos de inicio de sesión. Espere 1 minuto.")
+        if ci_attempts >= 8:
+            log_audit(None, "login_bloqueado_cuenta",
+                      f"Cuenta CI {input.ci} bloqueada por exceso de intentos (IP: {ip})", request=req)
+            raise Exception("Cuenta temporalmente bloqueada por seguridad. Intente en 15 minutos.")
+
         user = authenticate(username=input.ci, password=input.password)
         if not user:
-            cache.set(rate_key, attempts + 1, timeout=60)
+            _registrar_fallo()
             log_audit(None, "login_fallido", f"Intento fallido para CI {input.ci}", request=req)
             raise Exception("Credenciales inválidas")
         if not user.is_active:
@@ -212,12 +229,13 @@ class UsuariosMutation:
             totp = pyotp.TOTP(user.totp_secret)
             # valid_window=1 → acepta el código del período anterior/siguiente (±30s)
             if not totp.verify(input.codigo_totp.strip(), valid_window=1):
-                cache.set(rate_key, attempts + 1, timeout=60)
+                _registrar_fallo()
                 log_audit(None, "login_2fa_fallido",
                           f"Código 2FA incorrecto para {user.ci}", request=req)
                 raise Exception("Código de doble factor incorrecto. Verifica tu app de autenticación.")
 
-        cache.delete(rate_key)
+        cache.delete(ip_key)
+        cache.delete(ci_key)
         tokens = RefreshToken.for_user(user)
         metodo = "login_exitoso_2fa" if user.totp_activo else "login_exitoso"
         log_audit(user, metodo, f"Sesión iniciada por {user.ci}", request=req)

@@ -192,6 +192,21 @@ class RegistroAccesoType:
         return None
 
     @strawberry.field
+    def propietario_nombre(self) -> Optional[str]:
+        """Nombre del dueño registrado — el guardia verifica de un vistazo."""
+        p = getattr(self.vehiculo, "propietario", None) if self.vehiculo else None
+        return f"{p.nombre} {p.apellido}".strip() if p else None
+
+    @strawberry.field
+    def propietario_foto_url(self) -> Optional[str]:
+        """
+        Foto del dueño registrado para verificación visual de identidad en el
+        portón (¿quien conduce es el dueño?). Cero fricción: solo se muestra.
+        """
+        p = getattr(self.vehiculo, "propietario", None) if self.vehiculo else None
+        return (getattr(p, "foto_url", "") or None) if p else None
+
+    @strawberry.field
     def alertas_detectadas(self) -> List["AlertaAccesoType"]:
         """Alertas activas detectadas para este vehículo en el momento del registro."""
         return getattr(self, "_alertas_detectadas", [])
@@ -461,6 +476,48 @@ def _broadcast_alerta_ws(alerta, vehiculo):
             )
     except Exception:
         pass
+
+
+def _verificar_alerta_seguridad(vehiculo, punto, registrado_por, request) -> None:
+    """
+    Si el vehículo está en la lista de alerta de seguridad (robo/búsqueda):
+    crea una AlertaAcceso CRÍTICA en tiempo real (broadcast a guardias), audita
+    el intento y DENIEGA el acceso con un mensaje de seguridad específico.
+
+    Llamado al inicio de registrar_acceso / registrar_acceso_manual. La alerta
+    queda como registro del intento aunque el acceso se deniegue.
+    """
+    from datetime import timedelta
+    if not vehiculo or not getattr(vehiculo, "en_alerta", False):
+        return
+    motivo = vehiculo.motivo_alerta or "Vehículo reportado / acceso restringido"
+    # Evitar spam de alertas idénticas en una ventana corta.
+    ya_existe = AlertaAcceso.objects.filter(
+        vehiculo=vehiculo, tipo_anomalia="vehiculo_en_alerta",
+        revisada=False, fecha__gte=timezone.now() - timedelta(minutes=10),
+    ).exists()
+    if not ya_existe:
+        alerta = AlertaAcceso.objects.create(
+            vehiculo=vehiculo,
+            tipo_anomalia="vehiculo_en_alerta",
+            severidad="critica",
+            descripcion=(
+                f"⚠ {vehiculo.placa} EN ALERTA DE SEGURIDAD: {motivo}. "
+                f"Intento de acceso en {punto.nombre}. Dé aviso a seguridad."
+            ),
+            fecha_analisis=timezone.now().date(),
+            datos_extra={"motivo": motivo, "punto": punto.nombre},
+        )
+        _broadcast_alerta_ws(alerta, vehiculo)
+    log_audit(
+        registrado_por, "acceso_denegado_alerta",
+        f"Acceso DENEGADO a {vehiculo.placa} (alerta de seguridad: {motivo}) en {punto.nombre}",
+        request=request,
+    )
+    raise Exception(
+        f"⚠ VEHÍCULO EN ALERTA DE SEGURIDAD: {motivo}. "
+        "Acceso denegado — dé aviso a seguridad de inmediato."
+    )
 
 
 def _detectar_anomalias_acceso(vehiculo, tipo_acceso: str) -> list:
@@ -1233,6 +1290,9 @@ class AccesoMutation:
         else:
             tipo_efectivo = input.tipo
 
+        # Alerta de seguridad (lista negra): si aplica, deniega y alerta a seguridad.
+        _verificar_alerta_seguridad(resultado.vehiculo, punto, user, info.context.request)
+
         # Validar transición de estado (entrada/salida) — máquina de estados completa
         if resultado.vehiculo:
             _validar_transicion_acceso(resultado.vehiculo, tipo_efectivo)
@@ -1428,6 +1488,9 @@ class AccesoMutation:
                 "Solo puedes registrar accesos de tus propios vehículos. "
                 "El registro manual de otros vehículos es exclusivo del personal de seguridad."
             )
+
+        # Alerta de seguridad (lista negra): prioridad sobre los mensajes de estado.
+        _verificar_alerta_seguridad(vehiculo, punto, user, info.context.request)
 
         if vehiculo.estado == "pendiente":
             raise Exception("Vehículo pendiente de aprobación. No puede ingresar hasta ser aprobado por el administrador.")

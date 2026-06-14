@@ -63,10 +63,14 @@ def _fecha() -> str:
     return datetime.now().strftime("%d/%m/%Y %H:%M")
 
 
-def _auth(request: Any) -> bool:
-    """Return True if the request is authenticated."""
-    # JWTAuthMiddleware already sets request.user from Authorization header.
-    # For direct browser downloads we also accept ?token= query param.
+def _autorizar(request: Any, *roles: str) -> bool:
+    """
+    True si el request está autenticado Y el usuario tiene alguno de los roles.
+    Cierra el hueco: estos PDF son reportes agregados de TODOS los usuarios, así
+    que deben exigir el mismo rol que las queries GraphQL equivalentes — antes
+    cualquier usuario autenticado los descargaba (back door sin la misma cerradura).
+    Acepta ?token= para descargas directas del navegador (no pasan por Apollo).
+    """
     token = request.GET.get("token")
     if token and not request.user.is_authenticated:
         try:
@@ -75,7 +79,10 @@ def _auth(request: Any) -> bool:
             request.user = auth.get_user(validated)
         except Exception:
             pass
-    return request.user.is_authenticated
+    if not request.user.is_authenticated:
+        return False
+    from apps.usuarios.utils import tiene_rol
+    return any(tiene_rol(request.user, r) for r in roles)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -84,8 +91,8 @@ def _auth(request: Any) -> bool:
 
 class VehiculosPDFView(View):
     def get(self, request: Any) -> HttpResponse:
-        if not _auth(request):
-            return HttpResponseForbidden("Autenticación requerida")
+        if not _autorizar(request, "Administrador"):
+            return HttpResponseForbidden("Solo administradores pueden descargar este reporte")
 
         from apps.vehiculos.models import Vehiculo
         qs = Vehiculo.objects.select_related("tipo", "propietario").order_by("-created_at")
@@ -129,8 +136,8 @@ class VehiculosPDFView(View):
 
 class SesionesPDFView(View):
     def get(self, request: Any) -> HttpResponse:
-        if not _auth(request):
-            return HttpResponseForbidden("Autenticación requerida")
+        if not _autorizar(request, "Administrador"):
+            return HttpResponseForbidden("Solo administradores pueden descargar este reporte")
 
         from apps.parqueos.models import SesionParqueo
         qs = SesionParqueo.objects.select_related(
@@ -168,8 +175,8 @@ class SesionesPDFView(View):
 
 class VisitasPDFView(View):
     def get(self, request: Any) -> HttpResponse:
-        if not _auth(request):
-            return HttpResponseForbidden("Autenticación requerida")
+        if not _autorizar(request, "Administrador"):
+            return HttpResponseForbidden("Solo administradores pueden descargar este reporte")
 
         from apps.visitantes.models import Visita
         qs = Visita.objects.select_related(
@@ -206,8 +213,8 @@ class VisitasPDFView(View):
 
 class InfraccionesPDFView(View):
     def get(self, request: Any) -> HttpResponse:
-        if not _auth(request):
-            return HttpResponseForbidden("Autenticación requerida")
+        if not _autorizar(request, "Administrador"):
+            return HttpResponseForbidden("Solo administradores pueden descargar este reporte")
 
         from apps.multas.models import Infraccion
         qs = Infraccion.objects.select_related(

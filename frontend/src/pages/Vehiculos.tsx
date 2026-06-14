@@ -20,6 +20,7 @@ import {
   AGREGAR_DOCUMENTO_MUTATION,
   APROBAR_VEHICULO_MUTATION,
   RECHAZAR_VEHICULO_MUTATION,
+  MARCAR_ALERTA_SEGURIDAD_MUTATION,
 } from '../graphql/mutations/vehiculos'
 import { USUARIOS_QUERY } from '../graphql/queries/usuarios'
 
@@ -85,6 +86,7 @@ type Documento = {
 type Vehiculo = {
   id: number; placa: string; marca: string; modelo: string; anio: number;
   color: string; estado: string; codigoQr: string; createdAt: string;
+  enAlerta?: boolean; motivoAlerta?: string;
   estadoDocumentacion: string   // al_dia | advertencia | critico | sin_documentos
   tipo: { id: number; nombre: string }; propietarioNombre: string;
   documentos: Documento[]
@@ -244,6 +246,28 @@ export default function Vehiculos() {
     },
     onError(e) { setError(e.message); toast.error('Error al rechazar', e.message) },
   })
+  const [marcarAlertaSeguridad] = useMutation(MARCAR_ALERTA_SEGURIDAD_MUTATION, {
+    onCompleted(d) {
+      const v = d.marcarAlertaSeguridad
+      refetch()
+      if (v.enAlerta) toast.alerta('Alerta de seguridad activada', `${v.placa}: ${v.motivoAlerta}`)
+      else toast.exito('Alerta retirada', `${v.placa} ya no está en alerta`)
+    },
+    onError(e) { toast.error('No se pudo cambiar la alerta', e.message) },
+  })
+  // Activa/retira la alerta de seguridad (lista negra). Pide el motivo al activar.
+  function toggleAlertaSeguridad(v: any) {
+    if (v.enAlerta) {
+      marcarAlertaSeguridad({ variables: { vehiculoId: parseInt(v.id), enAlerta: false } })
+      return
+    }
+    const motivo = window.prompt(
+      `Marcar ${v.placa} EN ALERTA DE SEGURIDAD.\n\nMotivo (robo, búsqueda, acceso revocado):`
+    )
+    if (motivo && motivo.trim()) {
+      marcarAlertaSeguridad({ variables: { vehiculoId: parseInt(v.id), enAlerta: true, motivo: motivo.trim() } })
+    }
+  }
   const [regenerarQr] = useMutation(REGENERAR_QR_MUTATION, {
     onCompleted(d) {
       setSeleccionado(prev => prev ? { ...prev, codigoQr: d.regenerarQr.codigoQr } : prev)
@@ -662,9 +686,17 @@ export default function Vehiculos() {
                         <td className="px-4 py-3 text-slate-600">{v.anio}</td>
                         <td className="px-4 py-3 text-slate-600 capitalize">{v.color}</td>
                         <td className="px-4 py-3">
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ESTADO_BADGE[v.estado] ?? 'bg-slate-100 text-slate-600'}`}>
-                            {v.estado}
-                          </span>
+                          <div className="flex flex-col gap-1 items-start">
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ESTADO_BADGE[v.estado] ?? 'bg-slate-100 text-slate-600'}`}>
+                              {v.estado}
+                            </span>
+                            {v.enAlerta && (
+                              <span title={v.motivoAlerta}
+                                className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-600 text-white flex items-center gap-1 animate-pulse">
+                                <AlertTriangle size={10} /> EN ALERTA
+                              </span>
+                            )}
+                          </div>
                         </td>
                         {esAdmin && <td className="px-4 py-3 text-slate-600">{v.propietarioNombre}</td>}
                         <td className="px-4 py-3">
@@ -686,6 +718,14 @@ export default function Vehiculos() {
                                 <button onClick={() => abrirDocumento(v)} title="Documentos"
                                   className="p-1.5 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-colors">
                                   <FileText size={15} />
+                                </button>
+                                <button onClick={() => toggleAlertaSeguridad(v)}
+                                  title={v.enAlerta ? 'Quitar alerta de seguridad' : 'Marcar en alerta de seguridad'}
+                                  className={`p-1.5 rounded-lg transition-colors ${
+                                    v.enAlerta
+                                      ? 'text-red-600 bg-red-50 hover:bg-red-100'
+                                      : 'text-slate-400 hover:text-red-600 hover:bg-red-50'}`}>
+                                  <AlertTriangle size={15} />
                                 </button>
                               </>
                             )}

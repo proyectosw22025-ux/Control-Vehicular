@@ -10,6 +10,7 @@ export const REGISTRAR_ACCESO_MUTATION = gql`
   mutation RegistrarAcceso($input: ValidarAccesoInput!) {
     registrarAcceso(input: $input) {
       id tipo metodoAcceso timestamp observacion puntoNombre placaVehiculo
+      propietarioNombre propietarioFotoUrl
       alertasDetectadas {
         id tipoAnomalia severidad descripcion fecha vehiculoPlaca
       }
@@ -22,6 +23,7 @@ export const REGISTRAR_ACCESO_MANUAL_MUTATION = gql`
   mutation RegistrarAccesoManual($input: AccesoManualInput!) {
     registrarAccesoManual(input: $input) {
       id tipo metodoAcceso timestamp puntoNombre placaVehiculo
+      propietarioNombre propietarioFotoUrl
       alertasDetectadas {
         id tipoAnomalia severidad descripcion fecha vehiculoPlaca
       }

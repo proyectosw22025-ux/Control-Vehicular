@@ -56,6 +56,9 @@ export interface ResultadoAcceso {
   sugerencias?: SugerenciaPlaca[]
   // Tras una entrada, espacio libre compatible para asignar con un toque.
   espacioSugerido?: EspacioSugerido | null
+  // Identidad del dueño para verificación visual en el portón.
+  propietarioNombre?:  string | null
+  propietarioFotoUrl?: string | null
 }
 
 export interface EstadoConexion {
@@ -210,6 +213,8 @@ export function useAccesoGuardia() {
         metodo:  r.metodoAcceso,
         alertas,
         espacioSugerido: r.espacioSugerido ?? null,
+        propietarioNombre:  r.propietarioNombre ?? null,
+        propietarioFotoUrl: r.propietarioFotoUrl ?? null,
       }, r.espacioSugerido ? 12000 : undefined)  // más tiempo si hay acción pendiente
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al registrar acceso'
@@ -266,6 +271,8 @@ export function useAccesoGuardia() {
         metodo:  'manual',
         alertas: alertasM,
         espacioSugerido: r.espacioSugerido ?? null,
+        propietarioNombre:  r.propietarioNombre ?? null,
+        propietarioFotoUrl: r.propietarioFotoUrl ?? null,
       }, r.espacioSugerido ? 12000 : undefined)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al registrar acceso'

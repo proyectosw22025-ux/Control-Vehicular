@@ -56,6 +56,27 @@ def test_rate_limiting_bloquea_al_6to_intento(gql_client):
 
 
 @pytest.mark.django_db
+def test_lockout_por_cuenta_resiste_ips_rotativas(gql_client):
+    """Ataque distribuido a UNA cuenta: cada intento desde una IP distinta (el
+    límite por IP no se dispara), pero el contador por CI bloquea a los 8."""
+    import json
+    def intento(ip):
+        return gql_client.post(
+            "/graphql/",
+            data=json.dumps({"query": LOGIN, "variables": {"ci": "77777", "password": "mal"}}),
+            content_type="application/json",
+            REMOTE_ADDR=ip,
+        ).json()
+    # 8 intentos fallidos desde 8 IPs distintas — ninguna IP llega a 5.
+    for i in range(8):
+        intento(f"10.0.0.{i}")
+    # El 9º (otra IP nueva) ya está bloqueado por el contador de cuenta.
+    r = intento("10.0.0.200")
+    assert "errors" in r
+    assert "Cuenta temporalmente bloqueada" in r["errors"][0]["message"]
+
+
+@pytest.mark.django_db
 def test_rate_limiting_se_resetea_con_login_exitoso(gql_client, usuario_normal, password):
     # 4 intentos fallidos
     for _ in range(4):

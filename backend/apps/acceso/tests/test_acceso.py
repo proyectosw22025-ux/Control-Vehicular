@@ -509,3 +509,79 @@ def test_qr_permanente_deshabilitado_no_resuelve(gql_guardia, vehiculo_activo, p
     })
     assert "errors" in r
     assert "no reconocido" in r["errors"][0]["message"]
+
+
+# ── Lista negra / alerta de seguridad (vehículo robado/buscado) ──────────────
+
+MARCAR_ALERTA = """
+mutation Marcar($id: Int!, $on: Boolean!, $motivo: String) {
+  marcarAlertaSeguridad(vehiculoId: $id, enAlerta: $on, motivo: $motivo) {
+    id enAlerta motivoAlerta
+  }
+}
+"""
+
+
+@pytest.mark.django_db
+def test_admin_marca_alerta_seguridad(gql_admin, vehiculo_activo):
+    r = graphql(gql_admin, MARCAR_ALERTA, {"id": vehiculo_activo.id, "on": True, "motivo": "Reportado robado"})
+    assert "errors" not in r
+    assert r["data"]["marcarAlertaSeguridad"]["enAlerta"] is True
+    assert r["data"]["marcarAlertaSeguridad"]["motivoAlerta"] == "Reportado robado"
+
+
+@pytest.mark.django_db
+def test_marcar_alerta_requiere_motivo(gql_admin, vehiculo_activo):
+    r = graphql(gql_admin, MARCAR_ALERTA, {"id": vehiculo_activo.id, "on": True, "motivo": ""})
+    assert "errors" in r
+    assert "motivo" in r["errors"][0]["message"].lower()
+
+
+@pytest.mark.django_db
+def test_alerta_solo_admin(gql_guardia, vehiculo_activo):
+    r = graphql(gql_guardia, MARCAR_ALERTA, {"id": vehiculo_activo.id, "on": True, "motivo": "X"})
+    assert "errors" in r
+
+
+@pytest.mark.django_db
+def test_vehiculo_en_alerta_es_denegado_en_porton(gql_guardia, vehiculo_activo, punto_acceso):
+    """Un vehículo en alerta NO puede entrar — aunque esté 'activo'."""
+    from apps.acceso.models import AlertaAcceso
+    vehiculo_activo.en_alerta = True
+    vehiculo_activo.motivo_alerta = "Reportado robado"
+    vehiculo_activo.save(update_fields=["en_alerta", "motivo_alerta"])
+
+    r = graphql(gql_guardia, REGISTRAR_ACCESO, {
+        "puntoId": punto_acceso.id, "codigo": vehiculo_activo.codigo_qr, "tipo": "entrada",
+    })
+    assert "errors" in r
+    assert "ALERTA DE SEGURIDAD" in r["errors"][0]["message"]
+    # Y se creó la alerta crítica como registro del intento
+    assert AlertaAcceso.objects.filter(
+        vehiculo=vehiculo_activo, tipo_anomalia="vehiculo_en_alerta", severidad="critica"
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_vehiculo_en_alerta_denegado_tambien_manual(gql_guardia, vehiculo_activo, punto_acceso):
+    vehiculo_activo.en_alerta = True
+    vehiculo_activo.motivo_alerta = "Acceso revocado"
+    vehiculo_activo.save(update_fields=["en_alerta", "motivo_alerta"])
+    r = graphql(gql_guardia, REGISTRAR_MANUAL, {
+        "puntoId": punto_acceso.id, "placa": vehiculo_activo.placa, "tipo": "entrada",
+    })
+    assert "errors" in r
+    assert "ALERTA DE SEGURIDAD" in r["errors"][0]["message"]
+
+
+@pytest.mark.django_db
+def test_quitar_alerta_restaura_acceso(gql_admin, gql_guardia, vehiculo_activo, punto_acceso):
+    """Al retirar la alerta, el vehículo vuelve a poder entrar."""
+    vehiculo_activo.en_alerta = True
+    vehiculo_activo.motivo_alerta = "Error de registro"
+    vehiculo_activo.save(update_fields=["en_alerta", "motivo_alerta"])
+    graphql(gql_admin, MARCAR_ALERTA, {"id": vehiculo_activo.id, "on": False, "motivo": ""})
+    r = graphql(gql_guardia, REGISTRAR_ACCESO, {
+        "puntoId": punto_acceso.id, "codigo": vehiculo_activo.codigo_qr, "tipo": "entrada",
+    })
+    assert "errors" not in r

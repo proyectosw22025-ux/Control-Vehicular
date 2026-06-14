@@ -36,6 +36,14 @@ export const RECHAZAR_VEHICULO_MUTATION = gql`
   }
 `
 
+export const MARCAR_ALERTA_SEGURIDAD_MUTATION = gql`
+  mutation MarcarAlertaSeguridad($vehiculoId: Int!, $enAlerta: Boolean!, $motivo: String) {
+    marcarAlertaSeguridad(vehiculoId: $vehiculoId, enAlerta: $enAlerta, motivo: $motivo) {
+      id placa enAlerta motivoAlerta
+    }
+  }
+`
+
 export const REGENERAR_QR_MUTATION = gql`
   mutation RegenerarQr($vehiculoId: Int!) {
     regenerarQr(vehiculoId: $vehiculoId) {
