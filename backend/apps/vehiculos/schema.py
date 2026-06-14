@@ -452,13 +452,27 @@ class VehiculosQuery:
             qs = qs.filter(estado=estado)
         if buscar:
             b = buscar.strip()
-            qs = qs.filter(
+            cond = (
                 Q(placa__icontains=b)
                 | Q(marca__icontains=b)
                 | Q(modelo__icontains=b)
                 | Q(propietario__nombre__icontains=b)
                 | Q(propietario__apellido__icontains=b)
             )
+            # Búsqueda de placa tolerante a separadores: "622RXA", "622 RXA" y
+            # "622-RXA" encuentran la misma placa almacenada "622-RXA". El OCR
+            # puede devolver la placa con o sin guion según el frame.
+            b_comp = _re.sub(r"[^A-Z0-9]", "", b.upper())
+            if len(b_comp) >= 4:
+                from django.db.models import Value
+                from django.db.models.functions import Replace
+                qs = qs.annotate(
+                    _placa_comp=Replace(
+                        Replace("placa", Value("-"), Value("")), Value(" "), Value("")
+                    )
+                )
+                cond |= Q(_placa_comp__icontains=b_comp)
+            qs = qs.filter(cond)
 
         # ── Filtros avanzados C1 ──────────────────────────────────────────
         if tipo_id:

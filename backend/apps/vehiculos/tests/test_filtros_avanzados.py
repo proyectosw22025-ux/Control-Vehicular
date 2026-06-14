@@ -171,3 +171,34 @@ def test_filtros_combinados_tipo_y_color(gql_admin, vehiculo_rojo, vehiculo_azul
     items = r["data"]["vehiculos"]["items"]
     assert len(items) == 1
     assert items[0]["placa"] == "AZU-001"
+
+
+# ── Búsqueda de placa tolerante a separadores ─────────────────────────────────
+# Regresión: el OCR puede devolver la placa con guion, con espacio o sin nada.
+# Las tres formas deben encontrar la misma placa almacenada "622-RXA".
+
+_BUSCAR_PLACA = """
+query B($buscar: String!) {
+  vehiculos(buscar: $buscar, estado: "activo") {
+    items { id placa }
+    total
+  }
+}
+"""
+
+
+@pytest.fixture
+def vehiculo_622(db, usuario_normal, tipo_vehiculo):
+    return Vehiculo.objects.create(
+        placa="622-RXA", tipo=tipo_vehiculo, propietario=usuario_normal,
+        marca="Toyota", modelo="Corolla", anio=2026, color="celeste", estado="activo",
+    )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("termino", ["622-RXA", "622RXA", "622 RXA", "622rxa"])
+def test_buscar_placa_tolerante_a_separadores(gql_admin, vehiculo_622, termino):
+    r = graphql(gql_admin, _BUSCAR_PLACA, {"buscar": termino})
+    assert "errors" not in r
+    placas = [i["placa"] for i in r["data"]["vehiculos"]["items"]]
+    assert "622-RXA" in placas, f"'{termino}' no encontró la placa 622-RXA"

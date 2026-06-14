@@ -1,5 +1,5 @@
 /**
- * PlacaScanner v4 — Arquitectura "Detect & Confirm" continua.
+ * PlacaScanner v5 — Arquitectura "Detect & Confirm" continua.
  *
  * Diseño basado en sistemas ANPR reales:
  *   ✅ Captura CONTINUA (nunca se detiene entre intentos)
@@ -7,28 +7,39 @@
  *   ✅ Muestra resultado inmediatamente al primer detection
  *   ✅ Confirma automáticamente cuando el MISMO resultado aparece 2 veces seguidas
  *   ✅ Filtro de calidad en browser (rechaza frames oscuros/borrosos antes de enviar)
- *   ✅ Imágenes comprimidas al mínimo necesario (480px, JPEG 0.75) → 4x más rápido
+ *   ✅ Imágenes comprimidas al mínimo necesario (640px, JPEG 0.75) → más rápido
  *   ✅ Búsqueda en BD instantánea al detectar cualquier texto de placa
+ *   ✅ Red de seguridad fuzzy: si la placa leída no existe pero hay una a
+ *      distancia de edición 1 (OCR confundió un carácter), la sugiere
+ *
+ * FUENTE DE VERDAD DEL FORMATO: el backend (normalizar_placa) decide qué es
+ * una placa válida y la devuelve canónica "1234-ABC". El frontend solo confía
+ * en esa salida — no reimplementa la validación, para que no se desincronice.
  *
  * Flujo:
- *   Cámara activa → captura cada 250ms → filtro calidad → si ok → envía a backend
- *   Backend responde en ~200ms → resultado mostrado inmediatamente
+ *   Cámara activa → captura cada 300ms → filtro calidad → si ok → envía a backend
+ *   Backend (FastALPR) responde en ~200ms → resultado mostrado inmediatamente
  *   2 resultados iguales consecutivos con confianza media+ → auto-confirma
  *   Alta confianza en 1 sola lectura → auto-confirma directo
  */
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { CameraOff, Check, RefreshCw, Loader2, Zap, Search } from 'lucide-react'
+import { CameraOff, Check, RefreshCw, Loader2, Zap, Search, Lightbulb } from 'lucide-react'
 import { useLazyQuery } from '@apollo/client'
 import { useOcrPlaca, type ResultadoOcr } from '../hooks/useOcrPlaca'
-import { VEHICULOS_QUERY } from '../graphql/queries/vehiculos'
+import { VEHICULOS_QUERY, SUGERENCIAS_PLACA_QUERY } from '../graphql/queries/vehiculos'
 
-const PLACA_RE   = /^[A-Z]{2,4}[-\s]?\d{3,4}[A-Z]?$/i
-const DEPTOS_BO  = ['SCZ', 'CBB', 'LPZ', 'ORU', 'TJA', 'PTS', 'BEN', 'PAN', 'CHU']
-const INTERVALO  = 300    // ms entre capturas (era 800ms → 2.7x más frecuente)
-const MAX_ANCHO  = 640    // px máximo de ancho enviado al backend (era 1280px → 4x menos datos)
-const JPEG_QUAL  = 0.75   // calidad JPEG (era 0.95 → imágenes 3x más pequeñas)
+// Formato boliviano vigente (unificación 2016): 3-4 DÍGITOS + 3 LETRAS.
+// Ej: "622-RXA", "1234-XYZ". Debe coincidir con normalizar_placa() del backend.
+// Acepta la forma con guion, con espacio o sin separador.
+const PLACA_RE   = /^\d{3,4}[-\s]?[A-Z]{3}$/i
+const INTERVALO  = 300    // ms entre capturas
+const MAX_ANCHO  = 640    // px máximo de ancho enviado al backend
+const JPEG_QUAL  = 0.75   // calidad JPEG
 const CONF_AUTO  = 0.82   // confianza para auto-confirmar en 1 lectura
 const CONF_2X    = 0.60   // confianza para confirmar con 2 lecturas iguales consecutivas
+
+// Solo letras y números, en mayúsculas — base de comparación tolerante a separadores.
+const comparable = (p: string) => (p || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
 
 interface Props {
   activo: boolean
@@ -36,7 +47,7 @@ interface Props {
   onPlacaDetectada: (placa: string, frameB64?: string) => void
 }
 
-type Estado = 'idle' | 'iniciando' | 'capturando' | 'detectando' | 'revisar' | 'parcial' | 'detectado' | 'error'
+type Estado = 'idle' | 'iniciando' | 'capturando' | 'detectando' | 'revisar' | 'detectado' | 'error'
 
 const NIVEL_CFG = {
   alto:  { borde: 'border-emerald-400', badge: 'bg-emerald-100 text-emerald-700' },
@@ -69,56 +80,50 @@ export function PlacaScanner({ activo, onPlacaDetectada }: Props) {
   const canvasRef   = useRef<HTMLCanvasElement>(null)
   const streamRef   = useRef<MediaStream | null>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const enviandoRef = useRef(false)           // previene envíos simultáneos
-  const ultimaRef   = useRef<string | null>(null)  // última placa detectada
-  const consecutRef = useRef(0)              // contador de detecciones iguales
+  const enviandoRef = useRef(false)               // previene envíos simultáneos
+  const ultimaRef   = useRef<string | null>(null) // última placa detectada
+  const consecutRef = useRef(0)                   // contador de detecciones iguales
   const ultimoFrameRef = useRef<string | null>(null)  // último frame JPEG (evidencia)
 
   const [estado,       setEstado]      = useState<Estado>('idle')
   const [errorMsg,     setErrorMsg]    = useState('')
   const [resultado,    setResultado]   = useState<ResultadoOcr | null>(null)
   const [vehiculosBD,  setVehsBD]      = useState<any[]>([])
+  const [sugerencias,  setSugerencias] = useState<any[]>([])
   const [buscandoBD,   setBuscandoBD]  = useState(false)
-  const [codigoParcial, setCodigo]     = useState('')
-  const [numManual,    setNumManual]   = useState('')
   const [calidadFrame, setCalidad]     = useState(0)  // 0-1 para mostrar al usuario
 
   const { reconocerConConfianza } = useOcrPlaca()
 
-  const [buscarVehiculos] = useLazyQuery(VEHICULOS_QUERY, {
+  // Red de seguridad: cuando el OCR leyó mal un carácter y la placa no existe,
+  // el backend sugiere la(s) placa(s) real(es) a distancia de edición 1.
+  const [buscarSugerencias] = useLazyQuery(SUGERENCIAS_PLACA_QUERY, {
     fetchPolicy: 'network-only',
-    onCompleted(d) { setBuscandoBD(false); setVehsBD(d?.vehiculos?.items ?? []) },
-    onError()      { setBuscandoBD(false) },
+    onCompleted(d) { setSugerencias(d?.sugerenciasPlaca ?? []) },
+    onError()      { setSugerencias([]) },
   })
 
-  // Ref para saber el último término buscado y si ya hicimos fallback
-  const ultimaBusquedaRef = useRef<{ texto: string; hizoPrefijo: boolean }>({ texto: '', hizoPrefijo: false })
+  const [buscarVehiculos] = useLazyQuery(VEHICULOS_QUERY, {
+    fetchPolicy: 'network-only',
+    onCompleted(d) {
+      setBuscandoBD(false)
+      const items = d?.vehiculos?.items ?? []
+      setVehsBD(items)
+      // Sin coincidencia exacta → pedir sugerencias fuzzy al backend.
+      if (items.length === 0 && ultimaRef.current) {
+        buscarSugerencias({ variables: { placa: ultimaRef.current } })
+      }
+    },
+    onError() { setBuscandoBD(false) },
+  })
 
   const buscarEnBD = useCallback((texto: string) => {
-    if (!texto || texto.length < 2) return
-    ultimaBusquedaRef.current = { texto, hizoPrefijo: false }
+    const comp = comparable(texto)
+    if (comp.length < 4) return
+    setSugerencias([])
     setBuscandoBD(true)
     buscarVehiculos({ variables: { buscar: texto, estado: 'activo', porPagina: 8 } })
   }, [buscarVehiculos])
-
-  /**
-   * Búsqueda en cascada: cuando el primer intento no encuentra nada,
-   * intenta con solo el prefijo departamental (ej: "SCZ-1234" → "SCZ").
-   * Esto cubre placas especiales como motos con solo el código departamental.
-   */
-  useEffect(() => {
-    if (buscandoBD || vehiculosBD.length > 0) return
-    const { texto, hizoPrefijo } = ultimaBusquedaRef.current
-    if (!texto || hizoPrefijo) return
-
-    const prefijo = DEPTOS_BO.find(d => texto.toUpperCase().replace(/[-\s]/g, '').startsWith(d))
-    if (!prefijo || prefijo === texto.replace(/[-\s]/g, '').toUpperCase()) return
-
-    // Primer intento no encontró nada Y hay un prefijo diferente → buscar por prefijo
-    ultimaBusquedaRef.current = { texto: prefijo, hizoPrefijo: true }
-    setBuscandoBD(true)
-    buscarVehiculos({ variables: { buscar: prefijo, estado: 'activo', porPagina: 8 } })
-  }, [buscandoBD, vehiculosBD, buscarVehiculos])
 
   const detener = useCallback(() => {
     if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null }
@@ -126,8 +131,8 @@ export function PlacaScanner({ activo, onPlacaDetectada }: Props) {
     enviandoRef.current = false
     ultimaRef.current   = null
     consecutRef.current = 0
-    setEstado('idle'); setResultado(null); setVehsBD([])
-    setCodigo(''); setNumManual(''); setCalidad(0)
+    setEstado('idle'); setResultado(null); setVehsBD([]); setSugerencias([])
+    setCalidad(0)
   }, [])
 
   useEffect(() => {
@@ -191,47 +196,37 @@ export function PlacaScanner({ activo, onPlacaDetectada }: Props) {
       enviandoRef.current = false
       setEstado('capturando')
 
-      if (!res) return
+      if (!res || !res.placa) return
 
       const placa = res.placa
       const conf  = res.confianza
 
-      if (placa && PLACA_RE.test(placa)) {
-        setResultado(res)
+      // El backend ya devuelve la placa canónica; solo confiamos en su salida.
+      if (!PLACA_RE.test(placa)) return  // texto no es una placa válida → seguir escaneando
 
-        // ── Lógica de confirmación ────────────────────────────────────────────
-        if (conf >= CONF_AUTO) {
-          // Alta confianza: confirmar inmediatamente
+      setResultado(res)
+
+      // ── Lógica de confirmación ────────────────────────────────────────────
+      if (conf >= CONF_AUTO) {
+        // Alta confianza: confirmar inmediatamente
+        _confirmarPlaca(placa)
+        return
+      }
+
+      if (placa === ultimaRef.current) {
+        consecutRef.current += 1
+        if (consecutRef.current >= 2 && conf >= CONF_2X) {
+          // Misma placa 2 veces seguidas con confianza media → confirmar
           _confirmarPlaca(placa)
           return
         }
-
-        if (placa === ultimaRef.current) {
-          consecutRef.current += 1
-          if (consecutRef.current >= 2 && conf >= CONF_2X) {
-            // Misma placa 2 veces seguidas con confianza media → confirmar
-            _confirmarPlaca(placa)
-            return
-          }
-        } else {
-          ultimaRef.current   = placa
-          consecutRef.current = 1
-          // Nueva detección → buscar en BD inmediatamente
-          buscarEnBD(placa)
-        }
-        setEstado('revisar')
-
-      } else if (placa) {
-        // Detección parcial (ej: solo "SCZ")
-        const raw   = placa.replace(/[-\s]/g, '').toUpperCase()
-        const match = DEPTOS_BO.find(d => raw.startsWith(d))
-        if (match && raw === match) {
-          setCodigo(match)
-          setVehsBD([])
-          setEstado('parcial')
-          buscarEnBD(match)
-        }
+      } else {
+        ultimaRef.current   = placa
+        consecutRef.current = 1
+        // Nueva detección → buscar en BD inmediatamente
+        buscarEnBD(placa)
       }
+      setEstado('revisar')
     }).catch(() => {
       enviandoRef.current = false
       setEstado('capturando')
@@ -254,7 +249,7 @@ export function PlacaScanner({ activo, onPlacaDetectada }: Props) {
   }
 
   function reintentar() {
-    setResultado(null); setVehsBD([]); setCodigo(''); setNumManual('')
+    setResultado(null); setVehsBD([]); setSugerencias([])
     ultimaRef.current   = null
     consecutRef.current = 0
     setEstado('capturando')
@@ -384,7 +379,7 @@ export function PlacaScanner({ activo, onPlacaDetectada }: Props) {
                   <div className="flex-1 min-w-0">
                     <p className="font-mono font-black text-slate-800 text-sm">{v.placa}</p>
                     <p className="text-xs text-slate-500 truncate">
-                      {v.propietario?.nombreCompleto} · {v.marca} {v.modelo}
+                      {v.propietarioNombre} · {v.marca} {v.modelo}
                     </p>
                   </div>
                   <Check size={15} className="text-emerald-600 shrink-0" />
@@ -393,7 +388,31 @@ export function PlacaScanner({ activo, onPlacaDetectada }: Props) {
             </div>
           )}
 
-          {!buscandoBD && vehiculosBD.length === 0 && (
+          {/* Sin coincidencia exacta, pero hay placas cercanas (OCR confundió un carácter) */}
+          {!buscandoBD && vehiculosBD.length === 0 && sugerencias.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-semibold text-amber-600 px-1 flex items-center gap-1.5">
+                <Lightbulb size={11} />
+                ¿Quisiste decir? (lectura aproximada)
+              </p>
+              {sugerencias.map((v: any) => (
+                <button key={v.id}
+                  onClick={() => { onPlacaDetectada(v.placa); detener() }}
+                  className="w-full text-left flex items-center gap-3 bg-amber-50 border-2 border-amber-300 hover:border-amber-500 rounded-xl px-3 py-2.5 transition-all">
+                  <span className="text-lg shrink-0">🚗</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-mono font-black text-slate-800 text-sm">{v.placa}</p>
+                    <p className="text-xs text-slate-500 truncate">
+                      {v.propietarioNombre} · {v.marca} {v.modelo}
+                    </p>
+                  </div>
+                  <Check size={15} className="text-amber-600 shrink-0" />
+                </button>
+              ))}
+            </div>
+          )}
+
+          {!buscandoBD && vehiculosBD.length === 0 && sugerencias.length === 0 && (
             <p className="text-xs text-amber-600 px-1">⚠ No encontrado en el sistema</p>
           )}
 
@@ -407,63 +426,6 @@ export function PlacaScanner({ activo, onPlacaDetectada }: Props) {
               Usar: {resultado.placa}
             </button>
           </div>
-        </div>
-      )}
-
-      {/* Detección parcial + BD */}
-      {estado === 'parcial' && (
-        <div className="w-full space-y-3">
-          <div className="bg-blue-50 border-2 border-blue-300 rounded-xl px-4 py-2.5 flex items-center gap-2">
-            <Search size={14} className="text-blue-600 shrink-0" />
-            <div>
-              <p className="text-blue-700 text-xs font-bold">
-                Detecté: <span className="font-mono text-base">{codigoParcial}</span>
-                {buscandoBD && <Loader2 size={11} className="animate-spin ml-2 inline" />}
-              </p>
-              <p className="text-blue-600 text-[10px]">El número no fue visible — complétalo</p>
-            </div>
-          </div>
-
-          {vehiculosBD.length > 0 && (
-            <div className="space-y-1.5 max-h-40 overflow-y-auto">
-              {vehiculosBD.map((v: any) => (
-                <button key={v.id}
-                  onClick={() => { onPlacaDetectada(v.placa); detener() }}
-                  className="w-full text-left flex items-center gap-3 bg-white border-2 border-slate-200 hover:border-blue-400 rounded-xl px-3 py-2 transition-all">
-                  <span className="text-lg shrink-0">
-                    {v.tipo?.nombre === 'Motocicleta' ? '🏍️' : v.tipo?.nombre === 'Camioneta' ? '🚙' : '🚗'}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-mono font-black text-slate-800 text-sm">{v.placa}</p>
-                    <p className="text-xs text-slate-500 truncate">{v.propietario?.nombreCompleto}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {!buscandoBD && vehiculosBD.length === 0 && (
-            <div className="flex items-center gap-2">
-              <div className="flex items-center bg-slate-100 rounded-xl px-3 py-2 flex-1">
-                <span className="font-mono font-black text-slate-700 text-base mr-1">{codigoParcial}-</span>
-                <input autoFocus type="text" inputMode="numeric" maxLength={4} placeholder="1234"
-                  value={numManual}
-                  onChange={e => { setNumManual(e.target.value.replace(/[^0-9]/g, '')); if (e.target.value.length >= 3) buscarEnBD(`${codigoParcial}-${e.target.value}`) }}
-                  onKeyDown={e => { if (e.key === 'Enter' && numManual.length >= 3) { onPlacaDetectada(`${codigoParcial}-${numManual}`); detener() }}}
-                  className="font-mono font-black text-slate-800 text-base bg-transparent outline-none w-16 placeholder:text-slate-300" />
-              </div>
-              <button disabled={numManual.length < 3}
-                onClick={() => { onPlacaDetectada(`${codigoParcial}-${numManual}`); detener() }}
-                className="flex items-center gap-1.5 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm disabled:opacity-40 shrink-0">
-                <Check size={14} />
-              </button>
-            </div>
-          )}
-
-          <button onClick={reintentar}
-            className="w-full flex items-center justify-center gap-1.5 py-2 border border-slate-200 text-slate-500 rounded-xl text-xs hover:bg-slate-50">
-            <RefreshCw size={11} /> Reintentar escaneo
-          </button>
         </div>
       )}
 
