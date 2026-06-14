@@ -3,7 +3,7 @@ import { useQuery, useMutation } from '@apollo/client'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Car, Plus, RefreshCw, FileText, Edit, QrCode, X,
-  AlertTriangle, Search, ChevronLeft, ChevronRight,
+  AlertTriangle, Zap, Search, ChevronLeft, ChevronRight,
   CheckCircle, XCircle, Clock, History, SlidersHorizontal,
   ChevronDown, ChevronUp,
 } from 'lucide-react'
@@ -21,6 +21,7 @@ import {
   APROBAR_VEHICULO_MUTATION,
   RECHAZAR_VEHICULO_MUTATION,
   MARCAR_ALERTA_SEGURIDAD_MUTATION,
+  MARCAR_FRECUENTE_MUTATION,
 } from '../graphql/mutations/vehiculos'
 import { USUARIOS_QUERY } from '../graphql/queries/usuarios'
 
@@ -86,7 +87,7 @@ type Documento = {
 type Vehiculo = {
   id: number; placa: string; marca: string; modelo: string; anio: number;
   color: string; estado: string; codigoQr: string; createdAt: string;
-  enAlerta?: boolean; motivoAlerta?: string;
+  enAlerta?: boolean; motivoAlerta?: string; esFrecuente?: boolean;
   estadoDocumentacion: string   // al_dia | advertencia | critico | sin_documentos
   tipo: { id: number; nombre: string }; propietarioNombre: string;
   documentos: Documento[]
@@ -268,6 +269,15 @@ export default function Vehiculos() {
       marcarAlertaSeguridad({ variables: { vehiculoId: parseInt(v.id), enAlerta: true, motivo: motivo.trim() } })
     }
   }
+  const [marcarFrecuente] = useMutation(MARCAR_FRECUENTE_MUTATION, {
+    onCompleted(d) {
+      const v = d.marcarVehiculoFrecuente
+      refetch()
+      toast.exito(v.esFrecuente ? 'Carril express activado' : 'Carril express retirado',
+        `${v.placa}${v.esFrecuente ? ' ahora es frecuente' : ''}`)
+    },
+    onError(e) { toast.error('No se pudo cambiar', e.message) },
+  })
   const [regenerarQr] = useMutation(REGENERAR_QR_MUTATION, {
     onCompleted(d) {
       setSeleccionado(prev => prev ? { ...prev, codigoQr: d.regenerarQr.codigoQr } : prev)
@@ -726,6 +736,14 @@ export default function Vehiculos() {
                                       ? 'text-red-600 bg-red-50 hover:bg-red-100'
                                       : 'text-slate-400 hover:text-red-600 hover:bg-red-50'}`}>
                                   <AlertTriangle size={15} />
+                                </button>
+                                <button onClick={() => marcarFrecuente({ variables: { vehiculoId: Number(v.id), esFrecuente: !v.esFrecuente } })}
+                                  title={v.esFrecuente ? 'Quitar de carril express' : 'Marcar como frecuente (carril express)'}
+                                  className={`p-1.5 rounded-lg transition-colors ${
+                                    v.esFrecuente
+                                      ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100'
+                                      : 'text-slate-400 hover:text-emerald-600 hover:bg-emerald-50'}`}>
+                                  <Zap size={15} />
                                 </button>
                               </>
                             )}

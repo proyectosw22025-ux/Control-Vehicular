@@ -101,3 +101,18 @@ def test_query_qr_dinamico_no_autenticado_falla(gql_client, vehiculo_activo):
     """Sin autenticación no se puede obtener el QR dinámico."""
     r = graphql(gql_client, QR_DINAMICO_QUERY, {"vehiculoId": vehiculo_activo.id})
     assert "errors" in r
+
+
+@pytest.mark.django_db
+def test_generar_qr_precalienta_cache_para_resolucion_o1(gql_admin, vehiculo_activo):
+    """Pedir el QR dinámico deja cacheado codigo→vehiculo_id, para que el
+    escaneo del guardia resuelva en O(1) sin barrer toda la flota."""
+    from django.core.cache import cache
+    from apps.acceso.services import _resolver_totp
+    cache.clear()
+    r = graphql(gql_admin, QR_DINAMICO_QUERY, {"vehiculoId": vehiculo_activo.id})
+    codigo = r["data"]["qrDinamicoVehiculo"]["codigo"]
+    # El código quedó en el cache apuntando al vehículo.
+    assert cache.get(f"totp_vehiculo_{codigo}") == vehiculo_activo.id
+    # Y el resolver lo encuentra (vía cache).
+    assert _resolver_totp(codigo).id == vehiculo_activo.id

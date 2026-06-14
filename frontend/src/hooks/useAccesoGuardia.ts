@@ -59,6 +59,8 @@ export interface ResultadoAcceso {
   // Identidad del dueño para verificación visual en el portón.
   propietarioNombre?:  string | null
   propietarioFotoUrl?: string | null
+  // Carril express: despacho inmediato del vehículo frecuente.
+  esFrecuente?: boolean
 }
 
 export interface EstadoConexion {
@@ -215,6 +217,7 @@ export function useAccesoGuardia() {
         espacioSugerido: r.espacioSugerido ?? null,
         propietarioNombre:  r.propietarioNombre ?? null,
         propietarioFotoUrl: r.propietarioFotoUrl ?? null,
+        esFrecuente: r.esFrecuente ?? false,
       }, r.espacioSugerido ? 12000 : undefined)  // más tiempo si hay acción pendiente
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al registrar acceso'
@@ -276,6 +279,7 @@ export function useAccesoGuardia() {
         espacioSugerido: r.espacioSugerido ?? null,
         propietarioNombre:  r.propietarioNombre ?? null,
         propietarioFotoUrl: r.propietarioFotoUrl ?? null,
+        esFrecuente: r.esFrecuente ?? false,
       }, r.espacioSugerido ? 12000 : undefined)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al registrar acceso'

@@ -84,6 +84,10 @@ class Vehiculo(models.Model):
     # acceso con un mensaje de seguridad, dejando registrado el intento.
     en_alerta     = models.BooleanField(default=False, db_index=True)
     motivo_alerta = models.CharField(max_length=200, blank=True)
+    # Carril express: vehículos frecuentes (docentes/administrativos de planta).
+    # El guardia los despacha de inmediato con un indicador visual, sin pasos
+    # extra — descongestiona el carril general en hora pico.
+    es_frecuente  = models.BooleanField(default=False, db_index=True)
     foto = models.ImageField(upload_to="vehiculos/fotos/", blank=True, null=True)
     # ── Campos extendidos (todos opcionales, backward-compatible) ──────────
     numero_motor    = models.CharField(max_length=30, blank=True)

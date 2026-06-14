@@ -44,6 +44,14 @@ export const MARCAR_ALERTA_SEGURIDAD_MUTATION = gql`
   }
 `
 
+export const MARCAR_FRECUENTE_MUTATION = gql`
+  mutation MarcarFrecuente($vehiculoId: Int!, $esFrecuente: Boolean!) {
+    marcarVehiculoFrecuente(vehiculoId: $vehiculoId, esFrecuente: $esFrecuente) {
+      id placa esFrecuente
+    }
+  }
+`
+
 export const REGENERAR_QR_MUTATION = gql`
   mutation RegenerarQr($vehiculoId: Int!) {
     regenerarQr(vehiculoId: $vehiculoId) {

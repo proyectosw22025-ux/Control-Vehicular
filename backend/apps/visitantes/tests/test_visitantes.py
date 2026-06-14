@@ -350,3 +350,58 @@ def test_visitante_puede_registrar_visita_tras_finalizar(db, gql_guardia, visita
     })
     assert "errors" not in r
     assert r["data"]["registrarVisita"]["estado"] == "pendiente"
+
+
+# ── Coordinación visita ↔ vehículo temporal ──────────────────────────────────
+
+@pytest.fixture
+def visita_con_auto(db, gql_guardia, visitante_registrado, admin, tipo_reunion):
+    r = graphql(gql_guardia, REGISTRAR_VISITA, {
+        "input": {
+            "visitanteId": visitante_registrado["id"],
+            "anfitrionId": admin.id,
+            "motivo": "Reunión con auto",
+            "tipoVisitaId": tipo_reunion.id,
+            "placaVehiculoVisitante": "9999-VIS",
+        }
+    })
+    assert "errors" not in r, r.get("errors")
+    return r["data"]["registrarVisita"]
+
+
+@pytest.mark.django_db
+def test_iniciar_visita_con_auto_crea_temporal(gql_guardia, visita_con_auto):
+    """Al iniciar una visita con placa real, se crea un VehiculoTemporal vinculado."""
+    from apps.acceso.models import VehiculoTemporal
+    from apps.visitantes.models import Visita
+    graphql(gql_guardia, INICIAR_VISITA, {"id": int(visita_con_auto["id"])})
+    v = Visita.objects.get(pk=visita_con_auto["id"])
+    assert v.vehiculo_temporal_id is not None
+    assert VehiculoTemporal.objects.filter(placa="9999-VIS", activo=True).exists()
+
+
+@pytest.mark.django_db
+def test_finalizar_visita_cierra_temporal(gql_guardia, visita_con_auto):
+    """Cerrar la visita desactiva el temporal vinculado (coordinación de salida)."""
+    from apps.acceso.models import VehiculoTemporal
+    graphql(gql_guardia, INICIAR_VISITA, {"id": int(visita_con_auto["id"])})
+    graphql(gql_guardia, FINALIZAR_VISITA, {"id": int(visita_con_auto["id"]), "obs": ""})
+    assert not VehiculoTemporal.objects.filter(placa="9999-VIS", activo=True).exists()
+
+
+@pytest.mark.django_db
+def test_visita_a_pie_no_crea_temporal(gql_guardia, visitante_registrado, admin, tipo_reunion):
+    """Si el visitante viene 'A PIE', no se crea ningún temporal."""
+    from apps.acceso.models import VehiculoTemporal
+    from apps.visitantes.models import Visita
+    r = graphql(gql_guardia, REGISTRAR_VISITA, {
+        "input": {
+            "visitanteId": visitante_registrado["id"], "anfitrionId": admin.id,
+            "motivo": "Reunión", "tipoVisitaId": tipo_reunion.id,
+            "placaVehiculoVisitante": "A PIE",
+        }
+    })
+    vid = int(r["data"]["registrarVisita"]["id"])
+    graphql(gql_guardia, INICIAR_VISITA, {"id": vid})
+    assert Visita.objects.get(pk=vid).vehiculo_temporal_id is None
+    assert not VehiculoTemporal.objects.filter(activo=True).exists()

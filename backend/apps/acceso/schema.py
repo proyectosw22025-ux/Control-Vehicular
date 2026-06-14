@@ -197,6 +197,11 @@ class RegistroAccesoType:
         return self.imagen_url or None
 
     @strawberry.field
+    def es_frecuente(self) -> bool:
+        """Vehículo de carril express — el guardia lo despacha de inmediato."""
+        return bool(getattr(self.vehiculo, "es_frecuente", False)) if self.vehiculo else False
+
+    @strawberry.field
     def propietario_nombre(self) -> Optional[str]:
         """Nombre del dueño registrado — el guardia verifica de un vistazo."""
         p = getattr(self.vehiculo, "propietario", None) if self.vehiculo else None

@@ -118,6 +118,7 @@ class VehiculoType:
     capacidad_carga: str
     en_alerta: bool
     motivo_alerta: str
+    es_frecuente: bool
 
     @strawberry.field
     def tipo(self) -> TipoVehiculoType:
@@ -591,6 +592,13 @@ class VehiculosQuery:
         if not v.qr_secret:
             raise Exception("Este vehículo no tiene QR dinámico. Use 'Invalidar QR' para generar uno.")
         codigo, segundos = generar_qr_dinamico(v.qr_secret)
+        # Precalentar el índice inverso del TOTP: como el dueño DEBE pedir su
+        # código al backend para mostrar el QR, al hacerlo dejamos cacheado
+        # codigo→vehiculo_id. Así el escaneo del guardia resuelve en O(1) y se
+        # evita el barrido lineal de toda la flota en el portón (anti-cola).
+        from django.core.cache import cache
+        # TTL holgado (2 ventanas) para cubrir el código actual y el siguiente.
+        cache.set(f"totp_vehiculo_{codigo}", v.pk, timeout=QR_INTERVAL * 2)
         return QrDinamicoType(codigo=codigo, segundos_restantes=segundos, intervalo=QR_INTERVAL)
 
 
@@ -706,6 +714,25 @@ class VehiculosMutation:
                 if en_alerta else f"Alerta de seguridad retirada de {v.placa}"
             )
             log_audit(admin, accion, detalle, request=info.context.request)
+        return v
+
+    @strawberry.mutation
+    def marcar_vehiculo_frecuente(self, info: Info, vehiculo_id: int, es_frecuente: bool) -> VehiculoType:
+        """Marca/desmarca un vehículo como frecuente (carril express). Solo Admin."""
+        from apps.acceso.utils import log_audit
+        admin = info.context.request.user
+        if not admin.is_authenticated:
+            raise Exception("Autenticación requerida")
+        if not tiene_rol(admin, "Administrador"):
+            raise Exception("Solo administradores pueden marcar vehículos frecuentes")
+        v = Vehiculo.objects.select_related("tipo", "propietario").filter(pk=vehiculo_id).first()
+        if not v:
+            raise Exception("Vehículo no encontrado")
+        v.es_frecuente = es_frecuente
+        v.save(update_fields=["es_frecuente"])
+        log_audit(admin, "vehiculo_frecuente",
+                  f"{v.placa} {'marcado' if es_frecuente else 'desmarcado'} como frecuente",
+                  request=info.context.request)
         return v
 
     @strawberry.mutation

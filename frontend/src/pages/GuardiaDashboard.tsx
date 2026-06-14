@@ -882,6 +882,11 @@ export default function GuardiaDashboard() {
                   </p>
                 )}
                 <p className="text-sm font-semibold mt-0.5">{resultado.mensaje}</p>
+                {resultado.ok && resultado.esFrecuente && (
+                  <span className="inline-flex items-center gap-1 mt-1 text-[11px] font-bold bg-emerald-600 text-white px-2 py-0.5 rounded-full">
+                    ⚡ CARRIL EXPRESS · despacho inmediato
+                  </span>
+                )}
                 {resultado.ok && resultado.propietarioNombre && (
                   <p className="text-xs font-medium mt-0.5 flex items-center gap-1">
                     <UserCheck size={12} /> {resultado.propietarioNombre}

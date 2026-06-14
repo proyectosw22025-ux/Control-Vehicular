@@ -39,6 +39,7 @@ export const VEHICULOS_QUERY = gql`
         estado
         enAlerta
         motivoAlerta
+        esFrecuente
         codigoQr
         createdAt
         tipo { id nombre }

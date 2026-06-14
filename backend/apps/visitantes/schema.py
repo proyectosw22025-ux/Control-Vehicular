@@ -476,6 +476,67 @@ class VisitantesQuery:
         return list(qs[:min(limite, 200)])
 
 
+# ── Coordinación visita ↔ vehículo temporal ─────────────────────────────────
+
+# Palabras que indican que el visitante NO trae vehículo (placa libre).
+_SIN_VEHICULO = {"", "A PIE", "APIE", "TAXI", "SIN VEHICULO", "SIN VEHÍCULO", "NINGUNO", "N/A"}
+
+
+def _crear_o_vincular_temporal(visita, user):
+    """
+    Si el visitante llegó en un auto no registrado (placa real en
+    placa_vehiculo_visitante), devuelve un VehiculoTemporal vinculable: el ya
+    activo para esa placa, o uno nuevo. Devuelve None si vino a pie/taxi o ya
+    está vinculado. No interrumpe el alta de la visita ante errores.
+    """
+    from datetime import timedelta
+    from apps.acceso.models import VehiculoTemporal
+    placa = (visita.placa_vehiculo_visitante or "").strip().upper()
+    if visita.vehiculo_temporal_id or placa in _SIN_VEHICULO or len(placa.replace("-", "")) < 3:
+        return None
+    try:
+        existente = VehiculoTemporal.objects.filter(placa=placa, activo=True).first()
+        if existente:
+            return existente
+        destino = (visita.dependencia.nombre if visita.dependencia_id else None) or "Visita"
+        return VehiculoTemporal.objects.create(
+            placa=placa,
+            tipo="visitante",
+            destino=destino[:150],
+            responsable=f"{visita.visitante.nombre} {visita.visitante.apellido}"[:100],
+            hora_limite=timezone.now() + timedelta(hours=8),
+            observacion=f"Auto-creado desde visita #{visita.pk}",
+            registrado_por=user if getattr(user, "is_authenticated", False) else None,
+        )
+    except Exception:
+        return None
+
+
+def _cerrar_temporal_de_visita(visita):
+    """Al cerrar la visita: desactiva el temporal vinculado y libera su parqueo."""
+    vt = visita.vehiculo_temporal
+    if not vt or not vt.activo:
+        return
+    try:
+        vt.activo = False
+        vt.hora_salida = timezone.now()
+        vt.save(update_fields=["activo", "hora_salida"])
+        from apps.parqueos.models import SesionParqueo
+        sesion = SesionParqueo.objects.select_related("espacio").filter(
+            vehiculo_temporal=vt, estado="activa"
+        ).first()
+        if sesion:
+            sesion.hora_salida = timezone.now()
+            sesion.estado = "cerrada"
+            sesion.save(update_fields=["hora_salida", "estado"])
+            sesion.espacio.estado = "disponible"
+            sesion.espacio.save(update_fields=["estado"])
+            from apps.parqueos.schema import broadcast_disponibilidad
+            broadcast_disponibilidad(sesion.espacio.zona_id)
+    except Exception:
+        pass
+
+
 # ── Mutations ──────────────────────────────────────────────────────────────
 
 @strawberry.type
@@ -719,7 +780,17 @@ class VisitantesMutation:
                 raise Exception("Visita pendiente no encontrada")
             visita.estado = "activa"
             visita.fecha_entrada = timezone.now()
-            visita.save(update_fields=["estado", "fecha_entrada"])
+            campos = ["estado", "fecha_entrada"]
+
+            # Coordinación con el portón: si el visitante llegó en auto (placa real,
+            # no "A PIE"/"TAXI"), crear o vincular un VehiculoTemporal para que su
+            # vehículo quede registrado en el control de acceso y pueda parquear.
+            vt = _crear_o_vincular_temporal(visita, user)
+            if vt:
+                visita.vehiculo_temporal = vt
+                campos.append("vehiculo_temporal")
+
+            visita.save(update_fields=campos)
             log_audit(
                 user, "visita_iniciada",
                 f"Visita #{visita_id}: {visita.visitante.nombre} {visita.visitante.apellido} ingresó",
@@ -754,6 +825,8 @@ class VisitantesMutation:
             if observaciones:
                 visita.observaciones = observaciones.strip()
             visita.save(update_fields=["estado", "fecha_salida", "tipo_cierre", "observaciones"])
+            # Coordinación: cerrar el vehículo temporal vinculado y liberar su parqueo.
+            _cerrar_temporal_de_visita(visita)
             duracion = int((visita.fecha_salida - visita.fecha_entrada).total_seconds() / 60) if visita.fecha_entrada else 0
             log_audit(
                 user, "visita_finalizada",
@@ -801,6 +874,7 @@ class VisitantesMutation:
             if not visita.fecha_salida and visita.fecha_entrada:
                 visita.fecha_salida = timezone.now()
             visita.save(update_fields=["estado", "observaciones", "fecha_salida"])
+            _cerrar_temporal_de_visita(visita)  # liberar temporal/parqueo vinculado
             log_audit(
                 user, "visita_cancelada",
                 f"Visita #{visita_id}: {visita.visitante.nombre} {visita.visitante.apellido} "

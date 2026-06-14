@@ -111,6 +111,16 @@ class Visita(models.Model):
         blank=True,
         related_name="visitas",
     )
+    # Vínculo con el vehículo temporal del portón cuando el visitante llega en
+    # auto (no registrado). Coordina entrada/salida y parqueo: cerrar la visita
+    # cierra el temporal y libera su espacio — antes eran registros desconectados.
+    vehiculo_temporal = models.ForeignKey(
+        "acceso.VehiculoTemporal",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="visitas",
+    )
     motivo = models.TextField()
     estado = models.CharField(max_length=12, choices=ESTADOS, default="pendiente")
     fecha_entrada = models.DateTimeField(null=True, blank=True)

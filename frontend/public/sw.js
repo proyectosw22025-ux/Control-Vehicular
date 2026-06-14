@@ -106,7 +106,10 @@ async function handleGraphQL(request) {
   } catch {
     // Sin red — solo guardar si es mutation de acceso manual
     if (esMuta) {
-      await guardarPendiente({ body, url: request.url })
+      // Guardar el token JWT del request original: sin él, el replay tras
+      // reconectar sería rechazado (el acceso manual exige autenticación).
+      const auth = request.headers.get('Authorization') || ''
+      await guardarPendiente({ body, url: request.url, auth })
       const pendientes = await obtenerPendientes()
       const clients = await self.clients.matchAll()
       clients.forEach(c => c.postMessage({
@@ -123,6 +126,16 @@ async function handleGraphQL(request) {
     return new Response(JSON.stringify({ errors: [{ message: 'Sin conexión a internet' }] }), {
       headers: { 'Content-Type': 'application/json' },
     })
+  }
+}
+
+// True si la respuesta GraphQL no trae errores (el acceso fue aceptado).
+async function _sinErroresGraphQL(resp) {
+  try {
+    const json = await resp.json()
+    return !(json.errors && json.errors.length)
+  } catch {
+    return false
   }
 }
 
@@ -144,16 +157,22 @@ async function sincronizarPendientes() {
   let sincronizados = 0
   for (const item of pendientes) {
     try {
+      const headers = { 'Content-Type': 'application/json' }
+      // Reenviar el token del request original para que el replay autentique.
+      if (item.auth) headers['Authorization'] = item.auth
       const resp = await fetch(item.url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: item.body,
       })
+      // Un 200 (con o sin errors) = el servidor YA procesó la solicitud de forma
+      // definitiva — no tiene sentido reintentar (un acceso rechazado por reglas
+      // de negocio se rechazará igual al reintentar). Solo el fallo de red reintenta.
       if (resp.ok) {
         await marcarSincronizado(item.id)
-        sincronizados++
+        if (await _sinErroresGraphQL(resp.clone())) sincronizados++
       }
-    } catch { /* seguir con el siguiente */ }
+    } catch { /* fallo de red — se reintentará en la próxima sync */ }
   }
 
   if (sincronizados > 0) {

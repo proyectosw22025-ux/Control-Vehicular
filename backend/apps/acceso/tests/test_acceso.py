@@ -656,3 +656,25 @@ def test_metrica_despacho_calcula_mediana(gql_guardia, vehiculo_activo, punto_ac
 def test_metrica_despacho_requiere_personal(gql_usuario_normal):
     r = graphql(gql_usuario_normal, DESPACHO, {})
     assert "errors" in r
+
+
+# ── Carril express (vehículo frecuente) ──────────────────────────────────────
+
+ACCESO_FRECUENTE = """
+mutation RegistrarManual($puntoId: Int!, $placa: String!, $tipo: String!) {
+  registrarAccesoManual(input: { puntoAccesoId: $puntoId, placa: $placa, tipo: $tipo }) {
+    id esFrecuente
+  }
+}
+"""
+
+
+@pytest.mark.django_db
+def test_vehiculo_frecuente_se_refleja_en_escaneo(gql_guardia, vehiculo_activo, punto_acceso):
+    vehiculo_activo.es_frecuente = True
+    vehiculo_activo.save(update_fields=["es_frecuente"])
+    r = graphql(gql_guardia, ACCESO_FRECUENTE, {
+        "puntoId": punto_acceso.id, "placa": vehiculo_activo.placa, "tipo": "entrada",
+    })
+    assert "errors" not in r
+    assert r["data"]["registrarAccesoManual"]["esFrecuente"] is True
