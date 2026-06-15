@@ -18,6 +18,9 @@ class ResultadoValidacion:
     pase_temporal:         Optional[object]
     metodo_acceso:         str
     autorizacion_externa:  Optional[object] = None  # AutorizacionAccesoExterno
+    # Dirección impuesta por la credencial (no por el guardia). La usan las
+    # autorizaciones externas: 1er uso = entrada, 2do = salida.
+    tipo_forzado:          Optional[str] = None      # "entrada" | "salida" | None
 
 
 def validar_estado_vehiculo(vehiculo) -> None:
@@ -149,13 +152,14 @@ def resolver_codigo(codigo: str, tipo_acceso: str = None) -> ResultadoValidacion
         )
 
     # ── Nivel 4: Autorización de acceso externo (proveedor/contratista) ─────
-    # Código de 24 chars hexadecimal generado al crear la autorización.
-    # Optimistic locking: UPDATE WHERE usado=False garantiza un solo uso atómico.
+    # Código de 24 chars generado al crear la autorización. Cubre ENTRADA + SALIDA
+    # (usos_max=2): el 1er escaneo registra la entrada, el 2do la salida. La
+    # dirección la determina el conteo de usos, no el toggle del guardia.
     from apps.acceso.models import AutorizacionAccesoExterno
 
     auth = (
         AutorizacionAccesoExterno.objects
-        .filter(codigo_acceso=codigo_limpio, activo=True, usado=False)
+        .filter(codigo_acceso=codigo_limpio, activo=True)
         .select_related("dependencia", "autorizado_por")
         .first()
     )
@@ -169,18 +173,29 @@ def resolver_codigo(codigo: str, tipo_acceso: str = None) -> ResultadoValidacion
             raise Exception(
                 f"Autorización vencida. Era válida hasta {auth.valido_hasta.strftime('%d/%m %H:%M')}."
             )
+        if auth.usos_actual >= auth.usos_max:
+            raise Exception("Autorización ya completada: entrada y salida fueron registradas.")
+
+        # 1er uso = entrada, 2do = salida — la credencial impone la dirección.
+        usos_previos = auth.usos_actual
+        tipo_forzado = "entrada" if usos_previos == 0 else "salida"
+
+        # Optimistic locking: UPDATE WHERE usos_actual=X — un solo consumo atómico.
+        nuevos_usos = usos_previos + 1
         actualizado = AutorizacionAccesoExterno.objects.filter(
-            pk=auth.pk, usado=False
-        ).update(usado=True)
+            pk=auth.pk, usos_actual=usos_previos
+        ).update(usos_actual=nuevos_usos, usado=(nuevos_usos >= auth.usos_max))
         if actualizado == 0:
-            raise Exception("Esta autorización ya fue utilizada por otro guardia.")
-        auth.usado = True
+            raise Exception("Esta autorización fue usada al mismo tiempo por otro guardia. Reintente.")
+        auth.usos_actual = nuevos_usos
+
         return ResultadoValidacion(
             vehiculo=None,
             qr_delegacion=None,
             pase_temporal=None,
             metodo_acceso="temporal",
             autorizacion_externa=auth,
+            tipo_forzado=tipo_forzado,
         )
 
     raise Exception("Código no reconocido. Verifique el QR o el código del pase temporal.")

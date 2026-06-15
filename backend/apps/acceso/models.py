@@ -256,6 +256,11 @@ class AutorizacionAccesoExterno(models.Model):
     valido_hasta    = models.DateTimeField()
     codigo_acceso   = models.CharField(max_length=24, unique=True)
     activo          = models.BooleanField(default=True)
+    # Usos: una autorización cubre ENTRADA + SALIDA del proveedor (usos_max=2).
+    # El primer escaneo registra la entrada; el segundo, la salida. `usado` queda
+    # True solo cuando ambos se consumieron (compatibilidad con vistas existentes).
+    usos_max        = models.PositiveSmallIntegerField(default=2)
+    usos_actual     = models.PositiveSmallIntegerField(default=0)
     usado           = models.BooleanField(default=False)
     email_enviado   = models.BooleanField(default=False)
     fecha_creacion  = models.DateTimeField(auto_now_add=True)
@@ -270,10 +275,14 @@ class AutorizacionAccesoExterno(models.Model):
         return f"Auth {self.codigo_acceso} — {self.empresa} ({self.placa})"
 
     @property
+    def usos_restantes(self) -> int:
+        return max(0, self.usos_max - self.usos_actual)
+
+    @property
     def vigente(self) -> bool:
         from django.utils import timezone
         return (
-            self.activo and not self.usado
+            self.activo and self.usos_actual < self.usos_max
             and self.valido_desde <= timezone.now() <= self.valido_hasta
         )
 

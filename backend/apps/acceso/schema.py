@@ -398,9 +398,15 @@ class AutorizacionAccesoExternoType:
     codigo_acceso:    str
     activo:           bool
     usado:            bool
+    usos_max:         int
+    usos_actual:      int
     email_enviado:    bool
     fecha_creacion:   datetime
     observacion:      str
+
+    @strawberry.field
+    def usos_restantes(self) -> int:
+        return max(0, self.usos_max - self.usos_actual)
 
     @strawberry.field
     def dependencia_nombre(self) -> Optional[str]:
@@ -1456,6 +1462,11 @@ class AccesoMutation:
                 tipo_efectivo = "entrada"
         else:
             tipo_efectivo = input.tipo
+
+        # Autorización externa: la dirección la fija el conteo de usos
+        # (1er uso = entrada, 2do = salida), no el toggle del guardia.
+        if resultado.autorizacion_externa and resultado.tipo_forzado:
+            tipo_efectivo = resultado.tipo_forzado
 
         # Alerta de seguridad (lista negra): si aplica, deniega y alerta a seguridad.
         _verificar_alerta_seguridad(resultado.vehiculo, punto, user, info.context.request)
