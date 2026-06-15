@@ -22,7 +22,7 @@ import { QrScanner }     from '../components/QrScanner'
 import { PlacaScanner } from '../components/PlacaScanner'
 import { PUNTOS_ACCESO_QUERY, REGISTROS_ACCESO_QUERY, ALERTAS_PANEL_QUERY, VEHICULOS_TEMPORALES_QUERY, VEHICULOS_EN_CAMPUS_QUERY, AFORO_CAMPUS_QUERY, METRICAS_DESPACHO_QUERY } from '../graphql/queries/acceso'
 import { MARCAR_ALERTA_REVISADA_MUTATION, REGISTRAR_ACCESO_TEMPORAL_MUTATION, REGISTRAR_SALIDA_TEMPORAL_MUTATION } from '../graphql/mutations/acceso'
-import { INICIAR_SESION_MUTATION, OCUPAR_ESPACIO_TEMPORAL_MUTATION } from '../graphql/mutations/parqueos'
+import { OCUPAR_ESPACIO_TEMPORAL_MUTATION } from '../graphql/mutations/parqueos'
 import { ESPACIOS_DISPONIBLES_QUERY } from '../graphql/queries/parqueos'
 import { VISITAS_ACTIVAS_QUERY } from '../graphql/queries/visitantes'
 import { useAccesoGuardia, type TipoAcceso, type AlertaInfo, type ResultadoAcceso } from '../hooks/useAccesoGuardia'
@@ -42,6 +42,15 @@ const METODO_LABEL: Record<string, string> = {
   qr_delegacion:'QR Deleg.',
   pase_temporal:'Pase',
   manual:       'Manual',
+}
+
+// Color del badge de rol — el guardia identifica de un vistazo el tipo de miembro.
+const ROL_BADGE: Record<string, string> = {
+  'Estudiante':              'bg-blue-100 text-blue-700',
+  'Docente':                 'bg-purple-100 text-purple-700',
+  'Personal Administrativo': 'bg-amber-100 text-amber-700',
+  'Guardia':                 'bg-slate-200 text-slate-700',
+  'Administrador':           'bg-rose-100 text-rose-700',
 }
 
 export default function GuardiaDashboard() {
@@ -281,20 +290,6 @@ export default function GuardiaDashboard() {
     refetchRegistros()
     refetchStats()
   }, [registrarManual, tipo, refetchRegistros, refetchStats])
-
-  // Asignación de espacio de un toque tras la entrada.
-  const [asignarEspacio, { loading: asignandoEspacio }] = useMutation(INICIAR_SESION_MUTATION)
-  const handleAsignarEspacio = useCallback(async (espacioId: number, vehiculoId: number, numero: string, zona: string) => {
-    try {
-      await asignarEspacio({ variables: { input: { espacioId, vehiculoId } } })
-      setEspacioAsignadoMsg(`Espacio ${numero} (${zona}) asignado ✓`)
-      refetchStats()
-      setTimeout(() => setEspacioAsignadoMsg(''), 4000)
-    } catch (e: any) {
-      setEspacioAsignadoMsg(`No se pudo asignar: ${e?.message ?? 'error'}`)
-      setTimeout(() => setEspacioAsignadoMsg(''), 5000)
-    }
-  }, [asignarEspacio, refetchStats])
 
   // Verificar alertas cada vez que llega un resultado de acceso
   useEffect(() => {
@@ -888,8 +883,13 @@ export default function GuardiaDashboard() {
                   </span>
                 )}
                 {resultado.ok && resultado.propietarioNombre && (
-                  <p className="text-xs font-medium mt-0.5 flex items-center gap-1">
+                  <p className="text-xs font-medium mt-0.5 flex items-center gap-1.5 flex-wrap">
                     <UserCheck size={12} /> {resultado.propietarioNombre}
+                    {resultado.propietarioRol && (
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${ROL_BADGE[resultado.propietarioRol] ?? 'bg-slate-200 text-slate-700'}`}>
+                        {resultado.propietarioRol}
+                      </span>
+                    )}
                   </p>
                 )}
                 {resultado.metodo && (
@@ -929,44 +929,8 @@ export default function GuardiaDashboard() {
             </div>
           )}
 
-          {/* ── Asignación de espacio de un toque tras la entrada ── */}
-          {espacioAsignadoMsg && (
-            <div className="bg-green-50 border border-green-300 rounded-xl p-3 text-sm font-semibold text-green-800 flex items-center gap-2">
-              <ParkingSquare size={16} /> {espacioAsignadoMsg}
-            </div>
-          )}
-          {resultado?.ok && resultado.espacioSugerido && !espacioAsignadoMsg && (
-            <div className="bg-violet-50 border border-violet-300 rounded-xl p-4">
-              <p className="text-xs font-bold text-violet-800 mb-1 flex items-center gap-1.5">
-                <ParkingSquare size={14} /> Espacio libre sugerido
-              </p>
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-black text-lg text-slate-800">
-                    #{resultado.espacioSugerido.numero}
-                    <span className="text-xs font-medium text-slate-500 ml-2">{resultado.espacioSugerido.zonaNombre}</span>
-                  </p>
-                  <p className="text-[11px] text-violet-600">Categoría: {resultado.espacioSugerido.categoriaNombre}</p>
-                </div>
-                <button
-                  disabled={asignandoEspacio}
-                  onClick={() => handleAsignarEspacio(
-                    resultado.espacioSugerido!.espacioId,
-                    resultado.espacioSugerido!.vehiculoId,
-                    resultado.espacioSugerido!.numero,
-                    resultado.espacioSugerido!.zonaNombre,
-                  )}
-                  className="shrink-0 bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
-                >
-                  {asignandoEspacio ? <Loader2 size={14} className="animate-spin" /> : <ParkingSquare size={14} />}
-                  Asignar espacio
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ── Guía de parqueo (fallback cuando no hay espacio sugerido) ── */}
-          {resultado?.ok && resultado.mensaje.startsWith('Entrada') && !resultado.espacioSugerido && !espacioAsignadoMsg && (
+          {/* ── Guía de parqueo tras la entrada (sin asignación de cajón) ── */}
+          {resultado?.ok && resultado.mensaje.startsWith('Entrada') && (
             <div className="bg-violet-50 border border-violet-200 rounded-xl p-3 flex items-center gap-3">
               <span className="text-xl shrink-0">🅿</span>
               <div className="flex-1 min-w-0">

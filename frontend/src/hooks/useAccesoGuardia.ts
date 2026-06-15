@@ -38,14 +38,6 @@ export interface SugerenciaPlaca {
   propietarioNombre: string
 }
 
-export interface EspacioSugerido {
-  espacioId:       number
-  numero:          string
-  zonaNombre:      string
-  categoriaNombre: string
-  vehiculoId:      number
-}
-
 export interface ResultadoAcceso {
   ok:      boolean
   mensaje: string
@@ -54,11 +46,11 @@ export interface ResultadoAcceso {
   alertas: AlertaInfo[]
   // Cuando la placa no se encontró, candidatos a distancia de edición 1.
   sugerencias?: SugerenciaPlaca[]
-  // Tras una entrada, espacio libre compatible para asignar con un toque.
-  espacioSugerido?: EspacioSugerido | null
   // Identidad del dueño para verificación visual en el portón.
   propietarioNombre?:  string | null
   propietarioFotoUrl?: string | null
+  // Rol del dueño (Estudiante/Docente/Personal Administrativo) — control visual.
+  propietarioRol?: string | null
   // Carril express: despacho inmediato del vehículo frecuente.
   esFrecuente?: boolean
 }
@@ -214,11 +206,11 @@ export function useAccesoGuardia() {
         placa:   r.placaVehiculo,
         metodo:  r.metodoAcceso,
         alertas,
-        espacioSugerido: r.espacioSugerido ?? null,
         propietarioNombre:  r.propietarioNombre ?? null,
         propietarioFotoUrl: r.propietarioFotoUrl ?? null,
+        propietarioRol:     r.propietarioRol ?? null,
         esFrecuente: r.esFrecuente ?? false,
-      }, r.espacioSugerido ? 12000 : undefined)  // más tiempo si hay acción pendiente
+      })
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al registrar acceso'
       mostrarResultado({ ok: false, mensaje: msg, alertas: [] }, 7000)
@@ -276,11 +268,11 @@ export function useAccesoGuardia() {
         placa:   r.placaVehiculo,
         metodo:  'manual',
         alertas: alertasM,
-        espacioSugerido: r.espacioSugerido ?? null,
         propietarioNombre:  r.propietarioNombre ?? null,
         propietarioFotoUrl: r.propietarioFotoUrl ?? null,
+        propietarioRol:     r.propietarioRol ?? null,
         esFrecuente: r.esFrecuente ?? false,
-      }, r.espacioSugerido ? 12000 : undefined)
+      })
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al registrar acceso'
       // Si la placa no existe (OCR mal leído o tipeo), ofrecer placas cercanas.

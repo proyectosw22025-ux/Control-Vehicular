@@ -199,7 +199,9 @@ def test_acceso_auto_qr_alterna(gql_guardia, vehiculo_activo, punto_acceso):
     assert auto() == "salida"
 
 
-# ── Espacio sugerido tras la entrada (asignación de un toque) ────────────────
+# ── La entrada ya NO asigna espacio (decisión de diseño) ────────────────────
+# La asignación rígida de cajón se retiró: la gente estaciona donde puede dentro
+# del lote, así que el sistema solo guía por zona, no asigna un espacio puntual.
 
 REGISTRAR_MANUAL_ESPACIO = """
 mutation RegistrarManual($puntoId: Int!, $placa: String!, $tipo: String!) {
@@ -212,28 +214,32 @@ mutation RegistrarManual($puntoId: Int!, $placa: String!, $tipo: String!) {
 
 
 @pytest.mark.django_db
-def test_entrada_sugiere_espacio_libre(gql_guardia, vehiculo_activo, punto_acceso, espacio_disponible):
-    """Tras una entrada, la respuesta incluye un espacio libre compatible."""
+def test_entrada_no_asigna_espacio(gql_guardia, vehiculo_activo, punto_acceso, espacio_disponible):
+    """Tras una entrada NO se asigna ni sugiere un espacio puntual (solo guía por zona)."""
     r = graphql(gql_guardia, REGISTRAR_MANUAL_ESPACIO, {
         "puntoId": punto_acceso.id, "placa": vehiculo_activo.placa, "tipo": "entrada",
     })
     assert "errors" not in r
-    sug = r["data"]["registrarAccesoManual"]["espacioSugerido"]
-    assert sug is not None
-    assert sug["numero"] == espacio_disponible.numero
-    assert sug["vehiculoId"] == vehiculo_activo.id
+    assert r["data"]["registrarAccesoManual"]["espacioSugerido"] is None
 
 
 @pytest.mark.django_db
-def test_salida_no_sugiere_espacio(gql_guardia, vehiculo_activo, punto_acceso, espacio_disponible):
-    """En salida no hay sugerencia de espacio."""
-    graphql(gql_guardia, REGISTRAR_MANUAL_ESPACIO, {
-        "puntoId": punto_acceso.id, "placa": vehiculo_activo.placa, "tipo": "entrada",
-    })
-    r = graphql(gql_guardia, REGISTRAR_MANUAL_ESPACIO, {
-        "puntoId": punto_acceso.id, "placa": vehiculo_activo.placa, "tipo": "salida",
-    })
-    assert r["data"]["registrarAccesoManual"]["espacioSugerido"] is None
+def test_acceso_expone_rol_del_propietario(gql_guardia, vehiculo_activo, punto_acceso):
+    """El registro expone el rol del dueño (Estudiante/Docente/...) para que el
+    guardia identifique el tipo de miembro en el portón."""
+    from apps.usuarios.models import Rol, UsuarioRol
+    rol, _ = Rol.objects.get_or_create(nombre="Estudiante")
+    UsuarioRol.objects.create(usuario=vehiculo_activo.propietario, rol=rol)
+    query = """
+    mutation M($puntoId: Int!, $placa: String!) {
+      registrarAccesoManual(input: { puntoAccesoId: $puntoId, placa: $placa, tipo: "entrada" }) {
+        propietarioRol
+      }
+    }
+    """
+    r = graphql(gql_guardia, query, {"puntoId": punto_acceso.id, "placa": vehiculo_activo.placa})
+    assert "errors" not in r
+    assert r["data"]["registrarAccesoManual"]["propietarioRol"] == "Estudiante"
 
 
 # ── Identidad en el acceso por QR ───────────────────────────────────────────

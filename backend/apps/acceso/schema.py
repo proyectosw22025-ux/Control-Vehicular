@@ -217,6 +217,23 @@ class RegistroAccesoType:
         return (getattr(p, "foto_url", "") or None) if p else None
 
     @strawberry.field
+    def propietario_rol(self) -> Optional[str]:
+        """
+        Rol del dueño (Estudiante / Docente / Personal Administrativo) para que el
+        guardia identifique de inmediato el tipo de miembro en el portón. Prioriza
+        el rol de identidad universitaria cuando el usuario tiene varios.
+        """
+        p = getattr(self.vehiculo, "propietario", None) if self.vehiculo else None
+        if not p:
+            return None
+        nombres = [ur.rol.nombre for ur in p.usuario_roles.select_related("rol").all()]
+        for preferido in ("Docente", "Estudiante", "Personal Administrativo",
+                          "Guardia", "Administrador"):
+            if preferido in nombres:
+                return preferido
+        return nombres[0] if nombres else None
+
+    @strawberry.field
     def alertas_detectadas(self) -> List["AlertaAccesoType"]:
         """Alertas activas detectadas para este vehículo en el momento del registro."""
         return getattr(self, "_alertas_detectadas", [])
@@ -1585,10 +1602,6 @@ class AccesoMutation:
 
         registro._alertas_detectadas = alertas_detectadas
 
-        # ── Sugerencia de espacio de parqueo (un toque) tras una entrada ──────
-        if tipo_efectivo == "entrada" and resultado.vehiculo:
-            registro._espacio_sugerido = _sugerir_espacio_parqueo(resultado.vehiculo)
-
         # ── Rastreo en vivo: sincronizar estado del vehículo en el mapa ──────
         if resultado.vehiculo and punto.latitud is not None:
             _sincronizar_rastreo(resultado.vehiculo, punto, tipo_efectivo, registro, propietario)
@@ -1700,9 +1713,6 @@ class AccesoMutation:
         # Evidencia fotográfica (best-effort, async — no bloquea el portón).
         if input.imagen_evidencia:
             _subir_evidencia_async(registro.pk, input.imagen_evidencia)
-
-        if tipo_efectivo == "entrada":
-            registro._espacio_sugerido = _sugerir_espacio_parqueo(vehiculo)
 
         return registro
 
