@@ -18,6 +18,7 @@ import {
 } from '../graphql/mutations/parqueos'
 import { useAuth } from '../hooks/useAuth'
 import { BuscadorVehiculo } from '../components/BuscadorVehiculo'
+import { Dropdown } from '../components/Dropdown'
 
 const ESTADO_COLOR: Record<string, string> = {
   disponible:    'bg-green-100 text-green-700 border-green-200',
@@ -270,10 +271,13 @@ export default function Parqueos() {
       {tab === 'espacios' && (
         <div>
           <div className="flex items-center gap-3 mb-4 flex-wrap">
-            <select value={zonaSelId ?? ''} onChange={e => setZonaSelId(e.target.value ? parseInt(e.target.value) : null)} className={cls}>
-              <option value="">Seleccionar zona...</option>
-              {zonas.map((z: any) => <option key={z.id} value={z.id}>{z.nombre}</option>)}
-            </select>
+            <Dropdown
+              className="w-56"
+              placeholder="Seleccionar zona…"
+              value={zonaSelId != null ? String(zonaSelId) : ''}
+              onChange={v => setZonaSelId(v ? parseInt(v) : null)}
+              options={zonas.map((z: any) => ({ value: String(z.id), label: z.nombre }))}
+            />
             {zonaActual && <span className="text-sm text-slate-500 font-medium text-green-600">{zonaActual.espaciosDisponibles} de {zonaActual.capacidadTotal} disponibles</span>}
           </div>
 
@@ -373,10 +377,14 @@ export default function Parqueos() {
         <div>
           <div className="mb-4">
             <label className="block text-xs font-medium text-slate-600 mb-1">Vehículo</label>
-            <select value={vehiculoHistId ?? ''} onChange={e => setVehHistId(e.target.value ? parseInt(e.target.value) : null)} className={`${cls} max-w-xs`}>
-              <option value="">Seleccionar vehículo...</option>
-              {vehiculos.map((v: any) => <option key={v.id} value={v.id}>{v.placa} — {v.marca} {v.modelo}</option>)}
-            </select>
+            <Dropdown
+              searchable
+              className="max-w-xs"
+              placeholder="Seleccionar vehículo…"
+              value={vehiculoHistId != null ? String(vehiculoHistId) : ''}
+              onChange={v => setVehHistId(v ? parseInt(v) : null)}
+              options={vehiculos.map((v: any) => ({ value: String(v.id), label: `${v.placa} — ${v.marca} ${v.modelo}` }))}
+            />
           </div>
           {!vehiculoHistId ? (
             <div className="text-center py-10 text-slate-400 text-sm">Selecciona un vehículo para ver su historial de parqueo</div>

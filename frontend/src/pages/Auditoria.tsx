@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { gql } from '@apollo/client'
 import { Shield, RefreshCw, Search } from 'lucide-react'
+import { Dropdown } from '../components/Dropdown'
 
 const AUDIT_LOG_QUERY = gql`
   query AuditLog($limite: Int) {
@@ -110,15 +111,17 @@ export default function Auditoria() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <select
-            value={limite}
-            onChange={e => setLimite(parseInt(e.target.value))}
-            className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-400"
-          >
-            <option value={100}>Últimos 100</option>
-            <option value={200}>Últimos 200</option>
-            <option value={500}>Últimos 500</option>
-          </select>
+          <Dropdown
+            size="sm"
+            className="w-40"
+            value={String(limite)}
+            onChange={v => setLimite(parseInt(v))}
+            options={[
+              { value: '100', label: 'Últimos 100' },
+              { value: '200', label: 'Últimos 200' },
+              { value: '500', label: 'Últimos 500' },
+            ]}
+          />
           <button
             onClick={() => refetch()}
             className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"

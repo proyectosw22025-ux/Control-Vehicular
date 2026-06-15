@@ -7,6 +7,7 @@ import {
 import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../hooks/useToast'
 import { ToastContainer } from '../components/ToastContainer'
+import { Dropdown } from '../components/Dropdown'
 import { QrImage } from '../components/QrImage'
 import {
   SANCIONES_PENDIENTES_QUERY,
@@ -421,14 +422,14 @@ export default function Infracciones() {
         <div>
           <div className="mb-4">
             <label className="block text-xs font-medium text-slate-600 mb-1">Selecciona un vehículo</label>
-            <select value={vehiculoFiltro ?? ''}
-              onChange={e => setVehiculoFiltro(e.target.value ? parseInt(e.target.value) : null)}
-              className="border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-red-400 w-full max-w-xs">
-              <option value="">Seleccionar vehículo...</option>
-              {misVehiculos.map((v: any) => (
-                <option key={v.id} value={v.id}>{v.placa} — {v.marca} {v.modelo}</option>
-              ))}
-            </select>
+            <Dropdown
+              searchable
+              className="max-w-xs"
+              placeholder="Seleccionar vehículo…"
+              value={vehiculoFiltro != null ? String(vehiculoFiltro) : ''}
+              onChange={v => setVehiculoFiltro(v ? parseInt(v) : null)}
+              options={misVehiculos.map((v: any) => ({ value: String(v.id), label: `${v.placa} — ${v.marca} ${v.modelo}` }))}
+            />
           </div>
           {vehiculoFiltro
             ? <TablaInfracciones filas={filasVehiculo} esPersonal={esPersonal} esAdmin={esAdmin}

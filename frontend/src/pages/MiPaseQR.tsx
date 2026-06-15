@@ -6,6 +6,7 @@ import {
   LogIn, LogOut, ArrowLeftRight, Link, User, Users, Search, Eye, X,
 } from 'lucide-react'
 import { QrImage } from '../components/QrImage'
+import { Dropdown } from '../components/Dropdown'
 import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../hooks/useToast'
 import { ToastContainer } from '../components/ToastContainer'
@@ -249,19 +250,16 @@ export default function MiPaseQR() {
         <>
           {/* Selector de vehículo */}
           {vehiculos.length > 1 && (
-            <div className="relative mb-4">
-              <select
-                value={vehiculoSelId ?? ''}
-                onChange={e => { setVehiculoSelId(parseInt(e.target.value)); setDelegacionGenerada(null) }}
-                className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm pr-8 focus:outline-none focus:ring-2 focus:ring-emerald-400 appearance-none"
-              >
-                {vehiculos.map(v => (
-                  <option key={v.id} value={v.id}>
-                    {v.placa} · {v.tipo?.nombre} — {v.marca} {v.modelo}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={14} className="absolute right-3 top-3.5 text-slate-400 pointer-events-none" />
+            <div className="mb-4">
+              <Dropdown
+                searchable
+                value={vehiculoSelId != null ? String(vehiculoSelId) : ''}
+                onChange={v => { setVehiculoSelId(parseInt(v)); setDelegacionGenerada(null) }}
+                options={vehiculos.map(v => ({
+                  value: String(v.id),
+                  label: `${v.placa} · ${v.tipo?.nombre} — ${v.marca} ${v.modelo}`,
+                }))}
+              />
             </div>
           )}
 
