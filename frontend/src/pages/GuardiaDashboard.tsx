@@ -23,6 +23,7 @@ import { PlacaScanner } from '../components/PlacaScanner'
 import { PUNTOS_ACCESO_QUERY, REGISTROS_ACCESO_QUERY, ALERTAS_PANEL_QUERY, VEHICULOS_TEMPORALES_QUERY, VEHICULOS_EN_CAMPUS_QUERY, AFORO_CAMPUS_QUERY, METRICAS_DESPACHO_QUERY } from '../graphql/queries/acceso'
 import { MARCAR_ALERTA_REVISADA_MUTATION, REGISTRAR_ACCESO_TEMPORAL_MUTATION, REGISTRAR_SALIDA_TEMPORAL_MUTATION } from '../graphql/mutations/acceso'
 import { OCUPAR_ESPACIO_TEMPORAL_MUTATION } from '../graphql/mutations/parqueos'
+import { Dropdown } from '../components/Dropdown'
 import { ESPACIOS_DISPONIBLES_QUERY } from '../graphql/queries/parqueos'
 import { VISITAS_ACTIVAS_QUERY } from '../graphql/queries/visitantes'
 import { useAccesoGuardia, type TipoAcceso, type AlertaInfo, type ResultadoAcceso } from '../hooks/useAccesoGuardia'
@@ -379,16 +380,14 @@ export default function GuardiaDashboard() {
           </div>
 
           {/* Selector de punto de acceso */}
-          <select
-            value={acceso.puntoId ?? ''}
-            onChange={e => acceso.setPuntoId(e.target.value ? parseInt(e.target.value) : null)}
-            className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs sm:text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-400 max-w-[160px] sm:max-w-[200px]"
-          >
-            <option value="">Seleccionar punto...</option>
-            {puntos.map((p: { id: number; nombre: string }) => (
-              <option key={p.id} value={p.id}>{p.nombre}</option>
-            ))}
-          </select>
+          <Dropdown
+            size="sm"
+            className="w-[160px] sm:w-[200px]"
+            placeholder="Seleccionar punto…"
+            value={acceso.puntoId != null ? String(acceso.puntoId) : ''}
+            onChange={v => acceso.setPuntoId(v ? parseInt(v) : null)}
+            options={puntos.map((p: { id: number; nombre: string }) => ({ value: String(p.id), label: p.nombre }))}
+          />
         </div>
       </div>
 
@@ -521,15 +520,17 @@ export default function GuardiaDashboard() {
               </div>
               <div>
                 <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Tipo *</label>
-                <select value={formTemp.tipo}
-                  onChange={e => setFormTemp(p => ({ ...p, tipo: e.target.value }))}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
-                  <option value="proveedor">🚚 Proveedor / Entrega</option>
-                  <option value="mantenimiento">🔧 Mantenimiento</option>
-                  <option value="emergencia">🚨 Emergencia</option>
-                  <option value="visitante">👤 Visitante</option>
-                  <option value="otro">📋 Otro</option>
-                </select>
+                <Dropdown
+                  value={formTemp.tipo}
+                  onChange={v => setFormTemp(p => ({ ...p, tipo: v }))}
+                  options={[
+                    { value: 'proveedor',     label: '🚚 Proveedor / Entrega' },
+                    { value: 'mantenimiento', label: '🔧 Mantenimiento' },
+                    { value: 'emergencia',    label: '🚨 Emergencia' },
+                    { value: 'visitante',     label: '👤 Visitante' },
+                    { value: 'otro',          label: '📋 Otro' },
+                  ]}
+                />
               </div>
             </div>
             <div className="mb-2">
@@ -549,15 +550,17 @@ export default function GuardiaDashboard() {
               </div>
               <div>
                 <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Duración</label>
-                <select value={formTemp.duracion}
-                  onChange={e => setFormTemp(p => ({ ...p, duracion: e.target.value }))}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
-                  <option value="0.5">30 minutos</option>
-                  <option value="1">1 hora</option>
-                  <option value="2">2 horas</option>
-                  <option value="4">4 horas</option>
-                  <option value="8">8 horas (máx.)</option>
-                </select>
+                <Dropdown
+                  value={formTemp.duracion}
+                  onChange={v => setFormTemp(p => ({ ...p, duracion: v }))}
+                  options={[
+                    { value: '0.5', label: '30 minutos' },
+                    { value: '1',   label: '1 hora' },
+                    { value: '2',   label: '2 horas' },
+                    { value: '4',   label: '4 horas' },
+                    { value: '8',   label: '8 horas (máx.)' },
+                  ]}
+                />
               </div>
             </div>
             <button
