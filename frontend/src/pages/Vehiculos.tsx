@@ -11,6 +11,7 @@ import { useAuth } from '../hooks/useAuth'
 import { QrDinamico } from '../components/QrDinamico'
 import { useToast } from '../hooks/useToast'
 import { ToastContainer } from '../components/ToastContainer'
+import { PromptModal } from '../components/PromptModal'
 import { VEHICULOS_QUERY, VEHICULOS_PENDIENTES_QUERY, TIPOS_VEHICULO_QUERY } from '../graphql/queries/vehiculos'
 import { SESIONES_ACTIVAS_QUERY } from '../graphql/queries/parqueos'
 import {
@@ -256,18 +257,21 @@ export default function Vehiculos() {
     },
     onError(e) { toast.error('No se pudo cambiar la alerta', e.message) },
   })
-  // Activa/retira la alerta de seguridad (lista negra). Pide el motivo al activar.
+  // Activa/retira la alerta de seguridad (lista negra). Pide el motivo al activar
+  // mediante un modal propio (sin el window.prompt nativo del navegador).
+  const [alertaPrompt, setAlertaPrompt] = useState<any | null>(null)
   function toggleAlertaSeguridad(v: any) {
     if (v.enAlerta) {
       marcarAlertaSeguridad({ variables: { vehiculoId: parseInt(v.id), enAlerta: false } })
       return
     }
-    const motivo = window.prompt(
-      `Marcar ${v.placa} EN ALERTA DE SEGURIDAD.\n\nMotivo (robo, búsqueda, acceso revocado):`
-    )
-    if (motivo && motivo.trim()) {
-      marcarAlertaSeguridad({ variables: { vehiculoId: parseInt(v.id), enAlerta: true, motivo: motivo.trim() } })
+    setAlertaPrompt(v)
+  }
+  function confirmarAlertaSeguridad(motivo: string) {
+    if (alertaPrompt) {
+      marcarAlertaSeguridad({ variables: { vehiculoId: parseInt(alertaPrompt.id), enAlerta: true, motivo } })
     }
+    setAlertaPrompt(null)
   }
   const [marcarFrecuente] = useMutation(MARCAR_FRECUENTE_MUTATION, {
     onCompleted(d) {
@@ -1170,6 +1174,17 @@ export default function Vehiculos() {
       )}
 
       <ToastContainer toasts={toast.toasts} onClose={toast.cerrar} />
+
+      <PromptModal
+        open={!!alertaPrompt}
+        titulo={alertaPrompt ? `Marcar ${alertaPrompt.placa} EN ALERTA` : ''}
+        mensaje="Motivo de la alerta de seguridad (robo, búsqueda, acceso revocado):"
+        placeholder="Ej: Reportado como robado"
+        confirmLabel="Marcar en alerta"
+        peligro
+        onConfirmar={confirmarAlertaSeguridad}
+        onCancelar={() => setAlertaPrompt(null)}
+      />
     </div>
   )
 }

@@ -379,7 +379,7 @@ export default function Infracciones() {
               const t = localStorage.getItem('access_token') || ''
               const base = (import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/').replace(/\/graphql\/?$/, '')
               const resp = await fetch(`${base}/api/pdf/infracciones/`, { headers: { Authorization: `Bearer ${t}` } })
-              if (!resp.ok) { alert(`Error al generar PDF (${resp.status})`); return }
+              if (!resp.ok) { toast.error('Error al generar PDF', `Código ${resp.status}`); return }
               const blob = await resp.blob()
               const url = URL.createObjectURL(blob)
               const a = document.createElement('a'); a.href = url; a.download = `infracciones_${new Date().toISOString().slice(0,10)}.pdf`; a.click(); URL.revokeObjectURL(url)
