@@ -12,6 +12,7 @@ import { QrDinamico } from '../components/QrDinamico'
 import { useToast } from '../hooks/useToast'
 import { ToastContainer } from '../components/ToastContainer'
 import { PromptModal } from '../components/PromptModal'
+import { DatePicker } from '../components/DatePicker'
 import { VEHICULOS_QUERY, VEHICULOS_PENDIENTES_QUERY, TIPOS_VEHICULO_QUERY } from '../graphql/queries/vehiculos'
 import { SESIONES_ACTIVAS_QUERY } from '../graphql/queries/parqueos'
 import {
@@ -519,14 +520,12 @@ export default function Vehiculos() {
                 {/* Fecha desde */}
                 <div>
                   <label className="block text-xs font-medium text-slate-500 mb-1">Registrado desde</label>
-                  <input type="date" value={filtroFechaDesde} onChange={e => setFiltroFechaDesde(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+                  <DatePicker size="sm" value={filtroFechaDesde} onChange={setFiltroFechaDesde} placeholder="Desde" />
                 </div>
                 {/* Fecha hasta */}
                 <div>
                   <label className="block text-xs font-medium text-slate-500 mb-1">Hasta</label>
-                  <input type="date" value={filtroFechaHasta} onChange={e => setFiltroFechaHasta(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+                  <DatePicker size="sm" value={filtroFechaHasta} onChange={setFiltroFechaHasta} placeholder="Hasta" />
                 </div>
                 {/* Color */}
                 <div>
@@ -1063,19 +1062,10 @@ export default function Vehiculos() {
               <label className="block text-xs font-medium text-slate-600 mb-1">
                 Fecha de vencimiento *
               </label>
-              <input
-                type="date"
-                name="fechaVencimiento"
-                required
+              <DatePicker
                 value={fechaDoc}
-                onChange={e => setFechaDoc(e.target.value)}
-                className={`${inputCls} ${
-                  fechaDoc && validarFechaDoc(fechaDoc)?.tipo === 'error'
-                    ? 'border-red-400 bg-red-50'
-                    : fechaDoc && validarFechaDoc(fechaDoc)?.tipo === 'warn'
-                    ? 'border-amber-400 bg-amber-50'
-                    : ''
-                }`}
+                onChange={setFechaDoc}
+                error={!!fechaDoc && validarFechaDoc(fechaDoc)?.tipo === 'error'}
               />
               {fechaDoc && (() => {
                 const v = validarFechaDoc(fechaDoc)
@@ -1672,8 +1662,8 @@ export function WizardRegistrarVehiculo({ tipos, usuarios, esAdmin, usuario, onC
                     <label className="block text-xs font-medium text-slate-600 mb-1">
                       Vencimiento SOAT{numeroSoat ? ' *' : ''}
                     </label>
-                    <input type="date" value={soatFecha} onChange={e => setSoatFecha(e.target.value)}
-                      className={`${inputCls} ${numeroSoat && !soatFecha ? 'border-red-400' : ''}`} />
+                    <DatePicker value={soatFecha} onChange={setSoatFecha}
+                      error={!!numeroSoat && !soatFecha} />
                   </div>
                 </div>
                 {numeroSoat && !soatFecha && (

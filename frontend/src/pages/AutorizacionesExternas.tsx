@@ -20,6 +20,8 @@ import {
 import { AUTORIZACIONES_EXTERNAS_QUERY } from '../graphql/queries/acceso'
 import { CREAR_AUTORIZACION_EXTERNA_MUTATION, REVOCAR_AUTORIZACION_EXTERNA_MUTATION } from '../graphql/mutations/acceso'
 import { DEPENDENCIAS_QUERY } from '../graphql/queries/visitantes'
+import { DatePicker } from '../components/DatePicker'
+import { TimePicker } from '../components/TimePicker'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -269,9 +271,9 @@ function FormularioNuevaAutorizacion({ onCreada, onCancelar }: {
             <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">
               Fecha y horario de acceso *
             </label>
-            <input type="date" value={form.fecha} min={hoy}
-              onChange={e => set('fecha', e.target.value)}
-              className="w-full border-2 border-slate-200 focus:border-blue-400 rounded-xl px-3.5 py-2.5 text-sm outline-none transition-colors bg-slate-50 focus:bg-white mb-3" />
+            <div className="mb-3">
+              <DatePicker value={form.fecha} min={hoy} onChange={v => set('fecha', v)} />
+            </div>
 
             {/* Presets de horario */}
             <div className="grid grid-cols-4 gap-2 mb-3">
@@ -292,16 +294,14 @@ function FormularioNuevaAutorizacion({ onCreada, onCancelar }: {
             <div className="flex items-center gap-2">
               <div className="flex-1">
                 <label className="block text-[10px] text-slate-500 mb-1">Desde</label>
-                <input type="time" value={form.horaDesde}
-                  onChange={e => { set('horaDesde', e.target.value); set('presetActivo', 'custom') }}
-                  className="w-full border-2 border-slate-200 focus:border-blue-400 rounded-xl px-3 py-2 text-sm outline-none bg-slate-50 focus:bg-white" />
+                <TimePicker value={form.horaDesde}
+                  onChange={v => { set('horaDesde', v); set('presetActivo', 'custom') }} />
               </div>
               <span className="text-slate-400 mt-4">→</span>
               <div className="flex-1">
                 <label className="block text-[10px] text-slate-500 mb-1">Hasta</label>
-                <input type="time" value={form.horaHasta}
-                  onChange={e => { set('horaHasta', e.target.value); set('presetActivo', 'custom') }}
-                  className="w-full border-2 border-slate-200 focus:border-blue-400 rounded-xl px-3 py-2 text-sm outline-none bg-slate-50 focus:bg-white" />
+                <TimePicker value={form.horaHasta}
+                  onChange={v => { set('horaHasta', v); set('presetActivo', 'custom') }} />
               </div>
             </div>
           </div>

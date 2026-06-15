@@ -10,6 +10,7 @@ import { useToast } from '../hooks/useToast'
 import { useDebounce } from '../hooks/useDebounce'
 import { ToastContainer } from '../components/ToastContainer'
 import { DestinoSelector } from '../components/DestinoSelector'
+import { DatePicker } from '../components/DatePicker'
 import {
   VISITANTES_QUERY,
   VISITAS_ACTIVAS_QUERY,
@@ -829,14 +830,12 @@ export default function Visitantes() {
               <option value="cancelada">Solo canceladas</option>
             </select>
 
-            {/* Fecha desde */}
+            {/* Fecha desde / hasta */}
             <div className="flex items-center gap-1">
-              <Calendar size={13} className="text-slate-400" />
-              <input type="date" value={histDesde} onChange={e => setHistDesde(e.target.value)}
-                className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-cyan-400" />
+              <Calendar size={13} className="text-slate-400 shrink-0" />
+              <DatePicker size="sm" value={histDesde} onChange={setHistDesde} placeholder="Desde" className="w-40" />
             </div>
-            <input type="date" value={histHasta} onChange={e => setHistHasta(e.target.value)}
-              className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-cyan-400" />
+            <DatePicker size="sm" value={histHasta} onChange={setHistHasta} placeholder="Hasta" className="w-40" />
 
             {(histEstado || histDesde || histHasta || busquedaHistorial) && (
               <button onClick={() => { setHistEstado(''); setHistDesde(''); setHistHasta(''); setBusqHist('') }}
