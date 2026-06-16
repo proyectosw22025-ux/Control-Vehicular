@@ -17,6 +17,7 @@ import {
   Car, Wifi, Loader2, Settings, MapPin, Save, X,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
+import { Dropdown } from '../components/Dropdown'
 import { ZONAS_QUERY, ESPACIOS_POR_ZONA_QUERY } from '../graphql/queries/parqueos'
 import { VEHICULOS_QUERY } from '../graphql/queries/vehiculos'
 import { PUNTOS_ACCESO_QUERY } from '../graphql/queries/acceso'
@@ -635,8 +636,8 @@ export default function ParqueoDemo() {
   const handleLlegada = useCallback(() => setFlow('confirmando'), [])
 
   // Al seleccionar vehículo → actualizar tipo para el icono del mapa
-  function handleVehiculoChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const id  = e.target.value ? parseInt(e.target.value) : null
+  function handleVehiculoChange(value: string) {
+    const id  = value ? parseInt(value) : null
     setVehId(id)
     const v = vehiculos.find((v:any) => v.id===id)
     setTipoV(v?.tipo?.nombre ?? 'Automóvil')
@@ -950,15 +951,16 @@ export default function ParqueoDemo() {
                     // ── VEHÍCULO LIBRE — flujo manual desde el sidebar (sin QR) ──
                     <div>
                       <label className="block text-xs font-semibold text-slate-600 mb-1">Tu vehículo</label>
-                      <select value={vehiculoSelId??''} onChange={handleVehiculoChange}
-                        className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
-                        <option value="">Seleccionar...</option>
-                        {vehiculos.map((v:any)=>(
-                          <option key={v.id} value={v.id}>
-                            {v.placa} · {v.tipo?.nombre} — {v.marca} {v.modelo}
-                          </option>
-                        ))}
-                      </select>
+                      <Dropdown
+                        searchable
+                        placeholder="Seleccionar…"
+                        value={vehiculoSelId != null ? String(vehiculoSelId) : ''}
+                        onChange={handleVehiculoChange}
+                        options={vehiculos.map((v:any) => ({
+                          value: String(v.id),
+                          label: `${v.placa} · ${v.tipo?.nombre} — ${v.marca} ${v.modelo}`,
+                        }))}
+                      />
                       {vehiculoSelId && (
                         <div className="flex items-center gap-2 mt-2 bg-slate-50 rounded-xl px-3 py-2">
                           <div dangerouslySetInnerHTML={{ __html: getVehicleSvg(tipoVehiculo).svg }}

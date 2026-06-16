@@ -244,11 +244,14 @@ export default function Infracciones() {
   const filasVehiculo: Fila[] = (infraccionesVehData?.infraccionesVehiculo ?? []).map(filaDesdeInfraccion)
   const apelaciones: Apelacion[] = apelacionesData?.apelacionesPendientes ?? []
 
-  function cerrarModal() { setModal(null); setSeleccionada(null); setApelacionSel(null); setError(''); setTipoSel(null); setTipoSancionSel('') }
+  function cerrarModal() { setModal(null); setSeleccionada(null); setApelacionSel(null); setError(''); setTipoSel(null); setTipoSancionSel(''); setRegVehId(''); setRegTipoId('') }
 
   // ── Registrar infracción ──────────────────────────────────────
   const [tipoSel, setTipoSel] = useState<TipoInfraccion | null>(null)
   const [tipoSancionSel, setTipoSancionSel] = useState<string>('')
+  // Selects del form de registrar (el submit los lee vía FormData / inputs hidden).
+  const [regVehId, setRegVehId]   = useState('')
+  const [regTipoId, setRegTipoId] = useState('')
 
   function handleSeleccionarTipo(tipoId: string) {
     const tipo = tipos.find(t => String(t.id) === tipoId) ?? null
@@ -470,24 +473,29 @@ export default function Infracciones() {
           <form onSubmit={handleRegistrar} className="space-y-3">
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Vehículo *</label>
-              <select name="vehiculoId" required className={cls}>
-                <option value="">Seleccionar...</option>
-                {misVehiculos.map((v: any) => (
-                  <option key={v.id} value={v.id}>{v.placa} — {v.marca} {v.modelo}</option>
-                ))}
-              </select>
+              <Dropdown
+                searchable
+                placeholder="Seleccionar…"
+                value={regVehId}
+                onChange={setRegVehId}
+                options={misVehiculos.map((v: any) => ({ value: String(v.id), label: `${v.placa} — ${v.marca} ${v.modelo}` }))}
+              />
+              <input type="hidden" name="vehiculoId" value={regVehId} />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Tipo de infracción *</label>
-              <select name="tipoId" required className={cls} onChange={e => handleSeleccionarTipo(e.target.value)}>
-                <option value="">Seleccionar...</option>
-                {tipos.map(t => (
-                  <option key={t.id} value={t.id}>
-                    {t.nombre} — {TIPO_SANCION_LABELS[t.tipoSancionSugerido] ?? t.tipoSancionSugerido}
-                    {t.tipoSancionSugerido === 'multa_economica' && t.montoBase != null ? ` (Bs. ${t.montoBase})` : ''}
-                  </option>
-                ))}
-              </select>
+              <Dropdown
+                searchable
+                placeholder="Seleccionar…"
+                value={regTipoId}
+                onChange={v => { setRegTipoId(v); handleSeleccionarTipo(v) }}
+                options={tipos.map(t => ({
+                  value: String(t.id),
+                  label: `${t.nombre} — ${TIPO_SANCION_LABELS[t.tipoSancionSugerido] ?? t.tipoSancionSugerido}`
+                    + (t.tipoSancionSugerido === 'multa_economica' && t.montoBase != null ? ` (Bs. ${t.montoBase})` : ''),
+                }))}
+              />
+              <input type="hidden" name="tipoId" value={regTipoId} />
               {tipoSel && (
                 <p className="text-[11px] text-slate-400 mt-1">
                   Gravedad: <span className="font-medium text-slate-500">{tipoSel.gravedad}</span>
@@ -503,13 +511,12 @@ export default function Infracciones() {
             {tipoSel && (
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Sanción a aplicar</label>
-                <select name="tipoSancionOverride" value={tipoSancionSel}
-                  onChange={e => setTipoSancionSel(e.target.value)}
-                  className={cls}>
-                  {Object.entries(TIPO_SANCION_LABELS).map(([valor, label]) => (
-                    <option key={valor} value={valor}>{label}</option>
-                  ))}
-                </select>
+                <Dropdown
+                  value={tipoSancionSel}
+                  onChange={setTipoSancionSel}
+                  options={Object.entries(TIPO_SANCION_LABELS).map(([valor, label]) => ({ value: valor, label: label as string }))}
+                />
+                <input type="hidden" name="tipoSancionOverride" value={tipoSancionSel} />
                 <p className="text-[11px] text-slate-400 mt-1">
                   Sugerida para este tipo: <strong>{TIPO_SANCION_LABELS[tipoSel.tipoSancionSugerido]}</strong>.
                   Puedes ajustarla según la gravedad real del caso.

@@ -13,6 +13,7 @@
  *   - Trail de movimiento (polyline con últimas posiciones)
  */
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { Dropdown } from '../components/Dropdown'
 import { Wifi, WifiOff, Radio, Car, Clock, MapPin, Navigation, Activity, LogIn, LogOut } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useRastreoEnVivo, type VehiculoEnCampus, type EventoAcceso } from '../hooks/useRastreoEnVivo'
@@ -432,14 +433,13 @@ export default function RastreoEnVivo() {
                 {!compartirActivo && (
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Tu vehículo</label>
-                    <select value={vehiculoIdSel ?? ''}
-                      onChange={e => setVehSel(e.target.value ? parseInt(e.target.value) : null)}
-                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400">
-                      <option value="">Seleccionar...</option>
-                      {misVehiculos.map((v: any) => (
-                        <option key={v.id} value={v.id}>{v.placa} — {v.tipo?.nombre}</option>
-                      ))}
-                    </select>
+                    <Dropdown
+                      searchable
+                      placeholder="Seleccionar…"
+                      value={vehiculoIdSel != null ? String(vehiculoIdSel) : ''}
+                      onChange={v => setVehSel(v ? parseInt(v) : null)}
+                      options={misVehiculos.map((v: any) => ({ value: String(v.id), label: `${v.placa} — ${v.tipo?.nombre}` }))}
+                    />
                   </div>
                 )}
 

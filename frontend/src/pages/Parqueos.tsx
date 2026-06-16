@@ -1,4 +1,4 @@
-import { useState, FormEvent } from 'react'
+import { useState, useEffect, FormEvent } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import {
   ParkingSquare, Plus, MapPin, Car, Clock, X, FileDown,
@@ -59,6 +59,21 @@ export default function Parqueos() {
   const [vehiculoHistId, setVehHistId] = useState<number | null>(null)
   const [modal, setModal]           = useState<'zona' | 'espacio' | 'sesion' | null>(null)
   const [error, setError]           = useState('')
+
+  // Selects de los formularios modales. El submit los lee vía FormData a través
+  // de inputs hidden con el name correspondiente. Se reinician al abrir el modal.
+  const [formZonaId, setFormZonaId]           = useState('')
+  const [formCategoriaId, setFormCategoriaId] = useState('')
+  const [formEspacioId, setFormEspacioId]     = useState('')
+
+  // Al abrir cada modal, reiniciar sus selects (pre-llenando la zona en curso).
+  useEffect(() => {
+    if (modal === 'espacio') {
+      setFormZonaId(zonaSelId != null ? String(zonaSelId) : '')
+      setFormCategoriaId('')
+    }
+    if (modal === 'sesion') setFormEspacioId('')
+  }, [modal, zonaSelId])
 
   // ── Estado del modal de sesión (controlado) ───────────────────────────────
   const [espacioSel, setEspacioSel] = useState<any>(null)   // espacio clickeado
@@ -445,17 +460,23 @@ export default function Parqueos() {
           <form onSubmit={handleCrearEspacio} className="space-y-3">
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Zona *</label>
-              <select name="zonaId" required defaultValue={zonaSelId ?? ''} className={cls}>
-                <option value="">Seleccionar zona...</option>
-                {zonas.map((z: any) => <option key={z.id} value={z.id}>{z.nombre}</option>)}
-              </select>
+              <Dropdown
+                placeholder="Seleccionar zona…"
+                value={formZonaId}
+                onChange={setFormZonaId}
+                options={zonas.map((z: any) => ({ value: String(z.id), label: z.nombre }))}
+              />
+              <input type="hidden" name="zonaId" value={formZonaId} />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Categoría *</label>
-              <select name="categoriaId" required className={cls}>
-                <option value="">Seleccionar...</option>
-                {categorias.map((c: any) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-              </select>
+              <Dropdown
+                placeholder="Seleccionar…"
+                value={formCategoriaId}
+                onChange={setFormCategoriaId}
+                options={categorias.map((c: any) => ({ value: String(c.id), label: c.nombre }))}
+              />
+              <input type="hidden" name="categoriaId" value={formCategoriaId} />
             </div>
             <Campo label="Número *" name="numero" placeholder="Ej. A-01" />
             <Campo label="Referencia de ubicación" name="ubicacionReferencia" placeholder="Ej. Junto a la puerta norte" />
@@ -501,14 +522,17 @@ export default function Parqueos() {
                   {!zonaSelId ? (
                     <p className="text-xs text-amber-600">Selecciona una zona en la vista de Espacios para ver los disponibles, o elige aquí:</p>
                   ) : null}
-                  <select name="espacioId" required className={cls}>
-                    <option value="">Seleccionar espacio disponible...</option>
-                    {espacios.filter((e: any) => e.estado === 'disponible').map((e: any) => (
-                      <option key={e.id} value={e.id}>
-                        #{e.numero} — {e.zona?.nombre} · {e.categoria?.nombre}
-                      </option>
-                    ))}
-                  </select>
+                  <Dropdown
+                    searchable
+                    placeholder="Seleccionar espacio disponible…"
+                    value={formEspacioId}
+                    onChange={setFormEspacioId}
+                    options={espacios.filter((e: any) => e.estado === 'disponible').map((e: any) => ({
+                      value: String(e.id),
+                      label: `#${e.numero} — ${e.zona?.nombre} · ${e.categoria?.nombre}`,
+                    }))}
+                  />
+                  <input type="hidden" name="espacioId" value={formEspacioId} />
                 </div>
               )}
             </div>

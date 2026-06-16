@@ -13,6 +13,7 @@ import { useToast } from '../hooks/useToast'
 import { ToastContainer } from '../components/ToastContainer'
 import { PromptModal } from '../components/PromptModal'
 import { DatePicker } from '../components/DatePicker'
+import { Dropdown } from '../components/Dropdown'
 import { VEHICULOS_QUERY, VEHICULOS_PENDIENTES_QUERY, TIPOS_VEHICULO_QUERY } from '../graphql/queries/vehiculos'
 import { SESIONES_ACTIVAS_QUERY } from '../graphql/queries/parqueos'
 import {
@@ -109,6 +110,9 @@ export default function Vehiculos() {
   const [tab, setTab]                       = useState<Tab>('lista')
   const [modal, setModal]                   = useState<Modal>(null)
   const [seleccionado, setSeleccionado]     = useState<Vehiculo | null>(null)
+  // Estado del vehículo en el form de edición (el submit lo lee vía input hidden).
+  const [editEstado, setEditEstado]         = useState('')
+  useEffect(() => { if (seleccionado) setEditEstado(seleccionado.estado) }, [seleccionado])
   const [confirmarRegen, setConfirmarRegen] = useState(false)
   const [error, setError]                   = useState('')
   const [filtroEstado, setFiltroEstado]     = useState('')
@@ -464,17 +468,19 @@ export default function Vehiculos() {
                 className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
               />
             </div>
-            <select
+            <Dropdown
+              size="sm"
+              className="w-44"
               value={filtroEstado}
-              onChange={e => cambioEstado(e.target.value)}
-              className="border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-400"
-            >
-              <option value="">Todos los estados</option>
-              <option value="pendiente">Pendiente</option>
-              <option value="activo">Activo</option>
-              <option value="inactivo">Inactivo</option>
-              <option value="sancionado">Sancionado</option>
-            </select>
+              onChange={cambioEstado}
+              options={[
+                { value: '',           label: 'Todos los estados' },
+                { value: 'pendiente',  label: 'Pendiente' },
+                { value: 'activo',     label: 'Activo' },
+                { value: 'inactivo',   label: 'Inactivo' },
+                { value: 'sancionado', label: 'Sancionado' },
+              ]}
+            />
             {(busquedaInput || filtroEstado) && (
               <button
                 onClick={() => { handleBusqueda(''); setBusquedaInput(''); setFiltroEstado(''); setPagina(1) }}
@@ -511,11 +517,14 @@ export default function Vehiculos() {
                 {/* Tipo */}
                 <div>
                   <label className="block text-xs font-medium text-slate-500 mb-1">Tipo</label>
-                  <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400">
-                    <option value="">Todos los tipos</option>
-                    {tipos.map((t: any) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
-                  </select>
+                  <Dropdown
+                    value={filtroTipo}
+                    onChange={setFiltroTipo}
+                    options={[
+                      { value: '', label: 'Todos los tipos' },
+                      ...tipos.map((t: any) => ({ value: String(t.id), label: t.nombre })),
+                    ]}
+                  />
                 </div>
                 {/* Fecha desde */}
                 <div>
@@ -569,14 +578,19 @@ export default function Vehiculos() {
                 {/* Ordenar */}
                 <div className="flex items-center gap-2">
                   <span className="text-slate-500 text-xs">Orden:</span>
-                  <select value={filtroOrden} onChange={e => setFiltroOrden(e.target.value)}
-                    className="border border-slate-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-400">
-                    <option value="">Más reciente</option>
-                    <option value="placa">Placa A→Z</option>
-                    <option value="-placa">Placa Z→A</option>
-                    <option value="fecha">Más antiguo</option>
-                    <option value="propietario">Propietario</option>
-                  </select>
+                  <Dropdown
+                    size="sm"
+                    className="w-40"
+                    value={filtroOrden}
+                    onChange={setFiltroOrden}
+                    options={[
+                      { value: '',            label: 'Más reciente' },
+                      { value: 'placa',       label: 'Placa A→Z' },
+                      { value: '-placa',      label: 'Placa Z→A' },
+                      { value: 'fecha',       label: 'Más antiguo' },
+                      { value: 'propietario', label: 'Propietario' },
+                    ]}
+                  />
                 </div>
               </div>
 
@@ -935,12 +949,17 @@ export default function Vehiculos() {
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Estado</label>
-              <select name="estado" defaultValue={seleccionado.estado} className={inputCls}>
-                <option value="pendiente">Pendiente de aprobación</option>
-                <option value="activo">Activo</option>
-                <option value="inactivo">Inactivo</option>
-                <option value="sancionado">Sancionado</option>
-              </select>
+              <Dropdown
+                value={editEstado}
+                onChange={setEditEstado}
+                options={[
+                  { value: 'pendiente',  label: 'Pendiente de aprobación' },
+                  { value: 'activo',     label: 'Activo' },
+                  { value: 'inactivo',   label: 'Inactivo' },
+                  { value: 'sancionado', label: 'Sancionado' },
+                ]}
+              />
+              <input type="hidden" name="estado" value={editEstado} />
             </div>
             {error && <MsgError texto={error} />}
             <BtnSubmit loading={loadingActualizar} label="Guardar cambios" />
@@ -989,18 +1008,17 @@ export default function Vehiculos() {
             {/* 1. Tipo de documento */}
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Tipo *</label>
-              <select
-                name="tipoDoc"
-                required
+              <Dropdown
                 value={tipoDocSel}
-                onChange={e => setTipoDocSel(e.target.value)}
-                className={inputCls}
-              >
-                <option value="soat">SOAT</option>
-                <option value="tecnica">Revisión Técnica</option>
-                <option value="circulacion">Permiso de Circulación</option>
-                <option value="otro">Otro documento</option>
-              </select>
+                onChange={setTipoDocSel}
+                options={[
+                  { value: 'soat',        label: 'SOAT' },
+                  { value: 'tecnica',     label: 'Revisión Técnica' },
+                  { value: 'circulacion', label: 'Permiso de Circulación' },
+                  { value: 'otro',        label: 'Otro documento' },
+                ]}
+              />
+              <input type="hidden" name="tipoDoc" value={tipoDocSel} />
             </div>
 
             {/* 2. Foto/PDF — AL INICIO, contextual por tipo, SIEMPRE VISIBLE */}
@@ -1451,17 +1469,13 @@ export function WizardRegistrarVehiculo({ tipos, usuarios, esAdmin, usuario, onC
           {esAdmin ? (
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Propietario *</label>
-              <select
-                value={propietarioId || ''}
-                onChange={e => setPropId(parseInt(e.target.value))}
-                className={inputCls}
-                required
-              >
-                <option value="">Seleccionar usuario...</option>
-                {usuarios.map((u: any) => (
-                  <option key={u.id} value={u.id}>{u.nombreCompleto} — {u.ci}</option>
-                ))}
-              </select>
+              <Dropdown
+                searchable
+                placeholder="Seleccionar usuario…"
+                value={propietarioId ? String(propietarioId) : ''}
+                onChange={v => setPropId(parseInt(v))}
+                options={usuarios.map((u: any) => ({ value: String(u.id), label: `${u.nombreCompleto} — ${u.ci}` }))}
+              />
             </div>
           ) : (
             <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600">

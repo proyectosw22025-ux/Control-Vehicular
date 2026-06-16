@@ -11,6 +11,7 @@ import { useDebounce } from '../hooks/useDebounce'
 import { ToastContainer } from '../components/ToastContainer'
 import { DestinoSelector } from '../components/DestinoSelector'
 import { DatePicker } from '../components/DatePicker'
+import { Dropdown } from '../components/Dropdown'
 import {
   VISITANTES_QUERY,
   VISITAS_ACTIVAS_QUERY,
@@ -136,6 +137,10 @@ export default function Visitantes() {
   const [modoRapido, setModoRapido]         = useState(false)
   const [error, setError]                   = useState('')
   const [modalSalida, setModalSalida]       = useState<any>(null)
+  // Selects de formularios (el submit los lee vía FormData / inputs hidden).
+  const [visTipoId, setVisTipoId]     = useState('')
+  const [visVehId, setVisVehId]       = useState('')
+  const [rapidoTipoId, setRapidoTipoId] = useState('')
 
   // Historial filtros
   const [histEstado, setHistEstado]         = useState('')
@@ -568,14 +573,16 @@ export default function Visitantes() {
                 {/* Tipo de visita */}
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Tipo de visita *</label>
-                  <select name="tipoVisitaId" required className={cls}>
-                    <option value="">Seleccionar tipo...</option>
-                    {tipos.map((t: any) => (
-                      <option key={t.id} value={t.id}>
-                        {t.nombre}{t.requiereVehiculo ? ' ⚠ requiere vehículo' : ''}
-                      </option>
-                    ))}
-                  </select>
+                  <Dropdown
+                    placeholder="Seleccionar tipo…"
+                    value={visTipoId}
+                    onChange={setVisTipoId}
+                    options={tipos.map((t: any) => ({
+                      value: String(t.id),
+                      label: `${t.nombre}${t.requiereVehiculo ? ' ⚠ requiere vehículo' : ''}`,
+                    }))}
+                  />
+                  <input type="hidden" name="tipoVisitaId" value={visTipoId} />
                 </div>
 
                 {/* Destino: persona u oficina — resuelve el caso "no conoce a nadie" */}
@@ -622,12 +629,17 @@ export default function Visitantes() {
                     Vehículo UAGRM asociado
                     <span className="ml-1 text-slate-400 font-normal">(solo si usa vehículo registrado)</span>
                   </label>
-                  <select name="vehiculoId" className={cls}>
-                    <option value="">No aplica</option>
-                    {vehiculos.map((v: any) => (
-                      <option key={v.id} value={v.id}>{v.placa} — {v.marca} {v.modelo}</option>
-                    ))}
-                  </select>
+                  <Dropdown
+                    searchable
+                    placeholder="No aplica"
+                    value={visVehId}
+                    onChange={setVisVehId}
+                    options={[
+                      { value: '', label: 'No aplica' },
+                      ...vehiculos.map((v: any) => ({ value: String(v.id), label: `${v.placa} — ${v.marca} ${v.modelo}` })),
+                    ]}
+                  />
+                  <input type="hidden" name="vehiculoId" value={visVehId} />
                 </div>
 
                 {error && <Err t={error} />}
@@ -673,12 +685,13 @@ export default function Visitantes() {
 
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Tipo de visita *</label>
-              <select name="tipoVisitaId" required className={cls}>
-                <option value="">Seleccionar...</option>
-                {tipos.map((t: any) => (
-                  <option key={t.id} value={t.id}>{t.nombre}</option>
-                ))}
-              </select>
+              <Dropdown
+                placeholder="Seleccionar…"
+                value={rapidoTipoId}
+                onChange={setRapidoTipoId}
+                options={tipos.map((t: any) => ({ value: String(t.id), label: t.nombre }))}
+              />
+              <input type="hidden" name="tipoVisitaId" value={rapidoTipoId} />
             </div>
 
             <div>
@@ -823,12 +836,17 @@ export default function Visitantes() {
             </div>
 
             {/* Estado */}
-            <select value={histEstado} onChange={e => setHistEstado(e.target.value)}
-              className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-cyan-400">
-              <option value="">Completadas + Canceladas</option>
-              <option value="completada">Solo completadas</option>
-              <option value="cancelada">Solo canceladas</option>
-            </select>
+            <Dropdown
+              size="sm"
+              className="w-56"
+              value={histEstado}
+              onChange={setHistEstado}
+              options={[
+                { value: '',           label: 'Completadas + Canceladas' },
+                { value: 'completada', label: 'Solo completadas' },
+                { value: 'cancelada',  label: 'Solo canceladas' },
+              ]}
+            />
 
             {/* Fecha desde / hasta */}
             <div className="flex items-center gap-1">

@@ -3,6 +3,7 @@ import { useQuery, useMutation } from '@apollo/client'
 import { DoorOpen, QrCode, Search, Clock, ArrowUp, ArrowDown, X, Camera, CameraOff } from 'lucide-react'
 import { QrImage } from '../components/QrImage'
 import { QrScanner } from '../components/QrScanner'
+import { Dropdown } from '../components/Dropdown'
 import {
   PUNTOS_ACCESO_QUERY,
   REGISTROS_ACCESO_QUERY,
@@ -74,6 +75,9 @@ export default function Acceso() {
     onError(e) { setError(e.message) },
   })
 
+  // Selección del vehículo para el QR de delegación (el form lo envía vía FormData
+  // mediante el input hidden name="vehiculoId").
+  const [delegVehId, setDelegVehId] = useState('')
   const [delegQr, setDelegQr] = useState<string | null>(null)
   const [delegExpiracion, setDelegExpiracion] = useState<string | null>(null)
   const [camaraActiva, setCamaraActiva] = useState(false)
@@ -291,13 +295,14 @@ export default function Acceso() {
           <form onSubmit={handleDelegacion} className="space-y-3">
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Vehículo *</label>
-              <select name="vehiculoId" required
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
-                <option value="">Seleccionar...</option>
-                {vehiculos.map((v: any) => (
-                  <option key={v.id} value={v.id}>{v.placa} — {v.marca} {v.modelo}</option>
-                ))}
-              </select>
+              <Dropdown
+                searchable
+                placeholder="Seleccionar…"
+                value={delegVehId}
+                onChange={setDelegVehId}
+                options={vehiculos.map((v: any) => ({ value: String(v.id), label: `${v.placa} — ${v.marca} ${v.modelo}` }))}
+              />
+              <input type="hidden" name="vehiculoId" value={delegVehId} />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Motivo *</label>
@@ -393,13 +398,13 @@ function SelectorPunto({ puntos, value, onChange }: { puntos: any[]; value: numb
   return (
     <div>
       <label className="block text-xs font-medium text-slate-600 mb-1">Punto de acceso *</label>
-      <select name="puntoId" required value={value ?? ''} onChange={e => onChange(e.target.value ? parseInt(e.target.value) : null)}
-        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
-        <option value="">Seleccionar punto...</option>
-        {puntos.map((p: any) => (
-          <option key={p.id} value={p.id}>{p.nombre} — {p.tipo}</option>
-        ))}
-      </select>
+      <Dropdown
+        placeholder="Seleccionar punto…"
+        value={value != null ? String(value) : ''}
+        onChange={v => onChange(v ? parseInt(v) : null)}
+        options={puntos.map((p: any) => ({ value: String(p.id), label: `${p.nombre} — ${p.tipo}` }))}
+      />
+      <input type="hidden" name="puntoId" value={value ?? ''} />
     </div>
   )
 }

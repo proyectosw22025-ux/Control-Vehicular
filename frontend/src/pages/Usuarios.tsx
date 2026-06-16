@@ -7,6 +7,7 @@ import {
 import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../hooks/useToast'
 import { ToastContainer } from '../components/ToastContainer'
+import { Dropdown } from '../components/Dropdown'
 import { USUARIOS_QUERY, ROLES_QUERY } from '../graphql/queries/usuarios'
 import {
   CREAR_USUARIO_MUTATION,
@@ -286,11 +287,14 @@ export default function Usuarios() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
-                  <select value={rolSeleccionado[u.id] ?? ''} onChange={e => setRolSeleccionado({ ...rolSeleccionado, [u.id]: e.target.value })}
-                    className="flex-1 border border-slate-300 rounded-lg px-2 py-1.5 text-xs">
-                    <option value="">Asignar rol...</option>
-                    {roles.map(r => <option key={r.id} value={r.id}>{r.nombre}</option>)}
-                  </select>
+                  <Dropdown
+                    size="sm"
+                    className="flex-1"
+                    placeholder="Asignar rol…"
+                    value={rolSeleccionado[u.id] ?? ''}
+                    onChange={v => setRolSeleccionado({ ...rolSeleccionado, [u.id]: v })}
+                    options={roles.map(r => ({ value: String(r.id), label: r.nombre }))}
+                  />
                   <button onClick={() => handleAsignarRol(u)} disabled={loadingRol}
                     className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 disabled:opacity-50 transition-colors" title="Asignar rol">
                     <UserCheck size={15} />
@@ -336,11 +340,14 @@ export default function Usuarios() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
-                        <select value={rolSeleccionado[u.id] ?? ''} onChange={e => setRolSeleccionado({ ...rolSeleccionado, [u.id]: e.target.value })}
-                          className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 max-w-[160px]">
-                          <option value="">Seleccionar rol...</option>
-                          {roles.map(r => <option key={r.id} value={r.id}>{r.nombre}</option>)}
-                        </select>
+                        <Dropdown
+                          size="sm"
+                          className="max-w-[160px]"
+                          placeholder="Seleccionar rol…"
+                          value={rolSeleccionado[u.id] ?? ''}
+                          onChange={v => setRolSeleccionado({ ...rolSeleccionado, [u.id]: v })}
+                          options={roles.map(r => ({ value: String(r.id), label: r.nombre }))}
+                        />
                         <button onClick={() => handleAsignarRol(u)} disabled={loadingRol || !rolSeleccionado[u.id]}
                           className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 disabled:opacity-40 transition-colors" title="Aplicar rol">
                           <UserCheck size={14} />
@@ -401,12 +408,16 @@ export default function Usuarios() {
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Rol del usuario</label>
-              <select className={inputCls} value={form.tipoUsuario} onChange={e => setForm({ ...form, tipoUsuario: e.target.value })}>
-                <option value="estudiante">Estudiante</option>
-                <option value="docente">Docente</option>
-                <option value="personal">Personal Administrativo</option>
-                <option value="guardia">Guardia de seguridad</option>
-              </select>
+              <Dropdown
+                value={form.tipoUsuario}
+                onChange={v => setForm({ ...form, tipoUsuario: v })}
+                options={[
+                  { value: 'estudiante', label: 'Estudiante' },
+                  { value: 'docente',    label: 'Docente' },
+                  { value: 'personal',   label: 'Personal Administrativo' },
+                  { value: 'guardia',    label: 'Guardia de seguridad' },
+                ]}
+              />
               {form.tipoUsuario === 'guardia' && (
                 <p className="text-xs text-amber-600 mt-1.5 flex items-center gap-1">
                   <AlertTriangle size={11} /> El guardia tendrá acceso a registrar accesos, infracciones y visitantes.

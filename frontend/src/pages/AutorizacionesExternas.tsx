@@ -22,6 +22,7 @@ import { CREAR_AUTORIZACION_EXTERNA_MUTATION, REVOCAR_AUTORIZACION_EXTERNA_MUTAT
 import { DEPENDENCIAS_QUERY } from '../graphql/queries/visitantes'
 import { DatePicker } from '../components/DatePicker'
 import { TimePicker } from '../components/TimePicker'
+import { Dropdown } from '../components/Dropdown'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -146,6 +147,7 @@ function FormularioNuevaAutorizacion({ onCreada, onCancelar }: {
   })
   const [error, setError] = useState('')
   const [qrUrl, setQrUrl] = useState('')
+  const [tipoSolicitud, setTipoSolicitud] = useState('🚚 Proveedor')
 
   const [crear, { loading }] = useMutation(CREAR_AUTORIZACION_EXTERNA_MUTATION, {
     onCompleted(d) {
@@ -227,12 +229,16 @@ function FormularioNuevaAutorizacion({ onCreada, onCancelar }: {
               <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">
                 Tipo
               </label>
-              <select className="w-full border-2 border-slate-200 focus:border-blue-400 rounded-xl px-3 py-2.5 text-sm outline-none transition-colors bg-slate-50 focus:bg-white">
-                <option>🚚 Proveedor</option>
-                <option>🔧 Mantenimiento</option>
-                <option>🚨 Emergencia</option>
-                <option>👤 Contratista</option>
-              </select>
+              <Dropdown
+                value={tipoSolicitud}
+                onChange={setTipoSolicitud}
+                options={[
+                  { value: '🚚 Proveedor',     label: '🚚 Proveedor' },
+                  { value: '🔧 Mantenimiento', label: '🔧 Mantenimiento' },
+                  { value: '🚨 Emergencia',    label: '🚨 Emergencia' },
+                  { value: '👤 Contratista',   label: '👤 Contratista' },
+                ]}
+              />
             </div>
           </div>
 
