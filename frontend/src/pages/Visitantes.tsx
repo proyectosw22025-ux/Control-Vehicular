@@ -12,6 +12,7 @@ import { ToastContainer } from '../components/ToastContainer'
 import { DestinoSelector } from '../components/DestinoSelector'
 import { DatePicker } from '../components/DatePicker'
 import { Dropdown } from '../components/Dropdown'
+import { API_BASE } from '../config/endpoints'
 import {
   VISITANTES_QUERY,
   VISITAS_ACTIVAS_QUERY,
@@ -312,7 +313,7 @@ export default function Visitantes() {
 
   async function exportarPDF() {
     const t = localStorage.getItem('access_token') || ''
-    const base = (import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/').replace(/\/graphql\/?$/, '')
+    const base = API_BASE
     const resp = await fetch(`${base}/api/pdf/visitas/`, { headers: { Authorization: `Bearer ${t}` } })
     if (!resp.ok) { toast.error(`Error al generar PDF (${resp.status})`); return }
     const blob = await resp.blob()

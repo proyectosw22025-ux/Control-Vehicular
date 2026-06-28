@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { API_BASE } from '../config/endpoints'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { useState as useLocalState } from 'react'
@@ -574,7 +575,7 @@ function SubirArchivo({
     const form = new FormData()
     form.append('archivo', archivo)
     const token = localStorage.getItem('access_token') ?? ''
-    const base  = (import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/').replace(/\/graphql\/?$/, '')
+    const base  = API_BASE
     try {
       const resp = await fetch(`${base}/api/documentos/${documentoId}/subir/`, {
         method: 'POST', body: form,

@@ -19,6 +19,7 @@ import {
 import { useAuth } from '../hooks/useAuth'
 import { BuscadorVehiculo } from '../components/BuscadorVehiculo'
 import { Dropdown } from '../components/Dropdown'
+import { API_BASE } from '../config/endpoints'
 
 const ESTADO_COLOR: Record<string, string> = {
   disponible:    'bg-green-100 text-green-700 border-green-200',
@@ -174,7 +175,7 @@ export default function Parqueos() {
 
   async function descargarPDF(tipo: string) {
     const t = localStorage.getItem('access_token') || ''
-    const base = (import.meta.env.VITE_GRAPHQL_URI ?? 'http://localhost:8000/graphql/').replace('/graphql/', '')
+    const base = API_BASE
     try {
       const resp = await fetch(`${base}/api/pdf/${tipo}/`, { headers: { Authorization: `Bearer ${t}` } })
       if (!resp.ok) throw new Error('Sin acceso al PDF')

@@ -13,6 +13,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@apollo/client'
 import { DISPONIBILIDAD_ZONAS_QUERY } from '../graphql/queries/parqueos'
+import { wsUrl } from '../config/endpoints'
 
 export interface DisponibilidadZona {
   id:               number
@@ -79,7 +80,7 @@ export function useDisponibilidadZonas() {
     const token = localStorage.getItem('access_token')
     if (!token) return  // página pública sin sesión → solo polling
 
-    const WS_BASE = import.meta.env.VITE_WS_URI ?? 'ws://localhost:8000/ws/notificaciones/'
+    const WS_BASE = wsUrl('/ws/notificaciones/')
     let ws: WebSocket | null = null
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
     let activo = true

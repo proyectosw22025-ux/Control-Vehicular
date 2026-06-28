@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { API_BASE } from '../config/endpoints'
 import { useQuery, useMutation, gql } from '@apollo/client'
 import {
   Lock, Save, CheckCircle, AlertCircle, Calendar, ShieldCheck, Shield,
@@ -138,7 +139,7 @@ export default function Perfil() {
     const form = new FormData()
     form.append('foto', archivo)
     const token = localStorage.getItem('access_token') ?? ''
-    const base = (import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/').replace(/\/graphql\/?$/, '')
+    const base = API_BASE
     try {
       // Pasar token como query param (mismo patrón que PDFs) para evitar problemas CORS con Authorization header
       const resp = await fetch(`${base}/api/perfil/foto/?token=${encodeURIComponent(token)}`, {

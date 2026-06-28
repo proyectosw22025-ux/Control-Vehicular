@@ -10,6 +10,7 @@
  *   rastreo_usuario_<id> → Propietario: ve solo el suyo
  */
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { wsUrl } from '../config/endpoints'
 
 export interface VehiculoEnCampus {
   vehiculoId:                 number
@@ -69,14 +70,8 @@ export function useRastreoEnVivo() {
   const conectar = useCallback(() => {
     const token = localStorage.getItem('access_token') ?? ''
 
-    // Construir URL del WebSocket de rastreo de forma robusta.
-    // VITE_WS_URI puede ser:
-    //   wss://host/ws/notificaciones/  → base = wss://host/ws/
-    //   wss://host/ws/                 → base = wss://host/ws/
-    //   (no definida)                  → ws://127.0.0.1:8000/ws/
-    const raw = import.meta.env.VITE_WS_URI ?? 'ws://127.0.0.1:8000/ws/notificaciones/'
-    const base = raw.replace(/\/notificaciones\/?$/, '').replace(/\/?$/, '/')
-    const url  = `${base}rastreo/?token=${token}`
+    // URL del WebSocket de rastreo (mismo origen en producción).
+    const url = `${wsUrl('/ws/rastreo/')}?token=${token}`
 
     const ws = new WebSocket(url)
     wsRef.current = ws

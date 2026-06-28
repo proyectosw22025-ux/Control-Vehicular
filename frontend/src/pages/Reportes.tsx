@@ -9,6 +9,7 @@
  */
 import { useState, useMemo } from 'react'
 import { useQuery, gql } from '@apollo/client'
+import { API_BASE } from '../config/endpoints'
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell,
@@ -21,7 +22,6 @@ import {
 import * as XLSX from 'xlsx'
 
 // ── Helpers ────────────────────────────────────────────────
-const API_BASE = (import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/').replace(/\/graphql\/?$/, '')
 function descargarPDF(path: string) {
   const token = localStorage.getItem('access_token') ?? ''
   window.open(`${API_BASE}${path}?token=${encodeURIComponent(token)}`, '_blank')

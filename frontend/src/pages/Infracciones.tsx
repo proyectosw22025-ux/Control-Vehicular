@@ -8,6 +8,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../hooks/useToast'
 import { ToastContainer } from '../components/ToastContainer'
 import { Dropdown } from '../components/Dropdown'
+import { API_BASE } from '../config/endpoints'
 import { QrImage } from '../components/QrImage'
 import {
   SANCIONES_PENDIENTES_QUERY,
@@ -292,7 +293,7 @@ export default function Infracciones() {
       form.append('archivo', archivo)
       // Subir a Cloudinary via endpoint temporal (reutiliza el de documentos)
       const token = localStorage.getItem('access_token') ?? ''
-      const base = (import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/').replace(/\/graphql\/?$/, '')
+      const base = API_BASE
       const resp = await fetch(`${base}/api/documentos/0/subir/?tipo=comprobante`, {
         method: 'POST', body: form, headers: { Authorization: `Bearer ${token}` },
       })
@@ -381,7 +382,7 @@ export default function Infracciones() {
           <div className="flex gap-2">
             <button onClick={async () => {
               const t = localStorage.getItem('access_token') || ''
-              const base = (import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/').replace(/\/graphql\/?$/, '')
+              const base = API_BASE
               const resp = await fetch(`${base}/api/pdf/infracciones/`, { headers: { Authorization: `Bearer ${t}` } })
               if (!resp.ok) { toast.error('Error al generar PDF', `Código ${resp.status}`); return }
               const blob = await resp.blob()

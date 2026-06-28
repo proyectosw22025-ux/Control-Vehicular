@@ -11,9 +11,7 @@
  *   - GPS activo (enableHighAccuracy: true)
  */
 import { useState, useEffect, useRef, useCallback } from 'react'
-
-const BASE_URL = (import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/')
-  .replace(/\/graphql\/?$/, '')
+import { API_BASE as BASE_URL } from '../config/endpoints'
 
 export interface EstadoCompartir {
   compartiendo: boolean

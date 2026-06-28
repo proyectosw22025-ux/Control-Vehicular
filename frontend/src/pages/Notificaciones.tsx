@@ -9,19 +9,12 @@ import {
   ELIMINAR_NOTIFICACION_MUTATION,
   ELIMINAR_TODAS_LEIDAS_MUTATION,
 } from '../graphql/mutations/notificaciones'
+import { wsUrl } from '../config/endpoints'
 
-// ── Derivar URL WebSocket desde la misma variable que el cliente GraphQL ───
-// VITE_GRAPHQL_URI = "https://api.railway.app/graphql/"
-// → wsBase = "wss://api.railway.app"
-// En desarrollo: "http://127.0.0.1:8000/graphql/" → "ws://127.0.0.1:8000"
+// URL del WebSocket de notificaciones (mismo origen en producción).
 function buildWsUrl(): string {
-  const graphqlUri = import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/'
-  const wsBase = graphqlUri
-    .replace(/\/graphql\/?$/, '')
-    .replace(/^https:\/\//, 'wss://')
-    .replace(/^http:\/\//, 'ws://')
   const token = localStorage.getItem('access_token') ?? ''
-  return `${wsBase}/ws/notificaciones/?token=${encodeURIComponent(token)}`
+  return `${wsUrl('/ws/notificaciones/')}?token=${encodeURIComponent(token)}`
 }
 
 function tipoIcon(codigo?: string | null) {

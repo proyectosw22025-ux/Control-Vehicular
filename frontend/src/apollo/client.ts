@@ -2,8 +2,7 @@ import { ApolloClient, InMemoryCache, createHttpLink } from '@apollo/client'
 import { setContext } from '@apollo/client/link/context'
 import { onError } from '@apollo/client/link/error'
 import { Observable } from '@apollo/client/utilities'
-
-const GRAPHQL_URI = import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/'
+import { GRAPHQL_URI } from '../config/endpoints'
 
 // ── Lectura del campo "exp" de un JWT (sin verificar firma) ─
 // Exportadas para poder probar la lógica de refresco proactivo sin

@@ -14,6 +14,7 @@ import { ToastContainer } from '../components/ToastContainer'
 import { PromptModal } from '../components/PromptModal'
 import { DatePicker } from '../components/DatePicker'
 import { Dropdown } from '../components/Dropdown'
+import { API_BASE } from '../config/endpoints'
 import { VEHICULOS_QUERY, VEHICULOS_PENDIENTES_QUERY, TIPOS_VEHICULO_QUERY } from '../graphql/queries/vehiculos'
 import { SESIONES_ACTIVAS_QUERY } from '../graphql/queries/parqueos'
 import {
@@ -224,7 +225,7 @@ export default function Vehiculos() {
           const form = new FormData()
           form.append('foto', fotoFile)
           const token = localStorage.getItem('access_token') ?? ''
-          const base  = (import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/').replace(/\/graphql\/?$/, '')
+          const base  = API_BASE
           await fetch(`${base}/api/vehiculos/${vehiculoId}/foto/?token=${token}`, { method: 'POST', body: form })
         } catch { /* la foto no es crítica */ }
       }
@@ -304,7 +305,7 @@ export default function Vehiculos() {
           const form = new FormData()
           form.append('archivo', archivoDoc)
           const token = localStorage.getItem('access_token') ?? ''
-          const base  = (import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/').replace(/\/graphql\/?$/, '')
+          const base  = API_BASE
           const resp  = await fetch(`${base}/api/documentos/${docId}/subir/`, {
             method: 'POST', body: form,
             headers: { Authorization: `Bearer ${token}` },

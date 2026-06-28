@@ -45,6 +45,13 @@ services:
       - static_files:/app/staticfiles
     expose:
       - "8000"
+    healthcheck:
+      # Daphne escuchando en :8000 ⇒ migraciones aplicadas y servidor arriba.
+      test: ["CMD-SHELL", "python -c \"import socket; s=socket.socket(); s.settimeout(3); s.connect(('localhost', 8000)); s.close()\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
 
   # ── Celery Worker (tareas asíncronas) ────────────────────────
   celery_worker:
@@ -91,7 +98,8 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
   postgres_data:
