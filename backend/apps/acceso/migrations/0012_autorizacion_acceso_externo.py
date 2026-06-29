@@ -7,7 +7,9 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('acceso', '0011_vehiculo_temporal'),
-        ('visitantes', '0001_initial'),
+        # DependenciaUAGRM se crea en visitantes/0006; sin esta dependencia, en
+        # una base nueva esta migración corre antes y la FK no resuelve.
+        ('visitantes', '0006_dependencia_anfitrion_opcional'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
