@@ -31,6 +31,47 @@ docker compose down               # apagar todo
 docker compose down -v            # apagar y borrar volúmenes (BD incluida)
 ```
 
+> El frontend usa **mismo origen** en producción: la imagen funciona en cualquier
+> host (localhost, VPS, dominio) sin recompilar. Nginx ya proxea `/graphql`, `/ws`,
+> `/api`, `/media` y `/static` hacia el backend.
+
+---
+
+## Opción C — Compartir por USB / flash (otra PC)
+
+Copiar el proyecto a un flash **no rompe la dockerización** — son archivos. El
+único requisito es que la PC destino **tenga Docker instalado**.
+
+### C1 — Lo más simple (con internet en el destino)
+Copiá la carpeta del proyecto al flash, **excluyendo** lo pesado/secreto:
+- ❌ NO copies: `node_modules/`, `backend/venv/`, `.git/`, ni tu `.env` real.
+- ✅ Copiá el resto (código, `docker-compose.yml`, Dockerfiles, `.env.example`).
+
+En la PC destino:
+```bash
+cp .env.example .env        # editar secretos para uso real
+docker compose up -d --build
+# abrir http://localhost
+```
+(La primera vez descarga las imágenes base e instala dependencias → necesita internet.)
+
+### C2 — Paquete offline (sin internet en el destino)
+Para que arranque **sin internet**, hay que exportar las imágenes ya construidas.
+Esto se hace en una máquina **que tenga Docker** (tu PC, otra, o un Codespace):
+```bash
+sh crear-bundle.sh          # genera la carpeta dist-usb/ (incluye images.tar)
+```
+Copiás `dist-usb/` al flash. En la PC destino (también con Docker):
+```bash
+docker load -i images.tar
+cp .env.example .env
+docker compose up -d
+# abrir http://localhost
+```
+
+> **Regla de oro:** nunca pongas el `.env` real (contraseñas, API keys) en el
+> flash — solo `.env.example`. El destino crea su propio `.env`.
+
 ---
 
 ## Opción B — Deploy en la nube (URL pública gratuita)
@@ -121,21 +162,10 @@ VITE_WS_URI=wss://<tu-backend>.up.railway.app/ws/
 VITE_SENTRY_DSN=<opcional>
 ```
 
-> **Importante:** El frontend actualmente tiene la URL del backend hardcodeada
-> en `src/apollo/client.ts`. Ver sección "Preparar el frontend para producción".
-
-### 4. Preparar el frontend para producción
-Actualizar `frontend/src/apollo/client.ts` para leer la URL del backend desde
-variables de entorno:
-
-```ts
-const GRAPHQL_URI = import.meta.env.VITE_GRAPHQL_URI ?? 'http://127.0.0.1:8000/graphql/'
-```
-
-Y el WebSocket en `frontend/src/hooks/useNotificaciones.ts`:
-```ts
-const WS_URI = import.meta.env.VITE_WS_URI ?? 'ws://localhost:8000/ws/notificaciones/'
-```
+> **Nota:** El frontend ya está preparado para producción — las URLs se centralizan
+> en `frontend/src/config/endpoints.ts`. Por defecto usa **mismo origen** (ideal
+> para Docker/VPS). Para el caso Railway+Vercel, donde el backend está en un
+> **dominio aparte**, se fuerza con `VITE_GRAPHQL_URI` / `VITE_WS_URI` (arriba).
 
 ---
 
