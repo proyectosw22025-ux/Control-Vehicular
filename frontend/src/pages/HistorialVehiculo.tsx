@@ -254,42 +254,66 @@ export default function HistorialVehiculo() {
         accesos.length === 0 ? (
           <EmptyState icon={DoorOpen} text="Sin registros de acceso" />
         ) : (
-          <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
-                <tr>
-                  <th className="px-4 py-3 text-left">Tipo</th>
-                  <th className="px-4 py-3 text-left">Punto de acceso</th>
-                  <th className="px-4 py-3 text-left">Método</th>
-                  <th className="px-4 py-3 text-left">Fecha y hora</th>
-                  <th className="px-4 py-3 text-left">Observación</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {accesos.map((a: any) => (
-                  <tr key={a.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${a.tipo === 'entrada' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-                        {a.tipo === 'entrada' ? '↑ Entrada' : '↓ Salida'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-700">{a.puntoNombre}</td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">{METODO_LABEL[a.metodoAcceso] ?? a.metodoAcceso}</td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">{fmt(a.timestamp)}</td>
-                    <td className="px-4 py-3 text-slate-400 text-xs">
-                      {a.imagenUrl ? (
-                        <a href={a.imagenUrl} target="_blank" rel="noreferrer"
-                          className="inline-block" title="Ver evidencia del acceso">
-                          <img src={a.imagenUrl} alt="Evidencia"
-                            className="w-12 h-9 object-cover rounded border border-slate-200 hover:ring-2 hover:ring-violet-300" />
-                        </a>
-                      ) : (a.observacion || '—')}
-                    </td>
+          <>
+            {/* Tabla — desktop */}
+            <div className="hidden sm:block bg-white rounded-xl shadow-sm overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Tipo</th>
+                    <th className="px-4 py-3 text-left">Punto de acceso</th>
+                    <th className="px-4 py-3 text-left">Método</th>
+                    <th className="px-4 py-3 text-left">Fecha y hora</th>
+                    <th className="px-4 py-3 text-left">Observación</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {accesos.map((a: any) => (
+                    <tr key={a.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${a.tipo === 'entrada' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                          {a.tipo === 'entrada' ? '↑ Entrada' : '↓ Salida'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">{a.puntoNombre}</td>
+                      <td className="px-4 py-3 text-slate-500 text-xs">{METODO_LABEL[a.metodoAcceso] ?? a.metodoAcceso}</td>
+                      <td className="px-4 py-3 text-slate-500 text-xs">{fmt(a.timestamp)}</td>
+                      <td className="px-4 py-3 text-slate-400 text-xs">
+                        {a.imagenUrl ? (
+                          <a href={a.imagenUrl} target="_blank" rel="noreferrer"
+                            className="inline-block" title="Ver evidencia del acceso">
+                            <img src={a.imagenUrl} alt="Evidencia"
+                              className="w-12 h-9 object-cover rounded border border-slate-200 hover:ring-2 hover:ring-violet-300" />
+                          </a>
+                        ) : (a.observacion || '—')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Tarjetas — móvil */}
+            <div className="sm:hidden space-y-2">
+              {accesos.map((a: any) => (
+                <div key={a.id} className="bg-white rounded-xl shadow-sm p-3 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${a.tipo === 'entrada' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                      {a.tipo === 'entrada' ? '↑ Entrada' : '↓ Salida'}
+                    </span>
+                    <span className="text-[11px] text-slate-500">{fmt(a.timestamp)}</span>
+                  </div>
+                  <p className="text-sm text-slate-700">{a.puntoNombre}</p>
+                  <p className="text-xs text-slate-500">{METODO_LABEL[a.metodoAcceso] ?? a.metodoAcceso}</p>
+                  {a.imagenUrl ? (
+                    <a href={a.imagenUrl} target="_blank" rel="noreferrer" className="inline-block" title="Ver evidencia del acceso">
+                      <img src={a.imagenUrl} alt="Evidencia" className="w-16 h-12 object-cover rounded border border-slate-200" />
+                    </a>
+                  ) : (a.observacion && <p className="text-xs text-slate-400">{a.observacion}</p>)}
+                </div>
+              ))}
+            </div>
+          </>
         )
       )}
 
@@ -299,45 +323,77 @@ export default function HistorialVehiculo() {
         infracciones.length === 0 ? (
           <EmptyState icon={AlertTriangle} text="Sin infracciones registradas" />
         ) : (
-          <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
-                <tr>
-                  <th className="px-4 py-3 text-left">Fecha</th>
-                  <th className="px-4 py-3 text-left">Tipo</th>
-                  <th className="px-4 py-3 text-left">Descripción</th>
-                  <th className="px-4 py-3 text-left">Sanción</th>
-                  <th className="px-4 py-3 text-left">Estado</th>
-                  <th className="px-4 py-3 text-left">Registrado por</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {infracciones.map((i: any) => (
-                  <tr key={i.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-3 text-slate-500 text-xs">{fmt(i.fecha)}</td>
-                    <td className="px-4 py-3 text-slate-700 text-xs">{i.tipo?.nombre}</td>
-                    <td className="px-4 py-3 text-slate-600 text-xs max-w-xs truncate">{i.descripcion}</td>
-                    <td className="px-4 py-3 text-slate-700 text-xs">
-                      {i.sancion ? (
-                        <>
-                          {TIPO_SANCION_LABELS[i.sancion.tipoSancion] ?? i.sancion.tipoSancion}
-                          {i.sancion.tipoSancion === 'multa_economica' && i.sancion.monto != null && (
-                            <span className="font-semibold text-slate-800"> · Bs {Number(i.sancion.monto).toFixed(2)}</span>
-                          )}
-                        </>
-                      ) : '—'}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${ESTADO_INFRACCION_BADGE[i.estado] ?? 'bg-slate-100 text-slate-500'}`}>
-                        {i.estado}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-400 text-xs">{i.registradoPorNombre ?? '—'}</td>
+          <>
+            {/* Tabla — desktop */}
+            <div className="hidden sm:block bg-white rounded-xl shadow-sm overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Fecha</th>
+                    <th className="px-4 py-3 text-left">Tipo</th>
+                    <th className="px-4 py-3 text-left">Descripción</th>
+                    <th className="px-4 py-3 text-left">Sanción</th>
+                    <th className="px-4 py-3 text-left">Estado</th>
+                    <th className="px-4 py-3 text-left">Registrado por</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {infracciones.map((i: any) => (
+                    <tr key={i.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 text-slate-500 text-xs">{fmt(i.fecha)}</td>
+                      <td className="px-4 py-3 text-slate-700 text-xs">{i.tipo?.nombre}</td>
+                      <td className="px-4 py-3 text-slate-600 text-xs max-w-xs truncate">{i.descripcion}</td>
+                      <td className="px-4 py-3 text-slate-700 text-xs">
+                        {i.sancion ? (
+                          <>
+                            {TIPO_SANCION_LABELS[i.sancion.tipoSancion] ?? i.sancion.tipoSancion}
+                            {i.sancion.tipoSancion === 'multa_economica' && i.sancion.monto != null && (
+                              <span className="font-semibold text-slate-800"> · Bs {Number(i.sancion.monto).toFixed(2)}</span>
+                            )}
+                          </>
+                        ) : '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${ESTADO_INFRACCION_BADGE[i.estado] ?? 'bg-slate-100 text-slate-500'}`}>
+                          {i.estado}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-400 text-xs">{i.registradoPorNombre ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Tarjetas — móvil */}
+            <div className="sm:hidden space-y-2">
+              {infracciones.map((i: any) => (
+                <div key={i.id} className="bg-white rounded-xl shadow-sm p-3 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm text-slate-700 font-medium">{i.tipo?.nombre}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${ESTADO_INFRACCION_BADGE[i.estado] ?? 'bg-slate-100 text-slate-500'}`}>
+                      {i.estado}
+                    </span>
+                  </div>
+                  {i.descripcion && <p className="text-xs text-slate-500 line-clamp-2">{i.descripcion}</p>}
+                  <p className="text-xs text-slate-700">
+                    {i.sancion ? (
+                      <>
+                        {TIPO_SANCION_LABELS[i.sancion.tipoSancion] ?? i.sancion.tipoSancion}
+                        {i.sancion.tipoSancion === 'multa_economica' && i.sancion.monto != null && (
+                          <span className="font-semibold text-slate-800"> · Bs {Number(i.sancion.monto).toFixed(2)}</span>
+                        )}
+                      </>
+                    ) : 'Sin sanción'}
+                  </p>
+                  <div className="flex items-center justify-between gap-2 text-[11px] text-slate-400">
+                    <span>{fmt(i.fecha)}</span>
+                    <span>{i.registradoPorNombre ?? '—'}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )
       )}
 
@@ -347,43 +403,65 @@ export default function HistorialVehiculo() {
         sesiones.length === 0 ? (
           <EmptyState icon={ParkingSquare} text="Sin sesiones de parqueo" />
         ) : (
-          <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
-                <tr>
-                  <th className="px-4 py-3 text-left">Espacio</th>
-                  <th className="px-4 py-3 text-left">Zona</th>
-                  <th className="px-4 py-3 text-left">Entrada</th>
-                  <th className="px-4 py-3 text-left">Salida</th>
-                  <th className="px-4 py-3 text-left">Duración</th>
-                  <th className="px-4 py-3 text-left">Estado</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {sesiones.map((s: any) => (
-                  <tr key={s.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-3 font-mono font-semibold text-slate-800">#{s.espacio.numero}</td>
-                    <td className="px-4 py-3 text-slate-600 text-xs">{s.espacio.zona.nombre}</td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">{fmt(s.horaEntrada)}</td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">
-                      {s.horaSalida ? fmt(s.horaSalida) : <span className="text-green-600 font-medium">En curso</span>}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="flex items-center gap-1 text-violet-600 text-xs font-medium">
-                        <Clock size={12} />
-                        {s.duracionMinutos != null ? `${s.duracionMinutos} min` : '—'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${s.estado === 'activa' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-                        {s.estado}
-                      </span>
-                    </td>
+          <>
+            {/* Tabla — desktop */}
+            <div className="hidden sm:block bg-white rounded-xl shadow-sm overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Espacio</th>
+                    <th className="px-4 py-3 text-left">Zona</th>
+                    <th className="px-4 py-3 text-left">Entrada</th>
+                    <th className="px-4 py-3 text-left">Salida</th>
+                    <th className="px-4 py-3 text-left">Duración</th>
+                    <th className="px-4 py-3 text-left">Estado</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {sesiones.map((s: any) => (
+                    <tr key={s.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 font-mono font-semibold text-slate-800">#{s.espacio.numero}</td>
+                      <td className="px-4 py-3 text-slate-600 text-xs">{s.espacio.zona.nombre}</td>
+                      <td className="px-4 py-3 text-slate-500 text-xs">{fmt(s.horaEntrada)}</td>
+                      <td className="px-4 py-3 text-slate-500 text-xs">
+                        {s.horaSalida ? fmt(s.horaSalida) : <span className="text-green-600 font-medium">En curso</span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="flex items-center gap-1 text-violet-600 text-xs font-medium">
+                          <Clock size={12} />
+                          {s.duracionMinutos != null ? `${s.duracionMinutos} min` : '—'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${s.estado === 'activa' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                          {s.estado}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Tarjetas — móvil */}
+            <div className="sm:hidden space-y-2">
+              {sesiones.map((s: any) => (
+                <div key={s.id} className="bg-white rounded-xl shadow-sm p-3 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono font-semibold text-slate-800">#{s.espacio.numero} — {s.espacio.zona.nombre}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${s.estado === 'activa' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                      {s.estado}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500">Entrada: {fmt(s.horaEntrada)}</p>
+                  <p className="text-xs text-slate-500">Salida: {s.horaSalida ? fmt(s.horaSalida) : <span className="text-green-600 font-medium">En curso</span>}</p>
+                  <p className="flex items-center gap-1 text-xs text-violet-600 font-medium">
+                    <Clock size={12} />{s.duracionMinutos != null ? `${s.duracionMinutos} min` : '—'}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </>
         )
       )}
 

@@ -686,39 +686,64 @@ export default function GuardiaDashboard() {
           {enCampus.length === 0 ? (
             <p className="text-center py-10 text-slate-400 text-sm">No hay vehículos dentro del campus en este momento.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-slate-500 text-[11px] uppercase">
-                  <tr>
-                    <th className="px-4 py-2 text-left">Placa</th>
-                    <th className="px-4 py-2 text-left">Vehículo</th>
-                    <th className="px-4 py-2 text-left">Propietario</th>
-                    <th className="px-4 py-2 text-left">Ingresó</th>
-                    <th className="px-4 py-2 text-left">Parqueo</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {enCampus.map((v: any) => (
-                    <tr key={v.vehiculoId} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-2 font-mono font-bold text-slate-800">{v.placa}</td>
-                      <td className="px-4 py-2 text-slate-600 text-xs">{v.marcaModelo}</td>
-                      <td className="px-4 py-2 text-slate-600 text-xs">
-                        {v.propietarioNombre}
-                        {v.propietarioTelefono && <span className="text-slate-400"> · {v.propietarioTelefono}</span>}
-                      </td>
-                      <td className="px-4 py-2 text-slate-500 text-xs">
-                        {new Date(v.horaEntrada).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' })}
-                      </td>
-                      <td className="px-4 py-2 text-xs">
-                        {v.espacioParqueo
-                          ? <span className="text-violet-700 font-medium">{v.espacioParqueo}</span>
-                          : <span className="text-slate-300">— sin asignar</span>}
-                      </td>
+            <>
+              {/* Tabla — desktop */}
+              <div className="hidden sm:block overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-500 text-[11px] uppercase">
+                    <tr>
+                      <th className="px-4 py-2 text-left">Placa</th>
+                      <th className="px-4 py-2 text-left">Vehículo</th>
+                      <th className="px-4 py-2 text-left">Propietario</th>
+                      <th className="px-4 py-2 text-left">Ingresó</th>
+                      <th className="px-4 py-2 text-left">Parqueo</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {enCampus.map((v: any) => (
+                      <tr key={v.vehiculoId} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-2 font-mono font-bold text-slate-800">{v.placa}</td>
+                        <td className="px-4 py-2 text-slate-600 text-xs">{v.marcaModelo}</td>
+                        <td className="px-4 py-2 text-slate-600 text-xs">
+                          {v.propietarioNombre}
+                          {v.propietarioTelefono && <span className="text-slate-400"> · {v.propietarioTelefono}</span>}
+                        </td>
+                        <td className="px-4 py-2 text-slate-500 text-xs">
+                          {new Date(v.horaEntrada).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' })}
+                        </td>
+                        <td className="px-4 py-2 text-xs">
+                          {v.espacioParqueo
+                            ? <span className="text-violet-700 font-medium">{v.espacioParqueo}</span>
+                            : <span className="text-slate-300">— sin asignar</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Tarjetas — móvil */}
+              <div className="sm:hidden divide-y divide-slate-100">
+                {enCampus.map((v: any) => (
+                  <div key={v.vehiculoId} className="px-4 py-3 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono font-bold text-slate-800">{v.placa}</span>
+                      <span className="text-[11px] text-slate-500">{new Date(v.horaEntrada).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                    </div>
+                    <p className="text-xs text-slate-600">{v.marcaModelo}</p>
+                    <p className="text-xs text-slate-600">
+                      {v.propietarioNombre}
+                      {v.propietarioTelefono && <span className="text-slate-400"> · {v.propietarioTelefono}</span>}
+                    </p>
+                    <p className="text-xs">
+                      {v.espacioParqueo
+                        ? <span className="text-violet-700 font-medium">Parqueo: {v.espacioParqueo}</span>
+                        : <span className="text-slate-300">Parqueo: sin asignar</span>}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
 
           {/* Throughput del portón — sustenta "no generamos colas" con datos */}
