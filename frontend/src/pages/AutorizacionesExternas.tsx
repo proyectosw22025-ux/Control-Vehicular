@@ -282,7 +282,7 @@ function FormularioNuevaAutorizacion({ onCreada, onCancelar }: {
             </div>
 
             {/* Presets de horario */}
-            <div className="grid grid-cols-4 gap-2 mb-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
               {PRESETS_HORARIO.map(p => (
                 <button key={p.label} type="button" onClick={() => aplicarPreset(p)}
                   className={`py-2 px-2 rounded-xl text-[11px] font-semibold border-2 transition-all ${

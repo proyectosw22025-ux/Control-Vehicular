@@ -351,42 +351,68 @@ export default function Acceso() {
             <p>Sin registros de acceso</p>
           </div>
         ) : (
-          <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
-                <tr>
-                  <th className="px-4 py-3 text-left">Tipo</th>
-                  <th className="px-4 py-3 text-left">Placa</th>
-                  <th className="px-4 py-3 text-left">Punto</th>
-                  <th className="px-4 py-3 text-left">Método</th>
-                  <th className="px-4 py-3 text-left">Hora</th>
-                  <th className="px-4 py-3 text-left">Observación</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {registros.map((r: any) => (
-                  <tr key={r.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-3">
-                      <span className={`flex items-center gap-1 text-xs font-medium ${r.tipo === 'entrada' ? 'text-green-600' : 'text-red-600'}`}>
-                        {r.tipo === 'entrada' ? <ArrowDown size={13} /> : <ArrowUp size={13} />}
-                        {r.tipo}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 font-mono font-bold text-slate-800">{r.placaVehiculo ?? '—'}</td>
-                    <td className="px-4 py-3 text-slate-600">{r.puntoNombre}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${METODO_BADGE[r.metodoAcceso] ?? 'bg-slate-100 text-slate-500'}`}>
-                        {METODO_LABEL[r.metodoAcceso] ?? r.metodoAcceso}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">
-                      {new Date(r.timestamp).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' })}
-                    </td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">{r.observacion || '—'}</td>
+          <div>
+            {/* Tabla — desktop */}
+            <div className="hidden sm:block bg-white rounded-xl shadow-sm overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Tipo</th>
+                    <th className="px-4 py-3 text-left">Placa</th>
+                    <th className="px-4 py-3 text-left">Punto</th>
+                    <th className="px-4 py-3 text-left">Método</th>
+                    <th className="px-4 py-3 text-left">Hora</th>
+                    <th className="px-4 py-3 text-left">Observación</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {registros.map((r: any) => (
+                    <tr key={r.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3">
+                        <span className={`flex items-center gap-1 text-xs font-medium ${r.tipo === 'entrada' ? 'text-green-600' : 'text-red-600'}`}>
+                          {r.tipo === 'entrada' ? <ArrowDown size={13} /> : <ArrowUp size={13} />}
+                          {r.tipo}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 font-mono font-bold text-slate-800">{r.placaVehiculo ?? '—'}</td>
+                      <td className="px-4 py-3 text-slate-600">{r.puntoNombre}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${METODO_BADGE[r.metodoAcceso] ?? 'bg-slate-100 text-slate-500'}`}>
+                          {METODO_LABEL[r.metodoAcceso] ?? r.metodoAcceso}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-500 text-xs">
+                        {new Date(r.timestamp).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' })}
+                      </td>
+                      <td className="px-4 py-3 text-slate-500 text-xs">{r.observacion || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Tarjetas — móvil */}
+            <div className="sm:hidden space-y-2">
+              {registros.map((r: any) => (
+                <div key={r.id} className="bg-white rounded-xl shadow-sm p-3 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono font-bold text-slate-800">{r.placaVehiculo ?? '—'}</span>
+                    <span className={`flex items-center gap-1 text-xs font-medium ${r.tipo === 'entrada' ? 'text-green-600' : 'text-red-600'}`}>
+                      {r.tipo === 'entrada' ? <ArrowDown size={13} /> : <ArrowUp size={13} />}
+                      {r.tipo}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-slate-600">{r.puntoNombre}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${METODO_BADGE[r.metodoAcceso] ?? 'bg-slate-100 text-slate-500'}`}>
+                      {METODO_LABEL[r.metodoAcceso] ?? r.metodoAcceso}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500">{new Date(r.timestamp).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' })}</p>
+                  {r.observacion && <p className="text-xs text-slate-500">{r.observacion}</p>}
+                </div>
+              ))}
+            </div>
           </div>
         )
       )}

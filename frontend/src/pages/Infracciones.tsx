@@ -773,6 +773,41 @@ function CeldaSancion({ tipoSancion, monto }: { tipoSancion: string | null; mont
   return <span className="text-slate-600 text-xs">{TIPO_SANCION_LABELS[tipoSancion] ?? tipoSancion}</span>
 }
 
+// Botones de acción de una infracción — reutilizado por la tabla (desktop) y las
+// tarjetas (móvil) para no duplicar la lógica de permisos.
+function AccionesFila({ f, esPersonal, esAdmin, onPagar, onApelar, onMarcarCumplida }: {
+  f: Fila; esPersonal: boolean; esAdmin: boolean;
+  onPagar: (f: Fila) => void; onApelar: (f: Fila) => void; onMarcarCumplida: (f: Fila) => void
+}) {
+  const puedePagar = f.tipoSancion === 'multa_economica' && f.estadoSancion === 'pendiente'
+  const puedeMarcarCumplida = esAdmin && !!f.tipoSancion && f.tipoSancion !== 'multa_economica' && f.estadoSancion === 'pendiente'
+  const puedeApelar = !esPersonal && f.estadoInfraccion === 'registrada' && !f.tieneApelacion
+  if (!puedePagar && !puedeMarcarCumplida && !puedeApelar && !f.tieneApelacion) return null
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {puedePagar && (
+        <button onClick={() => onPagar(f)}
+          className="flex items-center gap-1 bg-green-50 hover:bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-medium transition-colors">
+          <CreditCard size={12} /> Pagar
+        </button>
+      )}
+      {puedeMarcarCumplida && (
+        <button onClick={() => onMarcarCumplida(f)}
+          className="flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-2 py-1 rounded text-xs font-medium transition-colors">
+          <ShieldCheck size={12} /> Marcar cumplida
+        </button>
+      )}
+      {puedeApelar && (
+        <button onClick={() => onApelar(f)}
+          className="flex items-center gap-1 bg-blue-50 hover:bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-medium transition-colors">
+          <MessageSquare size={12} /> Apelar
+        </button>
+      )}
+      {f.tieneApelacion && <span className="text-xs text-blue-400 italic">En apelación</span>}
+    </div>
+  )
+}
+
 function TablaInfracciones({ filas, esPersonal, esAdmin, onPagar, onApelar, onMarcarCumplida }: {
   filas: Fila[]; esPersonal: boolean; esAdmin: boolean;
   onPagar: (f: Fila) => void; onApelar: (f: Fila) => void; onMarcarCumplida: (f: Fila) => void
@@ -780,66 +815,70 @@ function TablaInfracciones({ filas, esPersonal, esAdmin, onPagar, onApelar, onMa
   if (filas.length === 0)
     return <div className="text-center py-10 text-slate-400 text-sm">No hay infracciones registradas</div>
   return (
-    <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
-          <tr>
-            <th className="px-4 py-3 text-left">Placa</th>
-            <th className="px-4 py-3 text-left">Tipo</th>
-            <th className="px-4 py-3 text-left">Descripción</th>
-            <th className="px-4 py-3 text-left">Sanción</th>
-            <th className="px-4 py-3 text-left">Estado</th>
-            <th className="px-4 py-3 text-left">Fecha</th>
-            <th className="px-4 py-3 text-left">Acciones</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {filas.map(f => {
-            const estado = f.estadoSancion ?? f.estadoInfraccion ?? '—'
-            const puedePagar = f.tipoSancion === 'multa_economica' && f.estadoSancion === 'pendiente'
-            const puedeMarcarCumplida = esAdmin && !!f.tipoSancion && f.tipoSancion !== 'multa_economica' && f.estadoSancion === 'pendiente'
-            const puedeApelar = !esPersonal && f.estadoInfraccion === 'registrada' && !f.tieneApelacion
-            return (
-              <tr key={`${f.infraccionId}-${f.sancionId ?? 'na'}`} className="hover:bg-slate-50 transition-colors">
-                <td className="px-4 py-3 font-mono font-bold text-slate-800">{f.placaVehiculo}</td>
-                <td className="px-4 py-3 text-slate-700">{f.tipoNombre}</td>
-                <td className="px-4 py-3 text-slate-600 max-w-[200px] truncate">{f.descripcion}</td>
-                <td className="px-4 py-3"><CeldaSancion tipoSancion={f.tipoSancion} monto={f.monto} /></td>
-                <td className="px-4 py-3">
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ESTADO_BADGE[estado] ?? 'bg-slate-100'}`}>
-                    {estado}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-slate-500 text-xs">{new Date(f.fecha).toLocaleDateString('es-BO')}</td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-1">
-                    {puedePagar && (
-                      <button onClick={() => onPagar(f)}
-                        className="flex items-center gap-1 bg-green-50 hover:bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-medium transition-colors">
-                        <CreditCard size={12} /> Pagar
-                      </button>
-                    )}
-                    {puedeMarcarCumplida && (
-                      <button onClick={() => onMarcarCumplida(f)}
-                        className="flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-2 py-1 rounded text-xs font-medium transition-colors">
-                        <ShieldCheck size={12} /> Marcar cumplida
-                      </button>
-                    )}
-                    {puedeApelar && (
-                      <button onClick={() => onApelar(f)}
-                        className="flex items-center gap-1 bg-blue-50 hover:bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-medium transition-colors">
-                        <MessageSquare size={12} /> Apelar
-                      </button>
-                    )}
-                    {f.tieneApelacion && <span className="text-xs text-blue-400 italic">En apelación</span>}
-                  </div>
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
+    <>
+      {/* Tabla — desktop */}
+      <div className="hidden sm:block bg-white rounded-xl shadow-sm overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+            <tr>
+              <th className="px-4 py-3 text-left">Placa</th>
+              <th className="px-4 py-3 text-left">Tipo</th>
+              <th className="px-4 py-3 text-left">Descripción</th>
+              <th className="px-4 py-3 text-left">Sanción</th>
+              <th className="px-4 py-3 text-left">Estado</th>
+              <th className="px-4 py-3 text-left">Fecha</th>
+              <th className="px-4 py-3 text-left">Acciones</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {filas.map(f => {
+              const estado = f.estadoSancion ?? f.estadoInfraccion ?? '—'
+              return (
+                <tr key={`${f.infraccionId}-${f.sancionId ?? 'na'}`} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-4 py-3 font-mono font-bold text-slate-800">{f.placaVehiculo}</td>
+                  <td className="px-4 py-3 text-slate-700">{f.tipoNombre}</td>
+                  <td className="px-4 py-3 text-slate-600 max-w-[200px] truncate">{f.descripcion}</td>
+                  <td className="px-4 py-3"><CeldaSancion tipoSancion={f.tipoSancion} monto={f.monto} /></td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ESTADO_BADGE[estado] ?? 'bg-slate-100'}`}>
+                      {estado}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-slate-500 text-xs">{new Date(f.fecha).toLocaleDateString('es-BO')}</td>
+                  <td className="px-4 py-3">
+                    <AccionesFila f={f} esPersonal={esPersonal} esAdmin={esAdmin}
+                      onPagar={onPagar} onApelar={onApelar} onMarcarCumplida={onMarcarCumplida} />
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Tarjetas — móvil */}
+      <div className="sm:hidden space-y-2">
+        {filas.map(f => {
+          const estado = f.estadoSancion ?? f.estadoInfraccion ?? '—'
+          return (
+            <div key={`${f.infraccionId}-${f.sancionId ?? 'na'}`} className="bg-white rounded-xl shadow-sm p-3 space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono font-bold text-slate-800">{f.placaVehiculo}</span>
+                <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${ESTADO_BADGE[estado] ?? 'bg-slate-100'}`}>{estado}</span>
+              </div>
+              <p className="text-sm text-slate-700">{f.tipoNombre}</p>
+              {f.descripcion && <p className="text-xs text-slate-500 line-clamp-2">{f.descripcion}</p>}
+              <div className="flex items-center justify-between gap-2">
+                <CeldaSancion tipoSancion={f.tipoSancion} monto={f.monto} />
+                <span className="text-[11px] text-slate-400">{new Date(f.fecha).toLocaleDateString('es-BO')}</span>
+              </div>
+              <AccionesFila f={f} esPersonal={esPersonal} esAdmin={esAdmin}
+                onPagar={onPagar} onApelar={onApelar} onMarcarCumplida={onMarcarCumplida} />
+            </div>
+          )
+        })}
+      </div>
+    </>
   )
 }
 

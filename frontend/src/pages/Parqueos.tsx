@@ -349,41 +349,65 @@ export default function Parqueos() {
         sesionesActivas.length === 0 ? (
           <div className="text-center py-12 text-slate-400"><Car size={40} className="mx-auto mb-2 opacity-20" /><p>No hay vehículos en el parqueo en este momento</p></div>
         ) : (
-          <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
-                <tr>
-                  <th className="px-4 py-3 text-left">Vehículo</th>
-                  <th className="px-4 py-3 text-left">Espacio</th>
-                  <th className="px-4 py-3 text-left">Zona</th>
-                  <th className="px-4 py-3 text-left">Entrada</th>
-                  <th className="px-4 py-3 text-left">Duración</th>
-                  {esPersonal && <th className="px-4 py-3 text-center">Acción</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {sesionesActivas.map((s: any) => (
-                  <tr key={s.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-3 font-mono font-bold text-slate-800">{s.placaVehiculo}</td>
-                    <td className="px-4 py-3 text-slate-600">#{s.espacio.numero}</td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">{s.espacio.zona.nombre}</td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">{new Date(s.horaEntrada).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' })}</td>
-                    <td className="px-4 py-3">
-                      <span className="flex items-center gap-1 text-violet-600 font-medium text-xs"><Clock size={12} />{s.duracionMinutos !== null ? `${s.duracionMinutos} min` : '—'}</span>
-                    </td>
-                    {esPersonal && (
-                      <td className="px-4 py-3 text-center">
-                        <button disabled={lCerrar} onClick={() => cerrarSesion({ variables: { sesionId: s.id } })}
-                          className="bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 px-3 py-1 rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
-                          Registrar salida
-                        </button>
-                      </td>
-                    )}
+          <div>
+            {/* Tabla — desktop */}
+            <div className="hidden sm:block bg-white rounded-xl shadow-sm overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Vehículo</th>
+                    <th className="px-4 py-3 text-left">Espacio</th>
+                    <th className="px-4 py-3 text-left">Zona</th>
+                    <th className="px-4 py-3 text-left">Entrada</th>
+                    <th className="px-4 py-3 text-left">Duración</th>
+                    {esPersonal && <th className="px-4 py-3 text-center">Acción</th>}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="px-4 py-2 bg-slate-50 border-t text-xs text-slate-400">{sesionesActivas.length} vehículo{sesionesActivas.length !== 1 ? 's' : ''} en parqueo ahora</div>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {sesionesActivas.map((s: any) => (
+                    <tr key={s.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 font-mono font-bold text-slate-800">{s.placaVehiculo}</td>
+                      <td className="px-4 py-3 text-slate-600">#{s.espacio.numero}</td>
+                      <td className="px-4 py-3 text-slate-500 text-xs">{s.espacio.zona.nombre}</td>
+                      <td className="px-4 py-3 text-slate-500 text-xs">{new Date(s.horaEntrada).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' })}</td>
+                      <td className="px-4 py-3">
+                        <span className="flex items-center gap-1 text-violet-600 font-medium text-xs"><Clock size={12} />{s.duracionMinutos !== null ? `${s.duracionMinutos} min` : '—'}</span>
+                      </td>
+                      {esPersonal && (
+                        <td className="px-4 py-3 text-center">
+                          <button disabled={lCerrar} onClick={() => cerrarSesion({ variables: { sesionId: s.id } })}
+                            className="bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 px-3 py-1 rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
+                            Registrar salida
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="px-4 py-2 bg-slate-50 border-t text-xs text-slate-400">{sesionesActivas.length} vehículo{sesionesActivas.length !== 1 ? 's' : ''} en parqueo ahora</div>
+            </div>
+
+            {/* Tarjetas — móvil */}
+            <div className="sm:hidden space-y-2">
+              {sesionesActivas.map((s: any) => (
+                <div key={s.id} className="bg-white rounded-xl shadow-sm p-3 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono font-bold text-slate-800">{s.placaVehiculo}</span>
+                    <span className="flex items-center gap-1 text-violet-600 font-medium text-xs"><Clock size={12} />{s.duracionMinutos !== null ? `${s.duracionMinutos} min` : '—'}</span>
+                  </div>
+                  <p className="text-xs text-slate-500">Espacio #{s.espacio.numero} · {s.espacio.zona.nombre}</p>
+                  <p className="text-xs text-slate-500">Entrada: {new Date(s.horaEntrada).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' })}</p>
+                  {esPersonal && (
+                    <button disabled={lCerrar} onClick={() => cerrarSesion({ variables: { sesionId: s.id } })}
+                      className="w-full mt-1 bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
+                      Registrar salida
+                    </button>
+                  )}
+                </div>
+              ))}
+              <p className="text-xs text-slate-400 px-1">{sesionesActivas.length} vehículo{sesionesActivas.length !== 1 ? 's' : ''} en parqueo ahora</p>
+            </div>
           </div>
         )
       )}
@@ -407,29 +431,47 @@ export default function Parqueos() {
           ) : historial.length === 0 ? (
             <div className="text-center py-10 text-slate-400 text-sm">Sin sesiones registradas para este vehículo</div>
           ) : (
-            <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Espacio</th>
-                    <th className="px-4 py-3 text-left">Entrada</th>
-                    <th className="px-4 py-3 text-left">Salida</th>
-                    <th className="px-4 py-3 text-left">Duración</th>
-                    <th className="px-4 py-3 text-left">Estado</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {historial.map((s: any) => (
-                    <tr key={s.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-3 font-medium text-slate-800">#{s.espacio.numero} — {s.espacio.zona.nombre}</td>
-                      <td className="px-4 py-3 text-slate-600 text-xs">{new Date(s.horaEntrada).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' })}</td>
-                      <td className="px-4 py-3 text-slate-500 text-xs">{s.horaSalida ? new Date(s.horaSalida).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' }) : <span className="text-green-600 font-medium">En curso</span>}</td>
-                      <td className="px-4 py-3 text-xs"><span className="flex items-center gap-1"><Clock size={12} />{s.duracionMinutos !== null ? `${s.duracionMinutos} min` : '—'}</span></td>
-                      <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${s.estado === 'activa' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>{s.estado}</span></td>
+            <div>
+              {/* Tabla — desktop */}
+              <div className="hidden sm:block bg-white rounded-xl shadow-sm overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+                    <tr>
+                      <th className="px-4 py-3 text-left">Espacio</th>
+                      <th className="px-4 py-3 text-left">Entrada</th>
+                      <th className="px-4 py-3 text-left">Salida</th>
+                      <th className="px-4 py-3 text-left">Duración</th>
+                      <th className="px-4 py-3 text-left">Estado</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {historial.map((s: any) => (
+                      <tr key={s.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-3 font-medium text-slate-800">#{s.espacio.numero} — {s.espacio.zona.nombre}</td>
+                        <td className="px-4 py-3 text-slate-600 text-xs">{new Date(s.horaEntrada).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' })}</td>
+                        <td className="px-4 py-3 text-slate-500 text-xs">{s.horaSalida ? new Date(s.horaSalida).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' }) : <span className="text-green-600 font-medium">En curso</span>}</td>
+                        <td className="px-4 py-3 text-xs"><span className="flex items-center gap-1"><Clock size={12} />{s.duracionMinutos !== null ? `${s.duracionMinutos} min` : '—'}</span></td>
+                        <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${s.estado === 'activa' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>{s.estado}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Tarjetas — móvil */}
+              <div className="sm:hidden space-y-2">
+                {historial.map((s: any) => (
+                  <div key={s.id} className="bg-white rounded-xl shadow-sm p-3 space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-slate-800">#{s.espacio.numero} — {s.espacio.zona.nombre}</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${s.estado === 'activa' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>{s.estado}</span>
+                    </div>
+                    <p className="text-xs text-slate-500">Entrada: {new Date(s.horaEntrada).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' })}</p>
+                    <p className="text-xs text-slate-500">Salida: {s.horaSalida ? new Date(s.horaSalida).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' }) : <span className="text-green-600 font-medium">En curso</span>}</p>
+                    <p className="flex items-center gap-1 text-xs text-slate-600"><Clock size={12} />{s.duracionMinutos !== null ? `${s.duracionMinutos} min` : '—'}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
