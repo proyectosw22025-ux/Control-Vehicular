@@ -57,6 +57,14 @@ CACHES = {
     }
 }
 
+# ── Seguridad de acceso — QR estático permanente DESACTIVADO en producción ───
+# El QR permanente (legacy, SHA-256) es estático: una foto sirve para siempre y
+# es reutilizable por terceros. En producción se apaga por defecto y solo se
+# acepta el QR dinámico TOTP (rotativo). Las delegaciones, pases temporales y
+# autorizaciones externas NO dependen de este flag (son otros niveles).
+# Para reactivarlo puntualmente, definir QR_PERMANENTE_HABILITADO=True en el entorno.
+QR_PERMANENTE_HABILITADO = config("QR_PERMANENTE_HABILITADO", default=False, cast=bool)
+
 # ── Fonnte — WhatsApp automático ─────────────────────────────────────────────
 FONNTE_TOKEN = config("FONNTE_TOKEN", default="")
 
