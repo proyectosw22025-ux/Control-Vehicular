@@ -478,35 +478,62 @@ export default function Reportes() {
             <div className="px-6 py-4 border-b border-slate-100">
               <h2 className="font-bold text-slate-800">Detalle por zona</h2>
             </div>
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
-                <tr>
-                  {['Zona', 'Total', 'Disponibles', 'Ocupados', 'Reservados', 'Ocupación'].map(h => (
-                    <th key={h} className="px-5 py-3 text-left font-semibold">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {zonas.map((z: any) => (
-                  <tr key={z.zonaNombre} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-5 py-3 font-semibold text-slate-700">{z.zonaNombre.split('—')[0].trim()}</td>
-                    <td className="px-5 py-3 text-slate-600">{z.totalEspacios}</td>
-                    <td className="px-5 py-3"><span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full text-xs font-medium">{z.disponibles}</span></td>
-                    <td className="px-5 py-3"><span className="px-2 py-0.5 bg-red-50 text-red-700 rounded-full text-xs font-medium">{z.ocupados}</span></td>
-                    <td className="px-5 py-3"><span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full text-xs font-medium">{z.reservados}</span></td>
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                          <div className="h-full rounded-full transition-all"
-                            style={{ width: `${z.porcentajeOcupacion}%`, background: z.porcentajeOcupacion > 80 ? C.red : z.porcentajeOcupacion > 60 ? C.amber : C.emerald }} />
-                        </div>
-                        <span className="text-xs font-bold text-slate-700 w-9 text-right">{z.porcentajeOcupacion}%</span>
-                      </div>
-                    </td>
+            {/* Tabla — desktop */}
+            <div className="hidden sm:block overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+                  <tr>
+                    {['Zona', 'Total', 'Disponibles', 'Ocupados', 'Reservados', 'Ocupación'].map(h => (
+                      <th key={h} className="px-5 py-3 text-left font-semibold">{h}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {zonas.map((z: any) => (
+                    <tr key={z.zonaNombre} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-5 py-3 font-semibold text-slate-700">{z.zonaNombre.split('—')[0].trim()}</td>
+                      <td className="px-5 py-3 text-slate-600">{z.totalEspacios}</td>
+                      <td className="px-5 py-3"><span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full text-xs font-medium">{z.disponibles}</span></td>
+                      <td className="px-5 py-3"><span className="px-2 py-0.5 bg-red-50 text-red-700 rounded-full text-xs font-medium">{z.ocupados}</span></td>
+                      <td className="px-5 py-3"><span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full text-xs font-medium">{z.reservados}</span></td>
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all"
+                              style={{ width: `${z.porcentajeOcupacion}%`, background: z.porcentajeOcupacion > 80 ? C.red : z.porcentajeOcupacion > 60 ? C.amber : C.emerald }} />
+                          </div>
+                          <span className="text-xs font-bold text-slate-700 w-9 text-right">{z.porcentajeOcupacion}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Tarjetas — móvil */}
+            <div className="sm:hidden divide-y divide-slate-100">
+              {zonas.map((z: any) => (
+                <div key={z.zonaNombre} className="px-4 py-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold text-slate-700">{z.zonaNombre.split('—')[0].trim()}</span>
+                    <span className="text-xs text-slate-500">{z.totalEspacios} espacios</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full text-xs font-medium">{z.disponibles} disp.</span>
+                    <span className="px-2 py-0.5 bg-red-50 text-red-700 rounded-full text-xs font-medium">{z.ocupados} ocup.</span>
+                    <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full text-xs font-medium">{z.reservados} reserv.</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full transition-all"
+                        style={{ width: `${z.porcentajeOcupacion}%`, background: z.porcentajeOcupacion > 80 ? C.red : z.porcentajeOcupacion > 60 ? C.amber : C.emerald }} />
+                    </div>
+                    <span className="text-xs font-bold text-slate-700 w-9 text-right">{z.porcentajeOcupacion}%</span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

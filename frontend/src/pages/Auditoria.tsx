@@ -190,38 +190,63 @@ export default function Auditoria() {
           <p className="text-sm">{busqueda ? 'Sin resultados para esta búsqueda' : 'No hay registros de auditoría'}</p>
         </div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
-              <tr>
-                <th className="px-4 py-3 text-left">Acción</th>
-                <th className="px-4 py-3 text-left">Descripción</th>
-                <th className="px-4 py-3 text-left">Usuario</th>
-                <th className="px-4 py-3 text-left">IP</th>
-                <th className="px-4 py-3 text-left">Fecha</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {logs.map((l: any) => (
-                <tr key={l.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${ACCION_BADGE[l.accion] ?? 'bg-slate-100 text-slate-600'}`}>
-                      {l.accion.replace(/_/g, ' ')}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-slate-700 text-xs max-w-xs">{l.descripcion}</td>
-                  <td className="px-4 py-3 text-slate-600 text-xs">{l.usuarioNombre ?? '—'}</td>
-                  <td className="px-4 py-3 text-slate-400 text-xs font-mono">{l.ip ?? '—'}</td>
-                  <td className="px-4 py-3 text-xs" title={fmt(l.createdAt)}>
-                    <span className="text-slate-700 font-medium">{tiempoRelativo(l.createdAt)}</span>
-                    <span className="text-slate-400 block text-[10px]">{fmt(l.createdAt)}</span>
-                  </td>
+        <div>
+          {/* Tabla — desktop */}
+          <div className="hidden sm:block bg-white rounded-xl shadow-sm overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+                <tr>
+                  <th className="px-4 py-3 text-left">Acción</th>
+                  <th className="px-4 py-3 text-left">Descripción</th>
+                  <th className="px-4 py-3 text-left">Usuario</th>
+                  <th className="px-4 py-3 text-left">IP</th>
+                  <th className="px-4 py-3 text-left">Fecha</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="px-4 py-2 bg-slate-50 border-t border-slate-100 text-xs text-slate-400">
-            {logs.length} registro{logs.length !== 1 ? 's' : ''}{busqueda ? ` encontrado${logs.length !== 1 ? 's' : ''}` : ''}
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {logs.map((l: any) => (
+                  <tr key={l.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${ACCION_BADGE[l.accion] ?? 'bg-slate-100 text-slate-600'}`}>
+                        {l.accion.replace(/_/g, ' ')}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-slate-700 text-xs max-w-xs">{l.descripcion}</td>
+                    <td className="px-4 py-3 text-slate-600 text-xs">{l.usuarioNombre ?? '—'}</td>
+                    <td className="px-4 py-3 text-slate-400 text-xs font-mono">{l.ip ?? '—'}</td>
+                    <td className="px-4 py-3 text-xs" title={fmt(l.createdAt)}>
+                      <span className="text-slate-700 font-medium">{tiempoRelativo(l.createdAt)}</span>
+                      <span className="text-slate-400 block text-[10px]">{fmt(l.createdAt)}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="px-4 py-2 bg-slate-50 border-t border-slate-100 text-xs text-slate-400">
+              {logs.length} registro{logs.length !== 1 ? 's' : ''}{busqueda ? ` encontrado${logs.length !== 1 ? 's' : ''}` : ''}
+            </div>
+          </div>
+
+          {/* Tarjetas — móvil */}
+          <div className="sm:hidden space-y-2">
+            {logs.map((l: any) => (
+              <div key={l.id} className="bg-white rounded-xl shadow-sm p-3 space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${ACCION_BADGE[l.accion] ?? 'bg-slate-100 text-slate-600'}`}>
+                    {l.accion.replace(/_/g, ' ')}
+                  </span>
+                  <span className="text-[11px] text-slate-500" title={fmt(l.createdAt)}>{tiempoRelativo(l.createdAt)}</span>
+                </div>
+                <p className="text-xs text-slate-700">{l.descripcion}</p>
+                <div className="flex items-center justify-between gap-2 text-[11px] text-slate-400">
+                  <span>{l.usuarioNombre ?? '—'}</span>
+                  <span className="font-mono">{l.ip ?? '—'}</span>
+                </div>
+              </div>
+            ))}
+            <p className="text-xs text-slate-400 px-1">
+              {logs.length} registro{logs.length !== 1 ? 's' : ''}{busqueda ? ` encontrado${logs.length !== 1 ? 's' : ''}` : ''}
+            </p>
           </div>
         </div>
       )}
